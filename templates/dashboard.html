@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>MLLM 评测全功能看板</title>
+    <style>
+        :root { --primary: #2196F3; --win-a: #4CAF50; --win-b: #2196F3; --bg: #f0f2f5; }
+        body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: var(--bg); color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        /* 通用卡片样式 */
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .card-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 20px; border-left: 5px solid var(--primary); padding-left: 12px; }
+
+        /* 上传区块布局 */
+        .upload-grid { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 15px; align-items: end; }
+        .input-group { display: flex; flex-direction: column; gap: 5px; }
+        input, select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
+
+        /* 表格样式 */
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+        th { background: #fafafa; padding: 12px; font-size: 0.85rem; color: #888; border-bottom: 2px solid #eee; }
+        td { padding: 15px; text-align: center; border-bottom: 1px solid #f0f0f0; }
+
+        /* 维度胜率条 */
+        .dim-item { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 0.85rem; }
+        .bar-wrap { flex: 1; height: 14px; background: #eee; border-radius: 7px; overflow: hidden; display: flex; min-width: 150px; }
+        .bar-fill { height: 100%; transition: width 0.6s cubic-bezier(0.1, 0, 0.3, 1); }
+        .percent-label { width: 90px; font-size: 11px; color: #666; font-family: monospace; text-align: right; }
+
+        /* 弹窗样式 */
+        #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 2000; }
+        .modal-content { background: white; width: 95%; height: 85%; border-radius: 15px; padding: 25px; display: flex; flex-direction: column; animation: slideIn 0.3s ease; }
+        .scroll-area { flex: 1; overflow-y: auto; margin-top: 15px; }
+        
+        .preview-img { width: 110px; height: 110px; object-fit: cover; border: 1px solid #eee; border-radius: 6px; cursor: zoom-in; }
+        .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block; margin-right: 4px; border: 1px solid transparent; }
+        .badge-a { background: #e8f5e9; color: #2e7d32; border-color: #c8e6c9; }
+        .badge-b { background: #e3f2fd; color: #1565c0; border-color: #bbdefb; }
+        .badge-tie { background: #f5f5f5; color: #757575; border-color: #e0e0e0; }
+
+        .btn { padding: 8px 16px; border-radius: 6px; cursor: pointer; border: none; font-weight: 500; transition: 0.2s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { border: 1px solid var(--primary); color: var(--primary); background: none; }
+        .btn-outline:hover { background: var(--primary); color: white; }
+
+        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h1 style="margin:0;">🚀 MLLM 评测监控中心</h1>
+        <div id="status-tag" style="font-size:0.8rem; color:#888;">正在获取最新同步数据...</div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">发布新测试任务</div>
+        <form id="upload-form" class="upload-grid">
+            <div class="input-group">
+                <label>模型版本 (Version)</label>
+                <input type="text" id="up-version" placeholder="如 UniModel_3B" required>
+            </div>
+            <div class="input-group">
+                <label>评测场景 (Scene)</label>
+                <input type="text" id="up-scene" placeholder="如 human_logic" required>
+            </div>
+            <div class="input-group">
+                <label>数据包 (.zip)</label>
+                <input type="file" id="up-file" accept=".zip" required>
+            </div>
+            <button type="submit" id="up-btn" class="btn btn-primary">解压并同步</button>
+        </form>
+        <div id="up-msg" style="margin-top:10px; font-size:0.85rem;"></div>
+    </div>
+
+    <div class="card" style="padding:0;">
+        <div style="padding:20px; font-weight:bold; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
+            <span>多维度对战总览</span>
+            <button onclick="loadStats()" class="btn btn-outline" style="padding:4px 10px; font-size:0.8rem;">手动刷新</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:180px;">对战版本 (A vs B)</th>
+                    <th>评测场景</th>
+                    <th style="text-align:left;">各维度胜率分布 (绿色:A | 蓝色:B)</th>
+                    <th>样本量</th>
+                    <th>分析</th>
+                </tr>
+            </thead>
+            <tbody id="main-table-body">
+                </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="modal" onclick="closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+            <h2 id="modal-title" style="margin:0;">Case By Case 明细</h2>
+            <button onclick="closeModal()" class="btn btn-outline">关闭</button>
+        </div>
+        <div class="scroll-area">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:120px;">文件名</th>
+                        <th style="width:260px;">对比预览 (Left:A | Right:B)</th>
+                        <th style="text-align:left;">维度判定结果</th>
+                        <th>评测员</th>
+                        <th>记录时间</th>
+                    </tr>
+                </thead>
+                <tbody id="detail-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const dimNames = { overall: '整体', aesthetic: '美学', logic: '合理', consistency: '一致' };
+
+    // --- 1. 上传逻辑 ---
+    document.getElementById('upload-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('up-btn');
+        const msg = document.getElementById('up-msg');
+        const formData = new FormData();
+        formData.append('version', document.getElementById('up-version').value);
+        formData.append('scene', document.getElementById('up-scene').value);
+        formData.append('file', document.getElementById('up-file').files[0]);
+
+        btn.disabled = true;
+        msg.innerHTML = "⏳ 正在上传解压图片并建立数据库索引...";
+
+        try {
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            if (res.ok) {
+                msg.innerHTML = "<span style='color:green'>✅ 部署成功！数据已更新。</span>";
+                loadStats(); // 刷新列表
+            } else {
+                const err = await res.json();
+                msg.innerHTML = `<span style='color:red'>❌ 上传失败: ${err.detail}</span>`;
+            }
+        } catch (e) { msg.innerHTML = "<span style='color:red'>❌ 网络连接失败</span>"; }
+        finally { btn.disabled = false; }
+    };
+
+    // --- 2. 加载汇总统计 ---
+    async function loadStats() {
+        try {
+            const res = await fetch('/api/dashboard_v2');
+            const data = await res.json();
+            const body = document.getElementById('main-table-body');
+            
+            body.innerHTML = data.map(item => {
+                const [v1, v2] = item.pair.split(' vs ');
+                let dimHtml = '';
+                
+                for (let key in dimNames) {
+                    const aW = item.dims[key].v_a_wins;
+                    const bW = item.dims[key].v_b_wins;
+                    const total = aW + bW || 1;
+                    const pA = (aW / total * 100).toFixed(1);
+                    const pB = (bW / total * 100).toFixed(1);
+
+                    dimHtml += `
+                        <div class="dim-item">
+                            <span style="width:40px; color:#666;">${dimNames[key]}</span>
+                            <div class="bar-wrap">
+                                <div class="bar-fill" style="width:${pA}%; background:var(--win-a)"></div>
+                                <div class="bar-fill" style="width:${pB}%; background:var(--win-b)"></div>
+                            </div>
+                            <span class="percent-label">A:${pA}% / B:${pB}%</span>
+                        </div>`;
+                }
+
+                return `
+                    <tr>
+                        <td><strong>${v1}</strong><br><small style="color:#999">vs</small><br><strong>${v2}</strong></td>
+                        <td><span style="background:#e3f2fd; color:#1565c0; padding:4px 8px; border-radius:4px; font-weight:bold;">${item.scene}</span></td>
+                        <td>${dimHtml}</td>
+                        <td style="font-family:monospace; font-weight:bold; color:#666;">${item.total}</td>
+                        <td><button class="btn btn-outline" onclick="showDetail('${v1}','${v2}','${item.scene}')">明细</button></td>
+                    </tr>`;
+            }).join('');
+            
+            document.getElementById('status-tag').innerText = "最后更新: " + new Date().toLocaleTimeString();
+        } catch (e) { console.error("加载数据失败", e); }
+    }
+
+    // --- 3. 加载详情明细 ---
+    async function showDetail(v1, v2, scene) {
+        document.getElementById('modal').style.display = 'flex';
+        document.getElementById('modal-title').innerText = `评测明细: ${v1} vs ${v2} [${scene}]`;
+        const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
+        const details = await res.json();
+        
+        const getBadge = (val) => {
+            if(val === 'tie') return '<span class="badge badge-tie">平局</span>';
+            return val === v1 ? '<span class="badge badge-a">A胜</span>' : '<span class="badge badge-b">B胜</span>';
+        };
+
+        document.getElementById('detail-body').innerHTML = details.map(d => `
+            <tr>
+                <td style="font-size:11px; font-family:monospace; color:#666;">${d.filename}</td>
+                <td>
+                    <div style="display:flex; gap:10px; justify-content:center;">
+                        <img src="/images/${v1}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
+                        <img src="/images/${v2}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
+                    </div>
+                </td>
+                <td style="text-align:left; vertical-align: middle;">
+                    <div style="line-height:2;">
+                        ${getBadge(d.overall)} <small>整体</small><br>
+                        ${getBadge(d.aesthetic)} <small>美学</small><br>
+                        ${getBadge(d.logic)} <small>合理</small><br>
+                        ${getBadge(d.consistency)} <small>一致</small>
+                    </div>
+                </td>
+                <td>${d.worker}</td>
+                <td style="font-size:11px; color:#999;">${d.time}</td>
+            </tr>
+        `).join('');
+    }
+
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+    
+    // 初始化及自动刷新
+    loadStats();
+    setInterval(loadStats, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+scene1	A breathtaking mountain landscape with snow-capped peaks, golden hour sunlight casting long shadows across the valley, with a winding river below
+scene2	A futuristic city skyline at twilight, glass skyscrapers reflecting the last rays of sunset, with neon lights beginning to glow along the streets
+scene3	A lush green forest with sunlight filtering through the canopy, a small wooden bridge over a crystal-clear stream, wildflowers blooming on the banks
+scene4	A modern architectural masterpiece, a spiral glass building surrounded by cherry blossoms in full bloom, clear blue sky in the background
+scene5	A dramatic ocean scene with towering waves crashing against rocky cliffs, sea spray catching the light, stormy clouds rolling in from the horizon
