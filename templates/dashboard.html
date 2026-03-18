@@ -8,28 +8,24 @@
         body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: var(--bg); color: #333; }
         .container { max-width: 1400px; margin: 0 auto; }
         
-        /* 通用卡片样式 */
         .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
         .card-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 20px; border-left: 5px solid var(--primary); padding-left: 12px; }
 
-        /* 上传区块布局 */
         .upload-grid { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 15px; align-items: end; }
         .input-group { display: flex; flex-direction: column; gap: 5px; }
         input, select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
 
-        /* 表格样式 */
         table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
         th { background: #fafafa; padding: 12px; font-size: 0.85rem; color: #888; border-bottom: 2px solid #eee; }
         td { padding: 15px; text-align: center; border-bottom: 1px solid #f0f0f0; }
 
-        /* 维度胜率条 */
         .dim-item { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 0.85rem; }
         .bar-wrap { flex: 1; height: 14px; background: #eee; border-radius: 7px; overflow: hidden; display: flex; min-width: 150px; }
         .bar-fill { height: 100%; transition: width 0.6s cubic-bezier(0.1, 0, 0.3, 1); }
         .percent-label { width: 90px; font-size: 11px; color: #666; font-family: monospace; text-align: right; }
 
         /* 弹窗样式 */
-        #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 2000; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 2000; }
         .modal-content { background: white; width: 95%; height: 85%; border-radius: 15px; padding: 25px; display: flex; flex-direction: column; animation: slideIn 0.3s ease; }
         .scroll-area { flex: 1; overflow-y: auto; margin-top: 15px; }
         
@@ -43,8 +39,16 @@
         .btn-primary { background: var(--primary); color: white; }
         .btn-outline { border: 1px solid var(--primary); color: var(--primary); background: none; }
         .btn-outline:hover { background: var(--primary); color: white; }
+        .btn-worker { border: 1px solid #ff9800; color: #ff9800; background: none; }
+        .btn-worker:hover { background: #ff9800; color: white; }
 
         @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* 评测人统计卡片 */
+        .worker-stat-card { background: #fafbfc; border: 1px solid #eef0f2; border-radius: 8px; padding: 15px; margin-bottom: 12px; }
+        .worker-stat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .worker-name { font-weight: bold; font-size: 1rem; color: #333; }
+        .worker-total { font-size: 0.85rem; color: #888; }
     </style>
 </head>
 <body>
@@ -60,11 +64,11 @@
         <form id="upload-form" class="upload-grid">
             <div class="input-group">
                 <label>模型版本 (Version)</label>
-                <input type="text" id="up-version" placeholder="如 UniModel_3B" required>
+                <input type="text" id="up-version" placeholder="如 PanguT2IMobile_3B" required>
             </div>
             <div class="input-group">
                 <label>评测场景 (Scene)</label>
-                <input type="text" id="up-scene" placeholder="如 human_logic" required>
+                <input type="text" id="up-scene" placeholder="如 human_en" required>
             </div>
             <div class="input-group">
                 <label>数据包 (.zip)</label>
@@ -91,16 +95,17 @@
                 </tr>
             </thead>
             <tbody id="main-table-body">
-                </tbody>
+            </tbody>
         </table>
     </div>
 </div>
 
-<div id="modal" onclick="closeModal()">
+<!-- 评测明细弹窗 -->
+<div id="detail-modal" class="modal-overlay" onclick="closeModal('detail-modal')">
     <div class="modal-content" onclick="event.stopPropagation()">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
-            <h2 id="modal-title" style="margin:0;">Case By Case 明细</h2>
-            <button onclick="closeModal()" class="btn btn-outline">关闭</button>
+            <h2 id="detail-modal-title" style="margin:0;">Case By Case 明细</h2>
+            <button onclick="closeModal('detail-modal')" class="btn btn-outline">关闭</button>
         </div>
         <div class="scroll-area">
             <table>
@@ -119,8 +124,24 @@
     </div>
 </div>
 
+<!-- 评测人统计弹窗 -->
+<div id="worker-modal" class="modal-overlay" onclick="closeModal('worker-modal')">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+            <h2 id="worker-modal-title" style="margin:0;">👤 评测人统计</h2>
+            <div style="display:flex; gap:10px;">
+                <button onclick="showWorkerDetail()" class="btn btn-primary" style="padding:4px 12px; font-size:0.85rem;">查看所有明细</button>
+                <button onclick="closeModal('worker-modal')" class="btn btn-outline">关闭</button>
+            </div>
+        </div>
+        <div class="scroll-area" id="worker-stats-area">
+        </div>
+    </div>
+</div>
+
 <script>
     const dimNames = { overall: '整体', aesthetic: '美学', logic: '合理', consistency: '一致' };
+    let currentWorkerModal = { v1: '', v2: '', scene: '' };
 
     // --- 1. 上传逻辑 ---
     document.getElementById('upload-form').onsubmit = async (e) => {
@@ -139,7 +160,7 @@
             const res = await fetch('/api/upload', { method: 'POST', body: formData });
             if (res.ok) {
                 msg.innerHTML = "<span style='color:green'>✅ 部署成功！数据已更新。</span>";
-                loadStats(); // 刷新列表
+                loadStats();
             } else {
                 const err = await res.json();
                 msg.innerHTML = `<span style='color:red'>❌ 上传失败: ${err.detail}</span>`;
@@ -183,7 +204,12 @@
                         <td><span style="background:#e3f2fd; color:#1565c0; padding:4px 8px; border-radius:4px; font-weight:bold;">${item.scene}</span></td>
                         <td>${dimHtml}</td>
                         <td style="font-family:monospace; font-weight:bold; color:#666;">${item.total}</td>
-                        <td><button class="btn btn-outline" onclick="showDetail('${v1}','${v2}','${item.scene}')">明细</button></td>
+                        <td>
+                            <div style="display:flex; gap:6px; justify-content:center;">
+                                <button class="btn btn-outline" onclick="showDetail('${v1}','${v2}','${item.scene}')">明细</button>
+                                <button class="btn btn-worker" onclick="showWorkerStats('${v1}','${v2}','${item.scene}')">👤 统计</button>
+                            </div>
+                        </td>
                     </tr>`;
             }).join('');
             
@@ -193,8 +219,8 @@
 
     // --- 3. 加载详情明细 ---
     async function showDetail(v1, v2, scene) {
-        document.getElementById('modal').style.display = 'flex';
-        document.getElementById('modal-title').innerText = `评测明细: ${v1} vs ${v2} [${scene}]`;
+        document.getElementById('detail-modal').style.display = 'flex';
+        document.getElementById('detail-modal-title').innerText = `评测明细: ${v1} vs ${v2} [${scene}]`;
         const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
         const details = await res.json();
         
@@ -220,13 +246,90 @@
                         ${getBadge(d.consistency)} <small>一致</small>
                     </div>
                 </td>
-                <td>${d.worker}</td>
+                <td><span style="background:#fff3e0; color:#e65100; padding:3px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold;">${d.worker}</span></td>
                 <td style="font-size:11px; color:#999;">${d.time}</td>
             </tr>
         `).join('');
     }
 
-    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+    // --- 4. 评测人统计 ---
+    async function showWorkerStats(v1, v2, scene) {
+        currentWorkerModal = { v1, v2, scene };
+        document.getElementById('worker-modal').style.display = 'flex';
+        document.getElementById('worker-modal-title').innerText = `👤 评测人统计: ${v1} vs ${v2} [${scene}]`;
+        
+        const res = await fetch(`/api/worker_stats?v1=${v1}&v2=${v2}&scene=${scene}`);
+        const workers = await res.json();
+
+        const area = document.getElementById('worker-stats-area');
+
+        if (workers.length === 0) {
+            area.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">暂无评测数据</div>';
+            return;
+        }
+
+        // 汇总行
+        let totalOA = 0, totalOB = 0;
+        workers.forEach(w => { totalOA += w.overall.v_a_wins; totalOB += w.overall.v_b_wins; });
+        const totalAll = totalOA + totalOB || 1;
+
+        let html = `<div class="worker-stat-card" style="background:#e8f5e9; border-color:#c8e6c9;">
+            <div class="worker-stat-header">
+                <span class="worker-name" style="color:#2e7d32;">📊 全员汇总（共 ${workers.length} 位评测员）</span>
+                <span class="worker-total">总计 ${workers.reduce((s,w) => s+w.total, 0)} 条评测</span>
+            </div>
+            <div style="text-align:center; font-size:1.2rem; font-weight:bold; margin-bottom:5px;">
+                A 胜率 <span style="color:#2e7d32;">${(totalOA/totalAll*100).toFixed(1)}%</span> 
+                &nbsp;vs&nbsp; 
+                B 胜率 <span style="color:#1565c0;">${(totalOB/totalAll*100).toFixed(1)}%</span>
+            </div>
+            <div style="height:8px; background:#ddd; border-radius:4px; overflow:hidden; display:flex;">
+                <div style="height:100%; width:${(totalOA/totalAll*100).toFixed(1)}%; background:var(--win-a);"></div>
+                <div style="height:100%; width:${(totalOB/totalAll*100).toFixed(1)}%; background:var(--win-b);"></div>
+            </div>
+        </div>`;
+
+        // 每个评测人的卡片
+        workers.forEach(w => {
+            const total = w.overall.v_a_wins + w.overall.v_b_wins || 1;
+            let dimHtml = '';
+            for (let key in dimNames) {
+                const aW = w[key].v_a_wins;
+                const bW = w[key].v_b_wins;
+                const t = aW + bW || 1;
+                const pA = (aW / t * 100).toFixed(0);
+                const pB = (bW / t * 100).toFixed(0);
+                dimHtml += `
+                    <div class="dim-item">
+                        <span style="width:40px; color:#666;">${dimNames[key]}</span>
+                        <div class="bar-wrap">
+                            <div class="bar-fill" style="width:${pA}%; background:var(--win-a)"></div>
+                            <div class="bar-fill" style="width:${pB}%; background:var(--win-b)"></div>
+                        </div>
+                        <span class="percent-label">A:${pA}% / B:${pB}%</span>
+                    </div>`;
+            }
+            
+            html += `
+                <div class="worker-stat-card">
+                    <div class="worker-stat-header">
+                        <span class="worker-name">👤 ${w.worker}</span>
+                        <span class="worker-total">样本量: ${w.total}</span>
+                    </div>
+                    ${dimHtml}
+                </div>`;
+        });
+
+        area.innerHTML = html;
+    }
+
+    // 从评测人统计弹窗跳转到明细弹窗
+    function showWorkerDetail() {
+        closeModal('worker-modal');
+        showDetail(currentWorkerModal.v1, currentWorkerModal.v2, currentWorkerModal.scene);
+    }
+
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     
     // 初始化及自动刷新
     loadStats();

@@ -24,13 +24,32 @@ app.mount("/images", StaticFiles(directory=RESULT_DIR), name="images")
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # 任务表
+    
+    # 检查旧表是否有 UNIQUE(v_a, v_b, scene, filename) 约束
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='pair_tasks'")
+    row = cursor.fetchone()
+    if row and "UNIQUE(v_a, v_b, scene, filename)" in row[0]:
+        # 需要迁移：去掉旧 UNIQUE，改为包含 worker 的 UNIQUE
+        cursor.execute("CREATE TABLE IF NOT EXISTS pair_tasks_new ("
+                       "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                       "v_a TEXT, v_b TEXT, scene TEXT, filename TEXT,"
+                       "status TEXT DEFAULT 'pending',"
+                       "worker TEXT,"
+                       "UNIQUE(v_a, v_b, scene, filename, worker))")
+        cursor.execute("INSERT OR IGNORE INTO pair_tasks_new "
+                       "(id, v_a, v_b, scene, filename, status, worker) "
+                       "SELECT id, v_a, v_b, scene, filename, status, worker FROM pair_tasks")
+        cursor.execute("DROP TABLE pair_tasks")
+        cursor.execute("ALTER TABLE pair_tasks_new RENAME TO pair_tasks")
+        conn.commit()
+    
+    # 任务表（首次创建时用新 schema）
     cursor.execute('''CREATE TABLE IF NOT EXISTS pair_tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         v_a TEXT, v_b TEXT, scene TEXT, filename TEXT,
         status TEXT DEFAULT 'pending', 
         worker TEXT,
-        UNIQUE(v_a, v_b, scene, filename)
+        UNIQUE(v_a, v_b, scene, filename, worker)
     )''')
     # 结果表：支持多维度存储
     cursor.execute('''CREATE TABLE IF NOT EXISTS results_log (
@@ -103,7 +122,7 @@ def get_task(worker: str, v1: str, v2: str, scene: str):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 1. 优先获取该用户未完成的“断点”任务
+    # 1. 优先获取该用户未完成的"断点"任务
     cursor.execute("""
         SELECT id, filename FROM pair_tasks 
         WHERE v_a=? AND v_b=? AND scene=? AND status='working' AND worker=?
@@ -112,20 +131,24 @@ def get_task(worker: str, v1: str, v2: str, scene: str):
     task = cursor.fetchone()
     
     if not task:
-        # 2. 如果没有，检查是否需要初始化该场景任务到DB
+        # 2. 如果没有，检查是否需要为该用户初始化该场景任务到DB
         scene_path = os.path.join(RESULT_DIR, v_a, scene)
         if os.path.exists(scene_path):
             files = [f for f in os.listdir(scene_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
             for f in files:
-                cursor.execute("INSERT OR IGNORE INTO pair_tasks (v_a, v_b, scene, filename) VALUES (?,?,?,?)", (v_a, v_b, scene, f))
+                cursor.execute(
+                    "INSERT OR IGNORE INTO pair_tasks (v_a, v_b, scene, filename, worker) VALUES (?,?,?,?,?)",
+                    (v_a, v_b, scene, f, worker))
             conn.commit()
 
-        # 3. 抢占新任务
+        # 3. 抢占该用户的新任务
         cursor.execute("BEGIN EXCLUSIVE TRANSACTION")
-        cursor.execute("SELECT id, filename FROM pair_tasks WHERE v_a=? AND v_b=? AND scene=? AND status='pending' LIMIT 1", (v_a, v_b, scene))
+        cursor.execute(
+            "SELECT id, filename FROM pair_tasks WHERE v_a=? AND v_b=? AND scene=? AND status='pending' AND worker=? LIMIT 1",
+            (v_a, v_b, scene, worker))
         task = cursor.fetchone()
         if task:
-            cursor.execute("UPDATE pair_tasks SET status='working', worker=? WHERE id=?", (worker, task[0]))
+            cursor.execute("UPDATE pair_tasks SET status='working' WHERE id=?", (task[0],))
             conn.commit()
     
     conn.close()
@@ -172,7 +195,6 @@ def submit_vote(vote: VoteSubmit):
 def get_dashboard():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # 以 overall 维度作为主胜率统计参考
     cursor.execute("""
         SELECT v_a, v_b, scene,
                SUM(CASE WHEN overall = v_a THEN 1 ELSE 0 END) as v_a_wins,
@@ -184,6 +206,79 @@ def get_dashboard():
     conn.close()
     return [{"pair": f"{r[0]} vs {r[1]}", "scene": r[2], "v_a_wins": r[3], "v_b_wins": r[4], "total": r[5]} for r in rows]
 
+@app.get("/api/dashboard_v2")
+def get_dashboard_v2():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT v_a, v_b, scene,
+               SUM(CASE WHEN overall = v_a THEN 1 ELSE 0 END) as o_a,
+               SUM(CASE WHEN overall = v_b THEN 1 ELSE 0 END) as o_b,
+               SUM(CASE WHEN aesthetic = v_a THEN 1 ELSE 0 END) as a_a,
+               SUM(CASE WHEN aesthetic = v_b THEN 1 ELSE 0 END) as a_b,
+               SUM(CASE WHEN logic = v_a THEN 1 ELSE 0 END) as l_a,
+               SUM(CASE WHEN logic = v_b THEN 1 ELSE 0 END) as l_b,
+               SUM(CASE WHEN consistency = v_a THEN 1 ELSE 0 END) as c_a,
+               SUM(CASE WHEN consistency = v_b THEN 1 ELSE 0 END) as c_b,
+               COUNT(*) as total
+        FROM results_log GROUP BY v_a, v_b, scene
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    res = []
+    for r in rows:
+        res.append({
+            "pair": f"{r[0]} vs {r[1]}",
+            "scene": r[2],
+            "total": r[11],
+            "dims": {
+                "overall": {"v_a_wins": r[3], "v_b_wins": r[4]},
+                "aesthetic": {"v_a_wins": r[5], "v_b_wins": r[6]},
+                "logic": {"v_a_wins": r[7], "v_b_wins": r[8]},
+                "consistency": {"v_a_wins": r[9], "v_b_wins": r[10]},
+            }
+        })
+    return res
+
+@app.get("/api/worker_stats")
+def get_worker_stats(v1: str, v2: str, scene: str):
+    """按评测人分组统计某个场景下所有评测人的结果"""
+    v_a, v_b = sorted([v1, v2])
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT worker,
+               COUNT(*) as total,
+               SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as o_a,
+               SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as o_b,
+               SUM(CASE WHEN aesthetic = ? THEN 1 ELSE 0 END) as a_a,
+               SUM(CASE WHEN aesthetic = ? THEN 1 ELSE 0 END) as a_b,
+               SUM(CASE WHEN logic = ? THEN 1 ELSE 0 END) as l_a,
+               SUM(CASE WHEN logic = ? THEN 1 ELSE 0 END) as l_b,
+               SUM(CASE WHEN consistency = ? THEN 1 ELSE 0 END) as c_a,
+               SUM(CASE WHEN consistency = ? THEN 1 ELSE 0 END) as c_b
+        FROM results_log 
+        WHERE v_a=? AND v_b=? AND scene=?
+        GROUP BY worker
+        ORDER BY worker
+    """, (v_a, v_b, v_a, v_b, v_a, v_b, v_a, v_b, v_a, v_b, scene))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    result = []
+    for r in rows:
+        total = r[1] or 0
+        result.append({
+            "worker": r[0],
+            "total": total,
+            "overall": {"v_a_wins": r[2], "v_b_wins": r[3]},
+            "aesthetic": {"v_a_wins": r[4], "v_b_wins": r[5]},
+            "logic": {"v_a_wins": r[6], "v_b_wins": r[7]},
+            "consistency": {"v_a_wins": r[8], "v_b_wins": r[9]},
+        })
+    return result
+
 @app.get("/api/detail_results")
 def get_detail_results(v1: str, v2: str, scene: str):
     v_a, v_b = sorted([v1, v2])
@@ -191,7 +286,7 @@ def get_detail_results(v1: str, v2: str, scene: str):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT filename, overall, aesthetic, logic, consistency, worker, timestamp 
-        FROM results_log WHERE v_a=? AND v_b=? AND scene=? ORDER BY timestamp DESC
+        FROM results_log WHERE v_a=? AND v_b=? AND scene=? ORDER BY worker, filename, timestamp DESC
     """, (v_a, v_b, scene))
     rows = cursor.fetchall()
     conn.close()
@@ -231,41 +326,6 @@ async def index():
 async def dashboard():
     return open("templates/dashboard.html", encoding="utf-8").read()
 
-@app.get("/api/dashboard_v2")
-def get_dashboard_v2():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    # 按照对战组和场景分组
-    cursor.execute("""
-        SELECT v_a, v_b, scene,
-               SUM(CASE WHEN overall = v_a THEN 1 ELSE 0 END) as o_a,
-               SUM(CASE WHEN overall = v_b THEN 1 ELSE 0 END) as o_b,
-               SUM(CASE WHEN aesthetic = v_a THEN 1 ELSE 0 END) as a_a,
-               SUM(CASE WHEN aesthetic = v_b THEN 1 ELSE 0 END) as a_b,
-               SUM(CASE WHEN logic = v_a THEN 1 ELSE 0 END) as l_a,
-               SUM(CASE WHEN logic = v_b THEN 1 ELSE 0 END) as l_b,
-               SUM(CASE WHEN consistency = v_a THEN 1 ELSE 0 END) as c_a,
-               SUM(CASE WHEN consistency = v_b THEN 1 ELSE 0 END) as c_b,
-               COUNT(*) as total
-        FROM results_log GROUP BY v_a, v_b, scene
-    """)
-    rows = cursor.fetchall()
-    conn.close()
-    
-    res = []
-    for r in rows:
-        res.append({
-            "pair": f"{r[0]} vs {r[1]}",
-            "scene": r[2],
-            "total": r[11],
-            "dims": {
-                "overall": {"v_a_wins": r[3], "v_b_wins": r[4]},
-                "aesthetic": {"v_a_wins": r[5], "v_b_wins": r[6]},
-                "logic": {"v_a_wins": r[7], "v_b_wins": r[8]},
-                "consistency": {"v_a_wins": r[9], "v_b_wins": r[10]},
-            }
-        })
-    return res
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
