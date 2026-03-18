@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>MLLM 评测全功能看板</title>
     <style>
-        :root { --primary: #2196F3; --win-a: #4CAF50; --win-b: #2196F3; --bg: #f0f2f5; }
+        :root { --primary: #2196F3; --win-a: #4CAF50; --win-b: #2196F3; --win-tie: #bdbdbd; --bg: #f0f2f5; }
         body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: var(--bg); color: #333; }
         .container { max-width: 1400px; margin: 0 auto; }
         
@@ -101,7 +101,7 @@
                 <tr>
                     <th style="width:180px;">对战版本 (A vs B)</th>
                     <th>评测场景</th>
-                    <th style="text-align:left;">各维度胜率分布 (绿色:A | 蓝色:B)</th>
+                    <th style="text-align:left;">各维度胜率分布 (绿:A | 灰:平局 | 蓝:B)</th>
                     <th>样本量</th>
                     <th>分析</th>
                 </tr>
@@ -155,6 +155,25 @@
     let currentWorkerModal = { v1: '', v2: '', scene: '' };
     let workerStatsCache = [];
 
+    // 生成三段式进度条 HTML（绿-灰-蓝）
+    function triBar(aW, bW, total, showLabel) {
+        const tW = Math.max(0, total - aW - bW);
+        const t = total || 1;
+        const pA = (aW / t * 100).toFixed(1);
+        const pT = (tW / t * 100).toFixed(1);
+        const pB = (bW / t * 100).toFixed(1);
+        const label = showLabel ? `<span class="percent-label">A:${pA}% / 平:${pT}% / B:${pB}%</span>` : '';
+        return `<div class="dim-item">
+            <div class="bar-wrap">
+                <div class="bar-fill" style="width:${pA}%; background:var(--win-a)"></div>
+                <div class="bar-fill" style="width:${pT}%; background:var(--win-tie)"></div>
+                <div class="bar-fill" style="width:${pB}%; background:var(--win-b)"></div>
+            </div>
+            ${label}
+        </div>`;
+    }
+
+
     // --- 1. 上传逻辑 ---
     document.getElementById('upload-form').onsubmit = async (e) => {
         e.preventDefault();
@@ -194,18 +213,9 @@
                 for (let key in dimNames) {
                     const aW = item.dims[key].v_a_wins;
                     const bW = item.dims[key].v_b_wins;
-                    const total = aW + bW || 1;
-                    const pA = (aW / total * 100).toFixed(1);
-                    const pB = (bW / total * 100).toFixed(1);
                     dimHtml += `
-                        <div class="dim-item">
-                            <span style="width:40px; color:#666;">${dimNames[key]}</span>
-                            <div class="bar-wrap">
-                                <div class="bar-fill" style="width:${pA}%; background:var(--win-a)"></div>
-                                <div class="bar-fill" style="width:${pB}%; background:var(--win-b)"></div>
-                            </div>
-                            <span class="percent-label">A:${pA}% / B:${pB}%</span>
-                        </div>`;
+                        <span style="width:40px; color:#666;">${dimNames[key]}</span>
+                        ${triBar(aW, bW, item.total, true)}`;
                 }
                 return `
                     <tr>
@@ -317,21 +327,13 @@
         html += `<div class="summary-bar" style="margin-bottom:10px;">`;
         dimKeys.forEach(key => {
             const a = dimSums[key].a, b = dimSums[key].b;
-            const t = a + b || 1;
-            const pA = (a / t * 100).toFixed(1);
-            const pB = (b / t * 100).toFixed(1);
+            const ties = Math.max(0, sumTotal - a - b);
             html += `
                 <div class="summary-dim-block">
                     <div class="summary-dim-label">${dimNames[key]}</div>
-                    <div class="dim-item" style="margin-bottom:4px;">
-                        <div class="bar-wrap">
-                            <div class="bar-fill" style="width:${pA}%; background:var(--win-a);"></div>
-                            <div class="bar-fill" style="width:${pB}%; background:var(--win-b);"></div>
-                        </div>
-                        <span class="percent-label">A:${pA}% / B:${pB}%</span>
-                    </div>
+                    ${triBar(a, b, sumTotal, true)}
                     <div style="font-size:0.75rem; color:#999; text-align:right;">
-                        A ${a} 票 &nbsp; B ${b} 票 &nbsp; 平 ${w_total(key) - a - b >= 0 ? w_total(key) - a - b : 0} 票
+                        A ${a} 票 &nbsp; 平 ${ties} 票 &nbsp; B ${b} 票
                     </div>
                 </div>`;
         });
@@ -345,18 +347,9 @@
             for (let key in dimNames) {
                 const aW = w[key].v_a_wins;
                 const bW = w[key].v_b_wins;
-                const t = aW + bW || 1;
-                const pA = (aW / t * 100).toFixed(0);
-                const pB = (bW / t * 100).toFixed(0);
                 dimHtml += `
-                    <div class="dim-item">
-                        <span style="width:40px; color:#666;">${dimNames[key]}</span>
-                        <div class="bar-wrap">
-                            <div class="bar-fill" style="width:${pA}%; background:var(--win-a)"></div>
-                            <div class="bar-fill" style="width:${pB}%; background:var(--win-b)"></div>
-                        </div>
-                        <span class="percent-label">A:${pA}% / B:${pB}%</span>
-                    </div>`;
+                    <span style="width:40px; color:#666;">${dimNames[key]}</span>
+                    ${triBar(aW, bW, w.total, true)}`;
             }
             html += `
                 <div class="worker-stat-card ${cardClass}" id="wcard-${CSS.escape(w.worker)}">
