@@ -5,66 +5,146 @@
     <title>MLLM 多维度盲测终端</title>
     <style>
         :root { --primary: #2196F3; --bg: #f5f7f9; }
-        body { font-family: system-ui; margin: 0; background: var(--bg); color: #333; }
+        body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: #333; }
+        
+        /* 导航栏 */
         .navbar { display: flex; justify-content: space-between; padding: 0 30px; background: #fff; height: 60px; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        
+        /* 初始化遮罩 */
         #setup-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 1000; display: flex; align-items: center; justify-content: center; }
         .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 400px; }
         
-        #test-ui { max-width: 1350px; margin: 20px auto; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        /* 主 UI 布局 */
+        #test-ui { max-width: 1300px; margin: 20px auto; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .prompt-box { background: #fff; padding: 15px 25px; border-left: 5px solid var(--primary); border-radius: 4px; width: 100%; box-sizing: border-box; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         
         .compare-container { display: flex; gap: 20px; justify-content: center; width: 100%; }
-        .img-card { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 620px; text-align: center; }
-        .img-card img { width: 100%; border-radius: 4px; cursor: zoom-in; }
+        .img-card { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); flex: 1; text-align: center; }
+        .img-card img { width: 100%; border-radius: 4px; cursor: zoom-in; object-fit: contain; max-height: 600px; }
 
-        /* 多维度评分表 */
-        .eval-card { background: white; margin-top: 25px; padding: 20px; border-radius: 12px; width: 100%; max-width: 800px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
-        .eval-table { width: 100%; border-collapse: collapse; }
-        .eval-table th { padding: 10px; color: #666; font-size: 0.9rem; border-bottom: 1px solid #eee; }
-        .eval-table td { padding: 15px 10px; text-align: center; border-bottom: 1px solid #f9f9f9; }
-        .dim-name { text-align: left; font-weight: bold; width: 120px; }
+        /* 核心修改：多维度评分表 */
+        .eval-card { background: white; margin-top: 25px; padding: 0; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }
+        .eval-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .eval-table th { padding: 15px; color: #666; font-size: 0.85rem; border-bottom: 1px solid #eee; background: #fafafa; }
         
-        .submit-btn { width: 100%; margin-top: 20px; padding: 15px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        .submit-btn:hover { background: #1976D2; transform: translateY(-2px); }
+        /* 单元格点击优化 */
+        .eval-table td { 
+            padding: 0; 
+            text-align: center; 
+            border-bottom: 1px solid #f0f0f0; 
+            height: 65px; 
+            position: relative; 
+        }
+        .dim-name { 
+            text-align: center; 
+            font-weight: bold; 
+            background: #fff; 
+            width: 140px;
+            border-right: 1px solid #f0f0f0;
+        }
+
+        /* 隐藏原生 Radio，但让它铺满整个单元格 */
+        .radio-cell input[type="radio"] { 
+            position: absolute; 
+            inset: 0; 
+            width: 100%; 
+            height: 100%; 
+            opacity: 0; 
+            cursor: pointer; 
+            z-index: 10; 
+            margin: 0;
+        }
+
+        /* 使用 Label 作为视觉表现层 */
+        .radio-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            transition: all 0.2s ease;
+            pointer-events: none; /* 让点击穿透到下方的 input */
+        }
+
+        /* 模拟圆点样式 */
+        .radio-dot {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #ccc;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+            position: relative;
+            background: white;
+            transition: all 0.2s;
+        }
+
+        /* 交互反馈逻辑 */
+        /* Hover 状态：通过 input 驱动 label */
+        .radio-cell input:hover + .radio-label { background: #f0f7ff; }
+        .radio-cell input:hover + .radio-label .radio-dot { border-color: var(--primary); }
+
+        /* 选中状态 */
+        .radio-cell input:checked + .radio-label { background: #E3F2FD; }
+        .radio-cell input:checked + .radio-label .radio-dot { 
+            border-color: var(--primary); 
+            background: var(--primary);
+            box-shadow: inset 0 0 0 3px white; /* 形成空心圆环感 */
+        }
+        .radio-cell input:checked + .radio-label .label-text { 
+            color: #1565C0; 
+            font-weight: 600; 
+        }
+
+        /* 按钮样式 */
+        .submit-btn { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .submit-btn:hover { background: #1976D2; }
         .hidden { display: none !important; }
+        
+        select, input[type="text"] { border: 1px solid #ddd; border-radius: 6px; }
     </style>
 </head>
 <body>
 
 <div class="navbar">
-    <div style="font-weight: bold;">Vision-Language Model A/B Testing</div>
-    <a href="/dashboard" target="_blank" style="color: #ff9800; text-decoration: none;">📊 查看结果看板</a>
+    <div style="font-weight: bold; font-size: 1.2rem; color: var(--primary);">Vision-Language Model A/B Test</div>
+    <a href="/dashboard" target="_blank" style="color: #ff9800; text-decoration: none; font-size: 0.9rem;">📊 查看结果看板</a>
 </div>
 
 <div id="setup-overlay">
     <div class="card">
-        <h2>评测初始化</h2>
-        <input type="text" id="worker-name" placeholder="评测员姓名" style="width:100%; padding:12px; margin-bottom:15px; box-sizing:border-box;">
+        <h2 style="margin-top:0">评测初始化</h2>
+        <p style="color:#666; font-size: 0.85rem;">请填写您的姓名并选择对比版本</p>
+        <input type="text" id="worker-name" placeholder="您的姓名 (如: 张三)" style="width:100%; padding:12px; margin-bottom:15px; box-sizing:border-box;">
         <select id="v1-select" style="width:100%; padding:12px; margin-bottom:10px;" onchange="updateScenes()"></select>
         <select id="v2-select" style="width:100%; padding:12px; margin-bottom:10px;" onchange="updateScenes()"></select>
         <select id="scene-select" style="width:100%; padding:12px; margin-bottom:20px;"></select>
-        <button class="submit-btn" onclick="startTest()">开始盲测</button>
+        <button class="submit-btn" style="border-radius: 8px;" onclick="startTest()">进入评测</button>
     </div>
 </div>
 
 <div id="test-ui" class="hidden">
     <div class="prompt-box">
-        <div style="font-size:0.8rem; color:#888; margin-bottom:4px;">PROMPT / 指令:</div>
-        <div id="prompt-text" style="font-size:1.15rem; font-weight:bold;">正在加载内容...</div>
+        <div style="font-size:0.75rem; color:#888; text-transform: uppercase; letter-spacing: 1px;">Prompt / 测试指令</div>
+        <div id="prompt-text" style="font-size:1.1rem; margin-top:5px; line-height:1.4">正在加载内容...</div>
     </div>
 
     <div class="compare-container">
-        <div class="img-card"><img id="img-left" src=""><div style="margin-top:8px; color:#999; font-weight:bold;">OPTION A</div></div>
-        <div class="img-card"><img id="img-right" src=""><div style="margin-top:8px; color:#999; font-weight:bold;">OPTION B</div></div>
+        <div class="img-card"><img id="img-left" src=""><div style="margin-top:10px; color:#666; font-weight:bold; letter-spacing: 1px;">OPTION A</div></div>
+        <div class="img-card"><img id="img-right" src=""><div style="margin-top:10px; color:#666; font-weight:bold; letter-spacing: 1px;">OPTION B</div></div>
     </div>
 
     <div class="eval-card">
         <table class="eval-table">
             <thead>
-                <tr><th>评价维度</th><th>A 更好</th><th>平局 / 难分伯仲</th><th>B 更好</th></tr>
+                <tr>
+                    <th style="width: 140px;">评价维度</th>
+                    <th>A 更好</th>
+                    <th>平局 / 难分伯仲</th>
+                    <th>B 更好</th>
+                </tr>
             </thead>
-            <tbody id="eval-body">
-                </tbody>
+            <tbody id="eval-body"></tbody>
         </table>
         <button class="submit-btn" onclick="submitMultiDim()">提交并加载下一组</button>
     </div>
@@ -72,17 +152,26 @@
 
 <script>
     let state = { worker: "", v1: "", v2: "", scene: "", currentTask: null };
-    const dims = { overall: '整体体验', aesthetic: '美学质量', logic: '逻辑合理', consistency: '指令一致' };
+    const dims = { 
+        overall: '整体体验', 
+        aesthetic: '美学质量', 
+        logic: '逻辑合理', 
+        consistency: '指令一致性' 
+    };
     let currentVotes = {};
 
     async function init() {
-        const res = await fetch('/api/versions');
-        const list = await res.json();
-        ['v1-select', 'v2-select'].forEach(id => {
-            const s = document.getElementById(id);
-            s.innerHTML = '<option value="">选择版本...</option>' + list.map(v => `<option value="${v}">${v}</option>`).join('');
-        });
-        renderEvalRows();
+        try {
+            const res = await fetch('/api/versions');
+            const list = await res.json();
+            ['v1-select', 'v2-select'].forEach(id => {
+                const s = document.getElementById(id);
+                s.innerHTML = '<option value="">选择对比版本...</option>' + list.map(v => `<option value="${v}">${v}</option>`).join('');
+            });
+            renderEvalRows();
+        } catch (e) {
+            console.error("初始化失败:", e);
+        }
     }
 
     function renderEvalRows() {
@@ -90,11 +179,30 @@
         body.innerHTML = Object.entries(dims).map(([key, label]) => `
             <tr>
                 <td class="dim-name">${label}</td>
-                <td><input type="radio" name="${key}" value="left" onclick="currentVotes['${key}']='left'"></td>
-                <td><input type="radio" name="${key}" value="tie" onclick="currentVotes['${key}']='tie'"></td>
-                <td><input type="radio" name="${key}" value="right" onclick="currentVotes['${key}']='right'"></td>
+                <td class="radio-cell">
+                    <input type="radio" name="${key}" value="left" id="opt-${key}-left" onchange="handleVote('${key}', 'left')">
+                    <label for="opt-${key}-left" class="radio-label">
+                        <span class="radio-dot"></span><span class="label-text">A 更好</span>
+                    </label>
+                </td>
+                <td class="radio-cell">
+                    <input type="radio" name="${key}" value="tie" id="opt-${key}-tie" onchange="handleVote('${key}', 'tie')">
+                    <label for="opt-${key}-tie" class="radio-label">
+                        <span class="radio-dot"></span><span class="label-text">平局</span>
+                    </label>
+                </td>
+                <td class="radio-cell">
+                    <input type="radio" name="${key}" value="right" id="opt-${key}-right" onchange="handleVote('${key}', 'right')">
+                    <label for="opt-${key}-right" class="radio-label">
+                        <span class="radio-dot"></span><span class="label-text">B 更好</span>
+                    </label>
+                </td>
             </tr>
         `).join('');
+    }
+
+    function handleVote(dim, val) {
+        currentVotes[dim] = val;
     }
 
     async function updateScenes() {
@@ -103,7 +211,9 @@
         if(v1 && v2 && v1 !== v2) {
             const res = await fetch(`/api/scenes?v1=${v1}&v2=${v2}`);
             const list = await res.json();
-            document.getElementById('scene-select').innerHTML = list.map(s => `<option value="${s}">${s}</option>`).join('');
+            document.getElementById('scene-select').innerHTML = 
+                '<option value="">选择评测场景...</option>' + 
+                list.map(s => `<option value="${s}">${s}</option>`).join('');
         }
     }
 
@@ -112,7 +222,11 @@
         state.v1 = document.getElementById('v1-select').value;
         state.v2 = document.getElementById('v2-select').value;
         state.scene = document.getElementById('scene-select').value;
-        if(!state.worker || !state.scene) return alert("请填写完整信息");
+        
+        if(!state.worker || !state.v1 || !state.v2 || !state.scene) {
+            return alert("请完成所有选项填写");
+        }
+        
         document.getElementById('setup-overlay').classList.add('hidden');
         document.getElementById('test-ui').classList.remove('hidden');
         loadNext();
@@ -121,27 +235,44 @@
     async function loadNext() {
         const res = await fetch(`/api/get_task?worker=${state.worker}&v1=${state.v1}&v2=${state.v2}&scene=${state.scene}`);
         const data = await res.json();
-        if(data.status === 'finished') { alert("当前场景评测已全部完成！"); location.reload(); return; }
+        
+        if(data.status === 'finished') { 
+            alert("恭喜！该场景下的评测已全部完成。"); 
+            location.reload(); 
+            return; 
+        }
         
         state.currentTask = data;
         document.getElementById('img-left').src = data.left_img;
         document.getElementById('img-right').src = data.right_img;
         document.getElementById('prompt-text').innerText = data.prompt;
         
-        // 重置单选框
+        // 重置状态
         currentVotes = { overall: null, aesthetic: null, logic: null, consistency: null };
         document.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
-        window.scrollTo(0, 0);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     async function submitMultiDim() {
-        if(Object.values(currentVotes).some(v => v === null)) return alert("请完成所有维度的评价");
-        await fetch('/api/submit', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ ...state.currentTask, worker: state.worker, ...currentVotes })
-        });
-        loadNext();
+        const unfinished = Object.keys(dims).filter(key => !currentVotes[key]);
+        if(unfinished.length > 0) {
+            return alert("请完成所有维度的评分再提交");
+        }
+
+        try {
+            await fetch('/api/submit', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ 
+                    ...state.currentTask, 
+                    worker: state.worker, 
+                    ...currentVotes 
+                })
+            });
+            loadNext();
+        } catch (e) {
+            alert("提交失败，请检查网络连接");
+        }
     }
 
     init();

@@ -25,11 +25,9 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 检查旧表是否有 UNIQUE(v_a, v_b, scene, filename) 约束
     cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='pair_tasks'")
     row = cursor.fetchone()
     if row and "UNIQUE(v_a, v_b, scene, filename)" in row[0]:
-        # 需要迁移：去掉旧 UNIQUE，改为包含 worker 的 UNIQUE
         cursor.execute("CREATE TABLE IF NOT EXISTS pair_tasks_new ("
                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                        "v_a TEXT, v_b TEXT, scene TEXT, filename TEXT,"
@@ -43,7 +41,6 @@ def init_db():
         cursor.execute("ALTER TABLE pair_tasks_new RENAME TO pair_tasks")
         conn.commit()
     
-    # 任务表（首次创建时用新 schema）
     cursor.execute('''CREATE TABLE IF NOT EXISTS pair_tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         v_a TEXT, v_b TEXT, scene TEXT, filename TEXT,
@@ -51,7 +48,6 @@ def init_db():
         worker TEXT,
         UNIQUE(v_a, v_b, scene, filename, worker)
     )''')
-    # 结果表：支持多维度存储
     cursor.execute('''CREATE TABLE IF NOT EXISTS results_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         v_a TEXT, v_b TEXT, scene TEXT, filename TEXT,
@@ -64,19 +60,15 @@ def init_db():
 @app.on_event("startup")
 def startup():
     init_db()
-    # 启动时重置因异常退出卡在 working 状态的任务
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE pair_tasks SET status='pending', worker=NULL WHERE status='working'")
     conn.commit()
     conn.close()
 
-# --- 辅助功能：读取 Prompt ---
 def get_prompt_text(scene: str, filename: str):
-    """根据场景名和图片basename从prompt文件夹中匹配指令"""
     prompt_file = os.path.join(PROMPT_DIR, f"{scene}.txt")
     if not os.path.exists(prompt_file):
         return "Prompt file not found."
-    
     img_id = os.path.splitext(filename)[0]
     try:
         with open(prompt_file, 'r', encoding='utf-8') as f:
@@ -88,7 +80,6 @@ def get_prompt_text(scene: str, filename: str):
         print(f"Error reading prompt: {e}")
     return "Prompt content not found."
 
-# --- 数据模型 ---
 class VoteSubmit(BaseModel):
     task_id: int
     v_left: str
@@ -101,7 +92,7 @@ class VoteSubmit(BaseModel):
     logic: str
     consistency: str
 
-# --- API 接口 ---
+# --- API ---
 
 @app.get("/api/versions")
 def get_versions():
@@ -141,12 +132,13 @@ def get_task(worker: str, v1: str, v2: str, scene: str):
                     (v_a, v_b, scene, f, worker))
             conn.commit()
 
-        # 3. 抢占该用户的新任务
+        # 3. 随机抢占该用户的一个 pending 任务
         cursor.execute("BEGIN EXCLUSIVE TRANSACTION")
         cursor.execute(
-            "SELECT id, filename FROM pair_tasks WHERE v_a=? AND v_b=? AND scene=? AND status='pending' AND worker=? LIMIT 1",
+            "SELECT id, filename FROM pair_tasks WHERE v_a=? AND v_b=? AND scene=? AND status='pending' AND worker=?",
             (v_a, v_b, scene, worker))
-        task = cursor.fetchone()
+        pending = cursor.fetchall()
+        task = random.choice(pending) if pending else None
         if task:
             cursor.execute("UPDATE pair_tasks SET status='working' WHERE id=?", (task[0],))
             conn.commit()
@@ -177,7 +169,6 @@ def submit_vote(vote: VoteSubmit):
     try:
         cursor = conn.cursor()
         v_a, v_b = sorted([vote.v_left, vote.v_right])
-        # 写入多维度结果
         cursor.execute("""
             INSERT INTO results_log (v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, worker) 
             VALUES (?,?,?,?,?,?,?,?,?)
@@ -243,7 +234,6 @@ def get_dashboard_v2():
 
 @app.get("/api/worker_stats")
 def get_worker_stats(v1: str, v2: str, scene: str):
-    """按评测人分组统计某个场景下所有评测人的结果"""
     v_a, v_b = sorted([v1, v2])
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -308,7 +298,6 @@ async def upload_data(version: str = Form(...), scene: str = Form(...), file: Up
         with zipfile.ZipFile(temp_zip, 'r') as z:
             z.extractall(target_path)
         
-        # 自动平铺目录（脱壳逻辑）
         items = [i for i in os.listdir(target_path) if not i.startswith('.') and i != "__MACOSX"]
         if len(items) == 1 and os.path.isdir(os.path.join(target_path, items[0])):
             sub = os.path.join(target_path, items[0])
