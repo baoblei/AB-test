@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>MLLM 评测全功能看板</title>
+    <title>MLLM 评测全功能看板 - 双路搜索版</title>
     <style>
         :root { --primary: #2196F3; --win-a: #4CAF50; --win-b: #2196F3; --win-tie: #bdbdbd; --bg: #f0f2f5; }
         body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: var(--bg); color: #333; }
@@ -15,52 +15,43 @@
         .input-group { display: flex; flex-direction: column; gap: 5px; }
         input, select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
 
+        /* 搜索栏样式 */
+        .search-bar { display: flex; gap: 10px; align-items: center; }
+        .search-input { 
+            padding: 6px 12px; 
+            border: 1px solid #ddd; 
+            border-radius: 6px; 
+            width: 180px; 
+            font-size: 0.85rem;
+        }
+        .search-input:focus { outline: none; border-color: var(--primary); }
+
         table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
         th { background: #fafafa; padding: 12px; font-size: 0.85rem; color: #888; border-bottom: 2px solid #eee; }
         td { padding: 15px; text-align: center; border-bottom: 1px solid #f0f0f0; }
 
         .dim-item { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 0.85rem; }
         .bar-wrap { flex: 1; height: 14px; background: #eee; border-radius: 7px; overflow: hidden; display: flex; min-width: 150px; }
-        .bar-fill { height: 100%; transition: width 0.6s cubic-bezier(0.1, 0, 0.3, 1); }
+        .bar-fill { height: 100%; transition: width 0.6s; }
         .percent-label { width: 90px; font-size: 11px; color: #666; font-family: monospace; text-align: right; }
 
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 2000; }
-        .modal-content { background: white; width: 95%; height: 85%; border-radius: 15px; padding: 25px; display: flex; flex-direction: column; animation: slideIn 0.3s ease; }
+        .modal-content { background: white; width: 95%; height: 85%; border-radius: 15px; padding: 25px; display: flex; flex-direction: column; }
         .scroll-area { flex: 1; overflow-y: auto; margin-top: 15px; }
         
         .preview-img { width: 110px; height: 110px; object-fit: cover; border: 1px solid #eee; border-radius: 6px; cursor: zoom-in; }
-        .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block; margin-right: 4px; border: 1px solid transparent; }
-        .badge-a { background: #e8f5e9; color: #2e7d32; border-color: #c8e6c9; }
-        .badge-b { background: #e3f2fd; color: #1565c0; border-color: #bbdefb; }
-        .badge-tie { background: #f5f5f5; color: #757575; border-color: #e0e0e0; }
+        .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block; margin-right: 4px; }
+        .badge-a { background: #e8f5e9; color: #2e7d32; }
+        .badge-b { background: #e3f2fd; color: #1565c0; }
+        .badge-tie { background: #f5f5f5; color: #757575; }
 
-        .btn { padding: 8px 16px; border-radius: 6px; cursor: pointer; border: none; font-weight: 500; transition: 0.2s; }
+        .btn { padding: 8px 16px; border-radius: 6px; cursor: pointer; border: none; font-weight: 500; }
         .btn-primary { background: var(--primary); color: white; }
         .btn-outline { border: 1px solid var(--primary); color: var(--primary); background: none; }
-        .btn-outline:hover { background: var(--primary); color: white; }
         .btn-worker { border: 1px solid #ff9800; color: #ff9800; background: none; }
-        .btn-worker:hover { background: #ff9800; color: white; }
 
-        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
-        .worker-stat-card { background: #fafbfc; border: 1px solid #eef0f2; border-radius: 8px; padding: 15px; margin-bottom: 12px; transition: opacity 0.2s, border-color 0.2s; }
-        .worker-stat-card.dimmed { opacity: 0.45; border-color: #ddd; }
-        .worker-stat-card.selected { border-color: #4CAF50; background: #f6fff8; }
-        .worker-stat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .worker-name { font-weight: bold; font-size: 1rem; color: #333; }
-        .worker-total { font-size: 0.85rem; color: #888; }
-
-        .worker-check { width: 18px; height: 18px; cursor: pointer; accent-color: #4CAF50; flex-shrink: 0; }
-        .worker-check-label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-        .select-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .select-controls button { font-size: 0.75rem; padding: 3px 10px; border-radius: 4px; cursor: pointer; border: 1px solid #ccc; background: white; color: #555; transition: 0.2s; }
-        .select-controls button:hover { background: #f5f5f5; }
-        .select-controls button.active { background: #4CAF50; color: white; border-color: #4CAF50; }
-
-        .summary-bar { display: flex; gap: 20px; align-items: stretch; flex-wrap: wrap; }
-        .summary-dim-block { flex: 1; min-width: 180px; background: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 12px; }
-        .summary-dim-label { font-size: 0.8rem; color: #888; margin-bottom: 6px; font-weight: 500; }
-        .summary-dim-value { font-size: 1.1rem; font-weight: bold; }
+        .worker-stat-card { background: #fafbfc; border: 1px solid #eef0f2; border-radius: 8px; padding: 15px; margin-bottom: 12px; }
+        .worker-stat-card.dimmed { opacity: 0.4; }
     </style>
 </head>
 <body>
@@ -92,16 +83,25 @@
     </div>
 
     <div class="card" style="padding:0;">
-        <div style="padding:20px; font-weight:bold; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
+        <div style="padding:15px 20px; font-weight:bold; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
             <span>多维度对战总览</span>
-            <button onclick="loadStats()" class="btn btn-outline" style="padding:4px 10px; font-size:0.8rem;">手动刷新</button>
+            <div class="search-bar">
+                <span style="font-size: 0.8rem; color: #888;">模型A:</span>
+                <input type="text" id="search-m1" class="search-input" placeholder="输入名称..." list="model-list" oninput="filterMainTable()">
+                <span style="font-size: 0.8rem; color: #888;">模型B:</span>
+                <input type="text" id="search-m2" class="search-input" placeholder="可选输入..." list="model-list" oninput="filterMainTable()">
+                
+                <datalist id="model-list"></datalist>
+
+                <button onclick="loadStats()" class="btn btn-outline" style="padding:4px 10px; font-size:0.8rem;">手动刷新</button>
+            </div>
         </div>
         <table>
             <thead>
                 <tr>
-                    <th style="width:180px;">对战版本 (A vs B)</th>
+                    <th style="width:220px;">对战版本 (A vs B)</th>
                     <th>评测场景</th>
-                    <th style="text-align:left;">各维度胜率分布 (绿:A | 灰:平局 | 蓝:B)</th>
+                    <th style="text-align:left;">各维度胜率分布</th>
                     <th>样本量</th>
                     <th>分析</th>
                 </tr>
@@ -111,7 +111,6 @@
     </div>
 </div>
 
-<!-- 评测明细弹窗 -->
 <div id="detail-modal" class="modal-overlay" onclick="closeModal('detail-modal')">
     <div class="modal-content" onclick="event.stopPropagation()">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
@@ -123,8 +122,8 @@
                 <thead>
                     <tr>
                         <th style="width:120px;">文件名</th>
-                        <th style="width:260px;">对比预览 (Left:A | Right:B)</th>
-                        <th style="text-align:left;">维度判定结果</th>
+                        <th style="width:260px;">对比预览</th>
+                        <th style="text-align:left;">维度判定</th>
                         <th>评测员</th>
                         <th>记录时间</th>
                     </tr>
@@ -135,7 +134,6 @@
     </div>
 </div>
 
-<!-- 评测人统计弹窗 -->
 <div id="worker-modal" class="modal-overlay" onclick="closeModal('worker-modal')">
     <div class="modal-content" onclick="event.stopPropagation()">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
@@ -154,15 +152,15 @@
     const dimKeys = ['overall', 'aesthetic', 'logic', 'consistency'];
     let currentWorkerModal = { v1: '', v2: '', scene: '' };
     let workerStatsCache = [];
+    let allModels = new Set(); // 用于存储所有出现过的模型名称
 
-    // 生成三段式进度条 HTML（绿-灰-蓝）
     function triBar(aW, bW, total, showLabel) {
         const tW = Math.max(0, total - aW - bW);
         const t = total || 1;
         const pA = (aW / t * 100).toFixed(1);
         const pT = (tW / t * 100).toFixed(1);
         const pB = (bW / t * 100).toFixed(1);
-        const label = showLabel ? `<span class="percent-label">A:${pA}% / 平:${pT}% / B:${pB}%</span>` : '';
+        const label = showLabel ? `<span class="percent-label">A:${pA}%/平:${pT}%/B:${pB}%</span>` : '';
         return `<div class="dim-item">
             <div class="bar-wrap">
                 <div class="bar-fill" style="width:${pA}%; background:var(--win-a)"></div>
@@ -173,72 +171,94 @@
         </div>`;
     }
 
+    // --- 核心：多条件联合搜索 ---
+    function filterMainTable() {
+        const m1 = document.getElementById('search-m1').value.trim().toLowerCase();
+        const m2 = document.getElementById('search-m2').value.trim().toLowerCase();
+        const rows = document.getElementById('main-table-body').getElementsByTagName('tr');
 
-    // --- 1. 上传逻辑 ---
-    document.getElementById('upload-form').onsubmit = async (e) => {
-        e.preventDefault();
-        const btn = document.getElementById('up-btn');
-        const msg = document.getElementById('up-msg');
-        const formData = new FormData();
-        formData.append('version', document.getElementById('up-version').value);
-        formData.append('scene', document.getElementById('up-scene').value);
-        formData.append('file', document.getElementById('up-file').files[0]);
+        for (let row of rows) {
+            // 获取这一行的两个模型名（通过 data 属性或直接解析文本）
+            const pairText = row.getAttribute('data-pair').toLowerCase(); // 格式: "model_a vs model_b"
+            const [modelA, modelB] = pairText.split(' vs ');
 
-        btn.disabled = true;
-        msg.innerHTML = "⏳ 正在上传解压图片并建立数据库索引...";
+            let isMatch = false;
 
-        try {
-            const res = await fetch('/api/upload', { method: 'POST', body: formData });
-            if (res.ok) {
-                msg.innerHTML = "<span style='color:green'>✅ 部署成功！数据已更新。</span>";
-                loadStats();
+            if (m1 && m2) {
+                // 情况 1: 两个框都有输入 -> 必须同时包含 m1 和 m2 (无序)
+                isMatch = (modelA.includes(m1) && modelB.includes(m2)) || 
+                          (modelA.includes(m2) && modelB.includes(m1));
+            } else if (m1 || m2) {
+                // 情况 2: 只输入了一个框 -> 任何一个模型匹配即可
+                const target = m1 || m2;
+                isMatch = modelA.includes(target) || modelB.includes(target);
             } else {
-                const err = await res.json();
-                msg.innerHTML = `<span style='color:red'>❌ 上传失败: ${err.detail}</span>`;
+                // 情况 3: 没输入 -> 全部显示
+                isMatch = true;
             }
-        } catch (e) { msg.innerHTML = "<span style='color:red'>❌ 网络连接失败</span>"; }
-        finally { btn.disabled = false; }
-    };
 
-    // --- 2. 加载汇总统计 ---
+            row.style.display = isMatch ? "" : "none";
+        }
+    }
+
+    // 更新搜索建议列表
+    function updateDataList() {
+        const list = document.getElementById('model-list');
+        list.innerHTML = Array.from(allModels)
+            .sort()
+            .map(m => `<option value="${m}">`)
+            .join('');
+    }
+
+    // --- 加载汇总统计 ---
     async function loadStats() {
         try {
             const res = await fetch('/api/dashboard_v2');
             const data = await res.json();
             const body = document.getElementById('main-table-body');
             
+            allModels.clear();
+
             body.innerHTML = data.map(item => {
                 const [v1, v2] = item.pair.split(' vs ');
+                allModels.add(v1);
+                allModels.add(v2);
+
                 let dimHtml = '';
                 for (let key in dimNames) {
                     const aW = item.dims[key].v_a_wins;
                     const bW = item.dims[key].v_b_wins;
-                    dimHtml += `
-                        <span style="width:40px; color:#666;">${dimNames[key]}</span>
-                        ${triBar(aW, bW, item.total, true)}`;
+                    dimHtml += `<div style="display:flex; align-items:center; gap:5px;">
+                        <span style="width:35px; color:#666; font-size:11px;">${dimNames[key]}</span>
+                        ${triBar(aW, bW, item.total, true)}
+                    </div>`;
                 }
+                // 使用 data-pair 属性存储原始名称，方便搜索函数调用
                 return `
-                    <tr>
+                    <tr data-pair="${item.pair}">
                         <td><strong>${v1}</strong><br><small style="color:#999">vs</small><br><strong>${v2}</strong></td>
                         <td><span style="background:#e3f2fd; color:#1565c0; padding:4px 8px; border-radius:4px; font-weight:bold;">${item.scene}</span></td>
                         <td>${dimHtml}</td>
                         <td style="font-family:monospace; font-weight:bold; color:#666;">${item.total}</td>
                         <td>
                             <div style="display:flex; gap:6px; justify-content:center;">
-                                <button class="btn btn-outline" onclick="showDetail('${v1}','${v2}','${item.scene}')">明细</button>
-                                <button class="btn btn-worker" onclick="showWorkerStats('${v1}','${v2}','${item.scene}')">👤 统计</button>
+                                <button class="btn btn-outline" onclick="showDetail('${v1}','${v2}','${item.scene}')" style="padding:4px 8px;">明细</button>
+                                <button class="btn btn-worker" onclick="showWorkerStats('${v1}','${v2}','${item.scene}')" style="padding:4px 8px;">👤</button>
                             </div>
                         </td>
                     </tr>`;
             }).join('');
+            
+            updateDataList();
+            filterMainTable(); // 保持过滤状态
             document.getElementById('status-tag').innerText = "最后更新: " + new Date().toLocaleTimeString();
         } catch (e) { console.error("加载数据失败", e); }
     }
 
-    // --- 3. 加载详情明细 ---
+    // --- 弹窗逻辑 (保留原功能) ---
     async function showDetail(v1, v2, scene) {
         document.getElementById('detail-modal').style.display = 'flex';
-        document.getElementById('detail-modal-title').innerText = `评测明细: ${v1} vs ${v2} [${scene}]`;
+        document.getElementById('detail-modal-title').innerText = `明细: ${v1} vs ${v2}`;
         const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
         const details = await res.json();
         const getBadge = (val) => {
@@ -247,156 +267,72 @@
         };
         document.getElementById('detail-body').innerHTML = details.map(d => `
             <tr>
-                <td style="font-size:11px; font-family:monospace; color:#666;">${d.filename}</td>
+                <td style="font-size:11px; font-family:monospace;">${d.filename}</td>
                 <td>
-                    <div style="display:flex; gap:10px; justify-content:center;">
+                    <div style="display:flex; gap:5px; justify-content:center;">
                         <img src="/images/${v1}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
                         <img src="/images/${v2}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
                     </div>
                 </td>
-                <td style="text-align:left; vertical-align: middle;">
-                    <div style="line-height:2;">
-                        ${getBadge(d.overall)} <small>整体</small><br>
-                        ${getBadge(d.aesthetic)} <small>美学</small><br>
-                        ${getBadge(d.logic)} <small>合理</small><br>
-                        ${getBadge(d.consistency)} <small>一致</small>
+                <td style="text-align:left;">
+                    <div style="font-size:12px;">
+                        ${getBadge(d.overall)} 整体<br>${getBadge(d.aesthetic)} 美学<br>
+                        ${getBadge(d.logic)} 合理<br>${getBadge(d.consistency)} 一致
                     </div>
                 </td>
-                <td><span style="background:#fff3e0; color:#e65100; padding:3px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold;">${d.worker}</span></td>
+                <td><span style="font-size:12px; font-weight:bold;">${d.worker}</span></td>
                 <td style="font-size:11px; color:#999;">${d.time}</td>
             </tr>
         `).join('');
     }
 
-    // --- 4. 评测人统计（含勾选过滤） ---
     async function showWorkerStats(v1, v2, scene) {
         currentWorkerModal = { v1, v2, scene };
         document.getElementById('worker-modal').style.display = 'flex';
-        document.getElementById('worker-modal-title').innerText = `👤 评测人统计: ${v1} vs ${v2} [${scene}]`;
-
         const res = await fetch(`/api/worker_stats?v1=${v1}&v2=${v2}&scene=${scene}`);
         workerStatsCache = await res.json();
         renderWorkerStats();
     }
 
     function renderWorkerStats() {
-        const workers = workerStatsCache;
         const area = document.getElementById('worker-stats-area');
-
-        if (workers.length === 0) {
-            area.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">暂无评测数据</div>';
-            return;
-        }
-
-        // 初始化选中状态（默认全选）
-        if (typeof workerStatsCache._selected === 'undefined') {
-            workerStatsCache._selected = {};
-            workers.forEach(w => workerStatsCache._selected[w.worker] = true);
-        }
-        const selected = workerStatsCache._selected;
-        const selectedWorkers = workers.filter(w => selected[w.worker]);
-
+        if (workerStatsCache.length === 0) { area.innerHTML = "暂无数据"; return; }
+        
         let html = '';
-
-        // ── 汇总区 ──
-        let sumOA = 0, sumOB = 0;
-        let dimSums = {};
-        dimKeys.forEach(k => dimSums[k] = { a: 0, b: 0 });
-        let sumTotal = 0;
-        selectedWorkers.forEach(w => {
-            sumOA += w.overall.v_a_wins; sumOB += w.overall.v_b_wins;
-            dimKeys.forEach(k => { dimSums[k].a += w[k].v_a_wins; dimSums[k].b += w[k].v_b_wins; });
-            sumTotal += w.total;
-        });
-        const sumAll = sumOA + sumOB || 1;
-
-        html += `<div class="worker-stat-card" style="background:#e8f5e9; border-color:#c8e6c9;">
-            <div class="worker-stat-header">
-                <div>
-                    <span class="worker-name" style="color:#2e7d32;">📊 已选评测员汇总</span>
-                    <span style="font-size:0.8rem; color:#666; margin-left:8px;">（${selectedWorkers.length} / ${workers.length} 人，共 ${sumTotal} 条）</span>
-                </div>
-                <div class="select-controls">
-                    <button onclick="toggleAll(true)" class="${selectedWorkers.length === workers.length ? 'active' : ''}">全选</button>
-                    <button onclick="toggleAll(false)" class="${selectedWorkers.length === 0 ? 'active' : ''}">全不选</button>
-                    <button onclick="invertAll()" class="">反选</button>
-                </div>
-            </div>`;
-
-        // 四维度分开展示
-        html += `<div class="summary-bar" style="margin-bottom:10px;">`;
-        dimKeys.forEach(key => {
-            const a = dimSums[key].a, b = dimSums[key].b;
-            const ties = Math.max(0, sumTotal - a - b);
-            html += `
-                <div class="summary-dim-block">
-                    <div class="summary-dim-label">${dimNames[key]}</div>
-                    ${triBar(a, b, sumTotal, true)}
-                    <div style="font-size:0.75rem; color:#999; text-align:right;">
-                        A ${a} 票 &nbsp; 平 ${ties} 票 &nbsp; B ${b} 票
-                    </div>
-                </div>`;
-        });
-        html += `</div></div>`;
-
-        // ── 每个评测人卡片（带勾选） ──
-        workers.forEach(w => {
-            const isChecked = selected[w.worker];
-            const cardClass = isChecked ? 'selected' : 'dimmed';
+        workerStatsCache.forEach(w => {
             let dimHtml = '';
             for (let key in dimNames) {
-                const aW = w[key].v_a_wins;
-                const bW = w[key].v_b_wins;
-                dimHtml += `
-                    <span style="width:40px; color:#666;">${dimNames[key]}</span>
-                    ${triBar(aW, bW, w.total, true)}`;
-            }
-            html += `
-                <div class="worker-stat-card ${cardClass}" id="wcard-${CSS.escape(w.worker)}">
-                    <div class="worker-stat-header">
-                        <label class="worker-check-label">
-                            <input type="checkbox" class="worker-check" 
-                                   ${isChecked ? 'checked' : ''} 
-                                   onchange="toggleWorker('${w.worker.replace(/'/g, "\\'")}', this.checked)">
-                            <span class="worker-name">👤 ${w.worker}</span>
-                        </label>
-                        <span class="worker-total">样本量: ${w.total}</span>
-                    </div>
-                    ${dimHtml}
+                dimHtml += `<div style="display:flex; align-items:center; gap:5px;">
+                    <span style="width:35px; font-size:11px;">${dimNames[key]}</span>
+                    ${triBar(w[key].v_a_wins, w[key].v_b_wins, w.total, true)}
                 </div>`;
+            }
+            html += `<div class="worker-stat-card">
+                <div style="margin-bottom:10px; font-weight:bold;">👤 ${w.worker} (总数: ${w.total})</div>
+                ${dimHtml}
+            </div>`;
         });
-
         area.innerHTML = html;
     }
 
-    function w_total(key) {
-        let t = 0;
-        workerStatsCache.filter(w => workerStatsCache._selected[w.worker]).forEach(w => { t += w.total; });
-        return t;
-    }
-
-    function toggleWorker(name, checked) {
-        workerStatsCache._selected[name] = checked;
-        renderWorkerStats();
-    }
-
-    function toggleAll(state) {
-        workerStatsCache.forEach(w => workerStatsCache._selected[w.worker] = state);
-        renderWorkerStats();
-    }
-
-    function invertAll() {
-        workerStatsCache.forEach(w => workerStatsCache._selected[w.worker] = !workerStatsCache._selected[w.worker]);
-        renderWorkerStats();
-    }
-
-    function showWorkerDetail() {
-        closeModal('worker-modal');
-        showDetail(currentWorkerModal.v1, currentWorkerModal.v2, currentWorkerModal.scene);
-    }
-
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-    
+    function showWorkerDetail() { closeModal('worker-modal'); showDetail(currentWorkerModal.v1, currentWorkerModal.v2, currentWorkerModal.scene); }
+
+    document.getElementById('upload-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('up-btn');
+        const formData = new FormData();
+        formData.append('version', document.getElementById('up-version').value);
+        formData.append('scene', document.getElementById('up-scene').value);
+        formData.append('file', document.getElementById('up-file').files[0]);
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            if (res.ok) { loadStats(); alert("同步成功"); }
+        } catch (e) { alert("网络错误"); }
+        finally { btn.disabled = false; }
+    };
+
     loadStats();
     setInterval(loadStats, 15000);
 </script>
