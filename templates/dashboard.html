@@ -71,14 +71,6 @@
         .summary-dim-block { flex: 1; min-width: 180px; background: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 12px; }
         .summary-dim-label { font-size: 0.8rem; color: #888; margin-bottom: 6px; font-weight: 500; }
 
-        /* 新增：大图预览模态框 */
-        #image-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.9); 
-            display: none; align-items: center; justify-content: center; 
-            z-index: 3000; cursor: zoom-out;
-        }
-        #image-overlay img { max-width: 90%; max-height: 90%; border: 3px solid white; border-radius: 4px; }
-
         /* Prompt 文本样式 */
         .prompt-text { 
             font-size: 12px; color: #666; background: #f9f9f9; 
@@ -86,10 +78,35 @@
             border-left: 3px solid #ddd; word-break: break-all;
         }
 
-        /* 筛选栏样式 */
+        /* 增强：大图对比预览层 */
+        #image-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.95); 
+            display: none; flex-direction: column; align-items: center; justify-content: center; 
+            z-index: 3000; padding: 20px;
+        }
+        .compare-container {
+            display: flex; gap: 20px; width: 95%; height: 80vh; justify-content: center; align-items: center;
+        }
+        .compare-box { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+        .compare-box img { max-width: 100%; max-height: 100%; object-fit: contain; border: 2px solid #444; }
+        .compare-label { color: white; margin-top: 10px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 20px; }
+
+        /* Prompt 列样式 */
+        .prompt-cell { 
+            max-width: 300px; font-size: 12px; color: #555; text-align: left !important;
+            line-height: 1.4; position: relative;
+        }
+        .prompt-content {
+            max-height: 100px; overflow-y: auto; background: #f8f9fa; 
+            padding: 8px; border-radius: 4px; border: 1px solid #eee;
+            white-space: pre-wrap; cursor: pointer;
+        }
+        .prompt-content:hover { background: #f0f0f0; }
+
+        /* 筛选栏微调 */
         .detail-filter-bar {
-            display: flex; gap: 15px; align-items: center;
-            background: #f8f9fa; padding: 10px 15px; border-radius: 8px; margin-bottom: 15px;
+            display: flex; justify-content: space-between; align-items: center;
+            background: #f8f9fa; padding: 12px 20px; border-radius: 8px; margin-bottom: 15px;
         }
     </style>
 </head>
@@ -180,6 +197,19 @@
         </div>
 
         <div class="scroll-area">
+            <table style="table-layout: fixed;"> <thead>
+                    <tr>
+                        <th style="width:100px;">文件名</th>
+                        <th style="width:280px;">对比预览 (A | B)</th>
+                        <th style="width:300px;">Prompt 文本</th> <th style="width:140px;">维度判定</th>
+                        <th style="width:100px;">评测员</th>
+                        <th style="width:120px;">记录时间</th>
+                    </tr>
+                </thead>
+                <tbody id="detail-body"></tbody>
+            </table>
+        </div>
+        <!-- <div class="scroll-area">
             <table>
                 <thead>
                     <tr>
@@ -191,7 +221,7 @@
                 </thead>
                 <tbody id="detail-body"></tbody>
             </table>
-        </div>
+        </div> -->
     </div>
 </div>
 
@@ -209,7 +239,17 @@
 </div>
 
 <div id="image-overlay" onclick="this.style.display='none'">
-    <img id="overlay-img" src="">
+    <div style="color:white; margin-bottom:15px;">点击任意空白处退出预览</div>
+    <div class="compare-container" onclick="event.stopPropagation()">
+        <div class="compare-box">
+            <img id="overlay-img-a" src="">
+            <div class="compare-label" id="label-a">Model A</div>
+        </div>
+        <div class="compare-box">
+            <img id="overlay-img-b" src="">
+            <div class="compare-label" id="label-b">Model B</div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -349,37 +389,6 @@
     });
 
     // --- 3. 原有业务逻辑 (明细、统计、上传) ---
-    // async function showDetail(v1, v2, scene) {
-    //     document.getElementById('detail-modal').style.display = 'flex';
-    //     document.getElementById('detail-modal-title').innerText = `评测明细: ${v1} vs ${v2} [${scene}]`;
-    //     const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
-    //     const details = await res.json();
-    //     const getBadge = (val) => {
-    //         if(val === 'tie') return '<span class="badge badge-tie">平局</span>';
-    //         return val === v1 ? '<span class="badge badge-a">A胜</span>' : '<span class="badge badge-b">B胜</span>';
-    //     };
-    //     document.getElementById('detail-body').innerHTML = details.map(d => `
-    //         <tr>
-    //             <td style="font-size:11px; font-family:monospace; color:#666;">${d.filename}</td>
-    //             <td>
-    //                 <div style="display:flex; gap:10px; justify-content:center;">
-    //                     <img src="/images/${v1}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
-    //                     <img src="/images/${v2}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
-    //                 </div>
-    //             </td>
-    //             <td style="text-align:left; vertical-align: middle;">
-    //                 <div style="line-height:2;">
-    //                     ${getBadge(d.overall)} <small>整体</small><br>
-    //                     ${getBadge(d.aesthetic)} <small>美学</small><br>
-    //                     ${getBadge(d.logic)} <small>合理</small><br>
-    //                     ${getBadge(d.consistency)} <small>一致</small>
-    //                 </div>
-    //             </td>
-    //             <td><span style="background:#fff3e0; color:#e65100; padding:3px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold;">${d.worker}</span></td>
-    //             <td style="font-size:11px; color:#999;">${d.time}</td>
-    //         </tr>`).join('');
-    // }
-
     let currentDetailData = []; // 缓存当前明细数据以便筛选
 
     // 功能 2: 大图预览
@@ -418,6 +427,79 @@
         renderDetailTable(currentDetailData, scene, v1, v2);
     }
 
+    // 功能 1: 左右双图大图对比预览
+    function openComparePreview(imgA, imgB, nameA, nameB) {
+        const overlay = document.getElementById('image-overlay');
+        document.getElementById('overlay-img-a').src = imgA;
+        document.getElementById('overlay-img-b').src = imgB;
+        document.getElementById('label-a').innerText = "Model A: " + nameA;
+        document.getElementById('label-b').innerText = "Model B: " + nameB;
+        overlay.style.display = 'flex';
+    }
+
+    // 修改后的渲染逻辑
+    async function renderDetailTable(data, scene, v1, v2) {
+        const body = document.getElementById('detail-body');
+        const getBadge = (val) => {
+            if(val === 'tie') return '<span class="badge badge-tie">Tie</span>';
+            return val === v1 ? '<span class="badge badge-a">A 胜</span>' : '<span class="badge badge-b">B 胜</span>';
+        };
+
+        document.getElementById('detail-count-info').innerText = `找到 ${data.length} 条数据`;
+
+        body.innerHTML = data.map(d => {
+            const rowId = `prompt-${d.filename.replace(/[^a-z0-9]/gi, '_')}`;
+            const imgA = `/images/${v1}/${scene}/${d.filename}`;
+            const imgB = `/images/${v2}/${scene}/${d.filename}`;
+            
+            return `
+                <tr>
+                    <td style="font-size:10px; color:#999; word-break:break-all;">${d.filename}</td>
+                    <td>
+                        <div style="display:flex; gap:8px; justify-content:center; align-items:center;">
+                            <img src="${imgA}" class="preview-img" onclick="openComparePreview('${imgA}','${imgB}','${v1}','${v2}')" title="点击对比大图">
+                            <img src="${imgB}" class="preview-img" onclick="openComparePreview('${imgA}','${imgB}','${v1}','${v2}')" title="点击对比大图">
+                        </div>
+                    </td>
+                    <td class="prompt-cell">
+                        <div id="${rowId}" class="prompt-content" onclick="copyText(this)" title="点击复制内容">⏳ 正在获取...</div>
+                    </td>
+                    <td style="text-align:left;">
+                        <div style="font-size:11px; line-height:1.6;">
+                            ${getBadge(d.overall)} <small>整体</small><br>
+                            ${getBadge(d.aesthetic)} <small>美学</small><br>
+                            ${getBadge(d.logic)} <small>合理</small><br>
+                            ${getBadge(d.consistency)} <small>一致</small>
+                        </div>
+                    </td>
+                    <td><span style="background:#fff3e0; color:#e65100; padding:2px 6px; border-radius:4px; font-size:11px;">${d.worker}</span></td>
+                    <td style="font-size:10px; color:#bbb;">${d.time.split(' ')[1] || d.time}</td>
+                </tr>`;
+        }).join('');
+
+        // 异步加载每一行的 Prompt
+        data.forEach(async (d) => {
+            const rowId = `prompt-${d.filename.replace(/[^a-z0-9]/gi, '_')}`;
+            const prompt = await fetchPrompt(scene, d.filename);
+            const el = document.getElementById(rowId);
+            if (el) el.innerText = prompt;
+        });
+    }
+
+    // 辅助功能：点击复制 Prompt
+    function copyText(el) {
+        const text = el.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            const originalText = el.innerText;
+            el.innerText = "✅ 已复制到剪贴板";
+            el.style.color = "green";
+            setTimeout(() => {
+                el.innerText = originalText;
+                el.style.color = "";
+            }, 1000);
+        });
+    }
+
     // 功能 1: 执行评测员筛选
     function filterDetailByWorker() {
         const selectedWorker = document.getElementById('detail-worker-filter').value;
@@ -434,50 +516,6 @@
         renderDetailTable(filtered, scene, v1, v2);
     }
 
-    // 抽离渲染逻辑
-    async function renderDetailTable(data, scene, v1, v2) {
-        const body = document.getElementById('detail-body');
-        const getBadge = (val) => {
-            if(val === 'tie') return '<span class="badge badge-tie">平局</span>';
-            return val === v1 ? '<span class="badge badge-a">A胜</span>' : '<span class="badge badge-b">B胜</span>';
-        };
-
-        document.getElementById('detail-count-info').innerText = `共显示 ${data.length} 条记录`;
-
-        // 先渲染框架，Prompt 异步填充
-        body.innerHTML = data.map(d => {
-            const rowId = `row-${d.filename.replace(/[^a-z0-9]/gi, '_')}`;
-            return `
-                <tr>
-                    <td style="font-size:11px; font-family:monospace; color:#666;">${d.filename}</td>
-                    <td>
-                        <div style="display:flex; gap:10px; justify-content:center;">
-                            <img src="/images/${v1}/${scene}/${d.filename}" class="preview-img" onclick="openImagePreview(this.src)">
-                            <img src="/images/${v2}/${scene}/${d.filename}" class="preview-img" onclick="openImagePreview(this.src)">
-                        </div>
-                        <div id="${rowId}" class="prompt-text">⏳ 加载 Prompt...</div>
-                    </td>
-                    <td style="text-align:left; vertical-align: middle;">
-                        <div style="line-height:2;">
-                            ${getBadge(d.overall)} <small>整体</small><br>
-                            ${getBadge(d.aesthetic)} <small>美学</small><br>
-                            ${getBadge(d.logic)} <small>合理</small><br>
-                            ${getBadge(d.consistency)} <small>一致</small>
-                        </div>
-                    </td>
-                    <td><span style="background:#fff3e0; color:#e65100; padding:3px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold;">${d.worker}</span></td>
-                    <td style="font-size:11px; color:#999;">${d.time}</td>
-                </tr>`;
-        }).join('');
-
-        // 功能 3: 异步加载每一行的 Prompt
-    data.forEach(async (d) => {
-        const rowId = `row-${d.filename.replace(/[^a-z0-9]/gi, '_')}`;
-        const prompt = await fetchPrompt(scene, d.filename);
-        const el = document.getElementById(rowId);
-        if (el) el.innerText = "Prompt: " + prompt;
-    });
-}
 
     async function showWorkerStats(v1, v2, scene) {
         currentWorkerModal = { v1, v2, scene };

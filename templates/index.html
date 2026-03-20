@@ -102,6 +102,33 @@
         .hidden { display: none !important; }
         
         select, input[type="text"] { border: 1px solid #ddd; border-radius: 6px; }
+
+        /* 全屏预览遮罩 */
+        #lightbox {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: none; /* 默认隐藏 */
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            cursor: zoom-out;
+        }
+
+        #lightbox img {
+            max-width: 95%;
+            max-height: 95%;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            border-radius: 4px;
+            transition: transform 0.3s ease;
+        }
+
+        /* 给原图片增加悬停效果 */
+        .img-card img:hover {
+            opacity: 0.9;
+            transform: scale(1.01);
+            transition: 0.2s;
+        }
     </style>
 </head>
 <body>
@@ -130,8 +157,16 @@
     </div>
 
     <div class="compare-container">
-        <div class="img-card"><img id="img-left" src=""><div style="margin-top:10px; color:#666; font-weight:bold; letter-spacing: 1px;">OPTION A</div></div>
-        <div class="img-card"><img id="img-right" src=""><div style="margin-top:10px; color:#666; font-weight:bold; letter-spacing: 1px;">OPTION B</div></div>
+        <!-- <div class="img-card"><img id="img-left" src=""><div style="margin-top:10px; color:#666; font-weight:bold; letter-spacing: 1px;">OPTION A</div></div>
+        <div class="img-card"><img id="img-right" src=""><div style="margin-top:10px; color:#666; font-weight:bold; letter-spacing: 1px;">OPTION B</div></div> -->
+        <div class="img-card">
+            <img id="img-left" src="" onclick="openLightbox(this.src)">
+            <div style="margin-top:10px; color:#666; font-weight:bold; letter-spacing: 1px;">OPTION A</div>
+        </div>
+        <div class="img-card">
+            <img id="img-right" src="" onclick="openLightbox(this.src)">
+            <div style="margin-top:10px; color:#666; font-weight:bold; letter-spacing: 1px;">OPTION B</div>
+        </div>
     </div>
 
     <div class="eval-card">
@@ -148,6 +183,10 @@
         </table>
         <button class="submit-btn" onclick="submitMultiDim()">提交并加载下一组</button>
     </div>
+</div>
+
+<div id="lightbox" onclick="closeLightbox()">
+    <img id="lightbox-img" src="" alt="Preview">
 </div>
 
 <script>
@@ -273,6 +312,21 @@
         } catch (e) {
             alert("提交失败，请检查网络连接");
         }
+    }
+    // 1. 打开预览
+    function openLightbox(src) {
+        const lb = document.getElementById('lightbox');
+        const lbImg = document.getElementById('lightbox-img');
+        lbImg.src = src;
+        lb.style.display = 'flex';
+        document.body.style.overflow = 'hidden'; // 禁止背景滚动
+    }
+
+    // 2. 关闭预览
+    function closeLightbox() {
+        const lb = document.getElementById('lightbox');
+        lb.style.display = 'none';
+        document.body.style.overflow = 'auto'; // 恢复滚动
     }
 
     init();
