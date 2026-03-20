@@ -65,6 +65,7 @@ def startup():
     conn.commit()
     conn.close()
 
+@app.get("/api/get_prompt")
 def get_prompt_text(scene: str, filename: str):
     prompt_file = os.path.join(PROMPT_DIR, f"{scene}.txt")
     if not os.path.exists(prompt_file):

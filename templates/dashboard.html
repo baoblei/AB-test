@@ -70,6 +70,27 @@
         .summary-bar { display: flex; gap: 20px; align-items: stretch; flex-wrap: wrap; }
         .summary-dim-block { flex: 1; min-width: 180px; background: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 12px; }
         .summary-dim-label { font-size: 0.8rem; color: #888; margin-bottom: 6px; font-weight: 500; }
+
+        /* 新增：大图预览模态框 */
+        #image-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.9); 
+            display: none; align-items: center; justify-content: center; 
+            z-index: 3000; cursor: zoom-out;
+        }
+        #image-overlay img { max-width: 90%; max-height: 90%; border: 3px solid white; border-radius: 4px; }
+
+        /* Prompt 文本样式 */
+        .prompt-text { 
+            font-size: 12px; color: #666; background: #f9f9f9; 
+            padding: 8px; border-radius: 4px; margin-top: 8px;
+            border-left: 3px solid #ddd; word-break: break-all;
+        }
+
+        /* 筛选栏样式 */
+        .detail-filter-bar {
+            display: flex; gap: 15px; align-items: center;
+            background: #f8f9fa; padding: 10px 15px; border-radius: 8px; margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
@@ -147,13 +168,23 @@
             <h2 id="detail-modal-title" style="margin:0;">Case By Case 明细</h2>
             <button onclick="closeModal('detail-modal')" class="btn btn-outline">关闭</button>
         </div>
+        
+        <div class="detail-filter-bar">
+            <div class="input-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                <label style="white-space: nowrap; font-size: 0.9rem;">评测员筛选:</label>
+                <select id="detail-worker-filter" onchange="filterDetailByWorker()" style="min-width: 150px;">
+                    <option value="all">全部评测员</option>
+                </select>
+            </div>
+            <div id="detail-count-info" style="font-size: 0.85rem; color: #666;"></div>
+        </div>
+
         <div class="scroll-area">
             <table>
                 <thead>
                     <tr>
                         <th style="width:120px;">文件名</th>
-                        <th style="width:260px;">对比预览 (Left:A | Right:B)</th>
-                        <th style="text-align:left;">维度判定结果</th>
+                        <th style="width:320px;">对比预览 (Left:A | Right:B)</th> <th style="text-align:left;">维度判定结果</th>
                         <th>评测员</th>
                         <th>记录时间</th>
                     </tr>
@@ -175,6 +206,10 @@
         </div>
         <div class="scroll-area" id="worker-stats-area"></div>
     </div>
+</div>
+
+<div id="image-overlay" onclick="this.style.display='none'">
+    <img id="overlay-img" src="">
 </div>
 
 <script>
@@ -314,36 +349,135 @@
     });
 
     // --- 3. 原有业务逻辑 (明细、统计、上传) ---
+    // async function showDetail(v1, v2, scene) {
+    //     document.getElementById('detail-modal').style.display = 'flex';
+    //     document.getElementById('detail-modal-title').innerText = `评测明细: ${v1} vs ${v2} [${scene}]`;
+    //     const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
+    //     const details = await res.json();
+    //     const getBadge = (val) => {
+    //         if(val === 'tie') return '<span class="badge badge-tie">平局</span>';
+    //         return val === v1 ? '<span class="badge badge-a">A胜</span>' : '<span class="badge badge-b">B胜</span>';
+    //     };
+    //     document.getElementById('detail-body').innerHTML = details.map(d => `
+    //         <tr>
+    //             <td style="font-size:11px; font-family:monospace; color:#666;">${d.filename}</td>
+    //             <td>
+    //                 <div style="display:flex; gap:10px; justify-content:center;">
+    //                     <img src="/images/${v1}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
+    //                     <img src="/images/${v2}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
+    //                 </div>
+    //             </td>
+    //             <td style="text-align:left; vertical-align: middle;">
+    //                 <div style="line-height:2;">
+    //                     ${getBadge(d.overall)} <small>整体</small><br>
+    //                     ${getBadge(d.aesthetic)} <small>美学</small><br>
+    //                     ${getBadge(d.logic)} <small>合理</small><br>
+    //                     ${getBadge(d.consistency)} <small>一致</small>
+    //                 </div>
+    //             </td>
+    //             <td><span style="background:#fff3e0; color:#e65100; padding:3px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold;">${d.worker}</span></td>
+    //             <td style="font-size:11px; color:#999;">${d.time}</td>
+    //         </tr>`).join('');
+    // }
+
+    let currentDetailData = []; // 缓存当前明细数据以便筛选
+
+    // 功能 2: 大图预览
+    function openImagePreview(src) {
+        const overlay = document.getElementById('image-overlay');
+        const img = document.getElementById('overlay-img');
+        img.src = src;
+        overlay.style.display = 'flex';
+    }
+
+    // 功能 3: 获取 Prompt (调用后端接口)
+    async function fetchPrompt(scene, filename) {
+        try {
+            // 注意：这里假设后端有一个对应的 GET 路由映射到你提供的 python 函数
+            const res = await fetch(`/api/get_prompt?scene=${scene}&filename=${filename}`);
+            return await res.text();
+        } catch (e) {
+            return "Prompt 加载失败";
+        }
+    }
+
+    // 修改后的 showDetail
     async function showDetail(v1, v2, scene) {
         document.getElementById('detail-modal').style.display = 'flex';
         document.getElementById('detail-modal-title').innerText = `评测明细: ${v1} vs ${v2} [${scene}]`;
+        
         const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
-        const details = await res.json();
+        currentDetailData = await res.json();
+        
+        // 功能 1: 更新评测员下拉列表
+        const workers = [...new Set(currentDetailData.map(d => d.worker))];
+        const select = document.getElementById('detail-worker-filter');
+        select.innerHTML = '<option value="all">全部评测员</option>' + 
+                        workers.map(w => `<option value="${w}">${w}</option>`).join('');
+        
+        renderDetailTable(currentDetailData, scene, v1, v2);
+    }
+
+    // 功能 1: 执行评测员筛选
+    function filterDetailByWorker() {
+        const selectedWorker = document.getElementById('detail-worker-filter').value;
+        const titleText = document.getElementById('detail-modal-title').innerText;
+        // 从标题解析出模型信息
+        const v1 = titleText.split(': ')[1].split(' vs ')[0];
+        const v2 = titleText.split(' vs ')[1].split(' [')[0];
+        const scene = titleText.split('[')[1].split(']')[0];
+
+        const filtered = selectedWorker === 'all' 
+            ? currentDetailData 
+            : currentDetailData.filter(d => d.worker === selectedWorker);
+        
+        renderDetailTable(filtered, scene, v1, v2);
+    }
+
+    // 抽离渲染逻辑
+    async function renderDetailTable(data, scene, v1, v2) {
+        const body = document.getElementById('detail-body');
         const getBadge = (val) => {
             if(val === 'tie') return '<span class="badge badge-tie">平局</span>';
             return val === v1 ? '<span class="badge badge-a">A胜</span>' : '<span class="badge badge-b">B胜</span>';
         };
-        document.getElementById('detail-body').innerHTML = details.map(d => `
-            <tr>
-                <td style="font-size:11px; font-family:monospace; color:#666;">${d.filename}</td>
-                <td>
-                    <div style="display:flex; gap:10px; justify-content:center;">
-                        <img src="/images/${v1}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
-                        <img src="/images/${v2}/${scene}/${d.filename}" class="preview-img" onclick="window.open(this.src)">
-                    </div>
-                </td>
-                <td style="text-align:left; vertical-align: middle;">
-                    <div style="line-height:2;">
-                        ${getBadge(d.overall)} <small>整体</small><br>
-                        ${getBadge(d.aesthetic)} <small>美学</small><br>
-                        ${getBadge(d.logic)} <small>合理</small><br>
-                        ${getBadge(d.consistency)} <small>一致</small>
-                    </div>
-                </td>
-                <td><span style="background:#fff3e0; color:#e65100; padding:3px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold;">${d.worker}</span></td>
-                <td style="font-size:11px; color:#999;">${d.time}</td>
-            </tr>`).join('');
-    }
+
+        document.getElementById('detail-count-info').innerText = `共显示 ${data.length} 条记录`;
+
+        // 先渲染框架，Prompt 异步填充
+        body.innerHTML = data.map(d => {
+            const rowId = `row-${d.filename.replace(/[^a-z0-9]/gi, '_')}`;
+            return `
+                <tr>
+                    <td style="font-size:11px; font-family:monospace; color:#666;">${d.filename}</td>
+                    <td>
+                        <div style="display:flex; gap:10px; justify-content:center;">
+                            <img src="/images/${v1}/${scene}/${d.filename}" class="preview-img" onclick="openImagePreview(this.src)">
+                            <img src="/images/${v2}/${scene}/${d.filename}" class="preview-img" onclick="openImagePreview(this.src)">
+                        </div>
+                        <div id="${rowId}" class="prompt-text">⏳ 加载 Prompt...</div>
+                    </td>
+                    <td style="text-align:left; vertical-align: middle;">
+                        <div style="line-height:2;">
+                            ${getBadge(d.overall)} <small>整体</small><br>
+                            ${getBadge(d.aesthetic)} <small>美学</small><br>
+                            ${getBadge(d.logic)} <small>合理</small><br>
+                            ${getBadge(d.consistency)} <small>一致</small>
+                        </div>
+                    </td>
+                    <td><span style="background:#fff3e0; color:#e65100; padding:3px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold;">${d.worker}</span></td>
+                    <td style="font-size:11px; color:#999;">${d.time}</td>
+                </tr>`;
+        }).join('');
+
+        // 功能 3: 异步加载每一行的 Prompt
+    data.forEach(async (d) => {
+        const rowId = `row-${d.filename.replace(/[^a-z0-9]/gi, '_')}`;
+        const prompt = await fetchPrompt(scene, d.filename);
+        const el = document.getElementById(rowId);
+        if (el) el.innerText = "Prompt: " + prompt;
+    });
+}
 
     async function showWorkerStats(v1, v2, scene) {
         currentWorkerModal = { v1, v2, scene };
