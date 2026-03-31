@@ -2,244 +2,324 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>MLLM 评测全功能看板 - 增强搜索版</title>
+    <title>MLLM 评测看板 - 归档版</title>
     <style>
         :root { --primary: #2196F3; --win-a: #4CAF50; --win-b: #2196F3; --win-tie: #bdbdbd; --bg: #f0f2f5; }
         body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: var(--bg); color: #333; }
         .container { max-width: 1400px; margin: 0 auto; }
-        
+
         .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .card-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 20px; border-left: 5px solid var(--primary); padding-left: 12px; }
+        .card-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 20px; border-left: 5px solid var(--primary); padding-left: 12px; display: flex; justify-content: space-between; align-items: center; }
 
-        .upload-grid { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 15px; align-items: end; }
-        .search-grid { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 15px; align-items: end; }
-        .input-group { display: flex; flex-direction: column; gap: 5px; position: relative; }
-        input, select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
-
-        /* 搜索建议列表 */
-        .suggest-list { 
-            position: absolute; top: 100%; left: 0; right: 0; background: white; 
-            border: 1px solid #ddd; border-top: none; border-radius: 0 0 6px 6px; 
-            z-index: 100; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
-            display: none; 
-        }
-        .suggest-item { padding: 10px 12px; cursor: pointer; font-size: 0.85rem; border-bottom: 1px solid #f5f5f5; }
-        .suggest-item:hover { background: #f0f7ff; color: var(--primary); }
-
-        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
-        th { background: #fafafa; padding: 12px; font-size: 0.85rem; color: #888; border-bottom: 2px solid #eee; }
-        td { padding: 15px; text-align: center; border-bottom: 1px solid #f0f0f0; }
-
-        .dim-item { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 0.85rem; }
-        .bar-wrap { flex: 1; height: 14px; background: #eee; border-radius: 7px; overflow: hidden; display: flex; min-width: 150px; }
-        .bar-fill { height: 100%; transition: width 0.6s cubic-bezier(0.1, 0, 0.3, 1); }
-        .percent-label { width: 90px; font-size: 11px; color: #666; font-family: monospace; text-align: right; }
-
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 2000; }
-        .modal-content { background: white; width: 95%; height: 85%; border-radius: 15px; padding: 25px; display: flex; flex-direction: column; animation: slideIn 0.3s ease; }
-        .scroll-area { flex: 1; overflow-y: auto; margin-top: 15px; }
-        
-        .preview-img { width: 110px; height: 110px; object-fit: cover; border: 1px solid #eee; border-radius: 6px; cursor: zoom-in; }
-        .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block; margin-right: 4px; border: 1px solid transparent; }
-        .badge-a { background: #e8f5e9; color: #2e7d32; border-color: #c8e6c9; }
-        .badge-b { background: #e3f2fd; color: #1565c0; border-color: #bbdefb; }
-        .badge-tie { background: #f5f5f5; color: #757575; border-color: #e0e0e0; }
-
-        .btn { padding: 8px 16px; border-radius: 6px; cursor: pointer; border: none; font-weight: 500; transition: 0.2s; }
+        .btn { padding: 8px 16px; border-radius: 6px; cursor: pointer; border: none; font-weight: 500; transition: 0.2s; font-size: 0.85rem; }
         .btn-primary { background: var(--primary); color: white; }
         .btn-outline { border: 1px solid var(--primary); color: var(--primary); background: none; }
         .btn-outline:hover { background: var(--primary); color: white; }
-        .btn-worker { border: 1px solid #ff9800; color: #ff9800; background: none; }
-        .btn-worker:hover { background: #ff9800; color: white; }
+        .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
 
-        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
-        .worker-stat-card { background: #fafbfc; border: 1px solid #eef0f2; border-radius: 8px; padding: 15px; margin-bottom: 12px; }
-        .worker-stat-card.dimmed { opacity: 0.45; }
-        .worker-stat-card.selected { border-color: #4CAF50; background: #f6fff8; }
-        .worker-stat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .worker-name { font-weight: bold; font-size: 1rem; color: #333; }
-        .worker-total { font-size: 0.85rem; color: #888; }
-
-        .worker-check { width: 18px; height: 18px; cursor: pointer; accent-color: #4CAF50; }
-        .worker-check-label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-        .select-controls { display: flex; gap: 8px; align-items: center; }
-        .select-controls button { font-size: 0.75rem; padding: 3px 10px; border-radius: 4px; cursor: pointer; border: 1px solid #ccc; background: white; }
-        .select-controls button.active { background: #4CAF50; color: white; border-color: #4CAF50; }
-
-        .summary-bar { display: flex; gap: 20px; align-items: stretch; flex-wrap: wrap; }
-        .summary-dim-block { flex: 1; min-width: 180px; background: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 12px; }
-        .summary-dim-label { font-size: 0.8rem; color: #888; margin-bottom: 6px; font-weight: 500; }
-
-        /* Prompt 文本样式 */
-        .prompt-text { 
-            font-size: 12px; color: #666; background: #f9f9f9; 
-            padding: 8px; border-radius: 4px; margin-top: 8px;
-            border-left: 3px solid #ddd; word-break: break-all;
-        }
-
-        /* 增强：大图对比预览层 */
-        #image-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.95); 
-            display: none; flex-direction: column; align-items: center; justify-content: center; 
-            z-index: 3000; padding: 20px;
-        }
-        .compare-container {
-            display: flex; gap: 20px; width: 95%; height: 80vh; justify-content: center; align-items: center;
-        }
-        .compare-box { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
-        .compare-box img { max-width: 100%; max-height: 100%; object-fit: contain; border: 2px solid #444; }
-        .compare-label { color: white; margin-top: 10px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 20px; }
-
-        /* Prompt 列样式 */
-        .prompt-cell { 
-            max-width: 300px; font-size: 12px; color: #555; text-align: left !important;
-            line-height: 1.4; position: relative;
-        }
-        .prompt-content {
-            max-height: 100px; overflow-y: auto; background: #f8f9fa; 
-            padding: 8px; border-radius: 4px; border: 1px solid #eee;
-            white-space: pre-wrap; cursor: pointer;
-        }
-        .prompt-content:hover { background: #f0f0f0; }
-
-        /* 筛选栏微调 */
-        .detail-filter-bar {
+        /* 折叠卡片 */
+        .pair-card { background: #fafbfc; border: 1px solid #e8e8e8; border-radius: 12px; margin-bottom: 15px; overflow: hidden; }
+        .pair-header {
             display: flex; justify-content: space-between; align-items: center;
-            background: #f8f9fa; padding: 12px 20px; border-radius: 8px; margin-bottom: 15px;
+            padding: 15px 20px; cursor: pointer;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; transition: 0.3s;
         }
+        .pair-header:hover { background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%); }
+        .pair-title { display: flex; align-items: center; gap: 15px; flex: 1; }
+        .pair-title h3 { margin: 0; font-size: 1.1rem; }
+        .pair-meta { font-size: 0.85rem; opacity: 0.9; }
+
+        /* 折叠时显示的汇总条 */
+        .pair-summary { display: flex; gap: 30px; align-items: center; flex: 2; justify-content: center; }
+        .summary-item { text-align: center; }
+        .summary-label { font-size: 0.75rem; opacity: 0.8; margin-bottom: 4px; }
+        .summary-bar { display: flex; height: 20px; background: rgba(255,255,255,0.2); border-radius: 10px; overflow: hidden; min-width: 120px; }
+        .bar-a { background: var(--win-a); height: 100%; }
+        .bar-tie { background: var(--win-tie); height: 100%; }
+        .bar-b { background: var(--win-b); height: 100%; }
+        .summary-rates { font-size: 0.8rem; margin-top: 4px; }
+        .rate-a { color: #a5d6a7; }
+        .rate-b { color: #90caf9; }
+        .rate-tie { color: #e0e0e0; }
+
+        .pair-toggle { font-size: 1.5rem; transition: transform 0.3s; width: 30px; text-align: center; }
+        .pair-toggle.expanded { transform: rotate(180deg); }
+
+        .pair-body { display: none; padding: 20px; background: white; border-top: 1px solid #e8e8e8; }
+        .pair-body.show { display: block; }
+
+        /* 场景表格 */
+        .scene-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .scene-table th { background: #e3f2fd; padding: 10px; font-size: 0.85rem; color: #1565c0; text-align: center; }
+        .scene-table td { padding: 12px 10px; border-bottom: 1px solid #eee; text-align: center; font-size: 0.9rem; }
+        .scene-table tr:hover { background: #f5f5f5; }
+        .scene-name { font-weight: bold; text-align: left !important; }
+
+        /* 维度小条 */
+        .dim-mini-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #e0e0e0; min-width: 80px; }
+        .dim-mini-bar .bar-a { border-radius: 4px 0 0 4px; }
+        .dim-mini-bar .bar-b { border-radius: 0 4px 4px 0; }
+
+        /* 排行榜 */
+        .ranking-table { width: 100%; border-collapse: collapse; }
+        .ranking-table th { background: #e3f2fd; padding: 10px; font-size: 0.85rem; }
+        .ranking-table td { padding: 10px; border-bottom: 1px solid #eee; }
+        .rank-1 { background: linear-gradient(90deg, #ffd700, #fff8dc); font-weight: bold; }
+        .rank-2 { background: linear-gradient(90deg, #c0c0c0, #f5f5f5); }
+        .rank-3 { background: linear-gradient(90deg, #cd7f32, #fff8dc); }
+        .rank-badge { display: inline-block; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-weight: bold; font-size: 12px; }
+        .rank-badge-1 { background: #ffd700; color: #333; }
+        .rank-badge-2 { background: #c0c0c0; color: #333; }
+        .rank-badge-3 { background: #cd7f32; color: white; }
+        .rank-badge-other { background: #e0e0e0; color: #666; }
+
+        /* 模态框 */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 2000; }
+        .modal-content { background: white; width: 95%; max-width: 1200px; height: 85%; border-radius: 15px; padding: 25px; display: flex; flex-direction: column; }
+        .scroll-area { flex: 1; overflow-y: auto; margin-top: 15px; }
+
+        /* 图预览 */
+        .preview-img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid #ddd; }
+        #image-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 3000; }
+        .compare-container { display: flex; gap: 30px; max-width: 95%; max-height: 80vh; }
+        .compare-box { text-align: center; }
+        .compare-box img { max-width: 45vw; max-height: 70vh; object-fit: contain; border-radius: 8px; }
+        .compare-label { color: white; margin-top: 15px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 8px 20px; border-radius: 20px; }
+
+        /* Badge */
+        .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .badge-a { background: #e8f5e9; color: #2e7d32; }
+        .badge-b { background: #e3f2fd; color: #1565c0; }
+        .badge-tie { background: #f5f5f5; color: #757575; }
+
+        /* 导航 */
+        .navbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .navbar a { color: var(--primary); text-decoration: none; margin-left: 15px; font-size: 0.9rem; }
+
+        /* 上传 */
+        .upload-grid { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 15px; align-items: end; margin-bottom: 15px; }
+        .input-group { display: flex; flex-direction: column; gap: 5px; }
+        input, select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
+
+        /* 筛选 */
+        .filter-grid { display: grid; grid-template-columns: 1fr 1fr 1fr auto auto auto; gap: 15px; align-items: end; }
+
+        /* 统计模态框筛选样式 */
+        .stats-filter-bar { display: flex; gap: 15px; margin-bottom: 15px; padding: 12px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 10px; flex-wrap: wrap; align-items: flex-end; }
+        .worker-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; max-width: 400px; }
+        .worker-checkbox { display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: white; border: 1px solid #ddd; border-radius: 15px; font-size: 0.8rem; cursor: pointer; transition: 0.2s; }
+        .worker-checkbox:hover { border-color: var(--primary); }
+        .worker-checkbox input { display: none; }
+        .worker-checkbox.selected { background: var(--primary); color: white; border-color: var(--primary); }
+
+        /* 统计bar可视化 */
+        .stats-bar-container { display: flex; height: 24px; background: #e0e0e0; border-radius: 12px; overflow: hidden; min-width: 150px; position: relative; }
+        .stats-bar-segment { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        .stats-bar-segment.bar-a { background: linear-gradient(180deg, #66bb6a, #43a047); }
+        .stats-bar-segment.bar-tie { background: linear-gradient(180deg, #bdbdbd, #9e9e9e); }
+        .stats-bar-segment.bar-b { background: linear-gradient(180deg, #42a5f5, #1e88e5); }
+
+        /* 胜率数字显示 */
+        .win-rate-display { font-size: 0.85rem; font-weight: bold; min-width: 50px; text-align: right; }
+        .win-rate-high { color: #2e7d32; }
+        .win-rate-low { color: #c62828; }
+
+        /* 总体统计按钮 */
+        .btn-stats { background: linear-gradient(135deg, #9c27b0, #7b1fa2); color: white; }
+        .btn-stats:hover { background: linear-gradient(135deg, #8e24aa, #6a1b9a); }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-        <h1 style="margin:0;">🚀 MLLM 评测监控中心</h1>
-        <div id="status-tag" style="font-size:0.8rem; color:#888;">正在同步...</div>
+    <div class="navbar">
+        <h1 style="margin:0;">MLLM 评测监控中心</h1>
+        <div>
+            <span id="status-tag" style="font-size:0.8rem; color:#888;">正在同步...</span>
+            <a href="/">评测终端</a>
+            <a href="/profile">个人中心</a>
+            <a href="/admin">管理后台</a>
+        </div>
     </div>
 
+    <!-- 发布任务 -->
     <div class="card">
-        <div class="card-title">发布新测试任务</div>
+        <div class="card-title"><span>发布新测试任务</span></div>
         <form id="upload-form" class="upload-grid">
             <div class="input-group">
-                <label>模型版本 (Version)</label>
+                <label>模型版本</label>
                 <input type="text" id="up-version" placeholder="如 Pangu_3B" required>
             </div>
             <div class="input-group">
-                <label>评测场景 (Scene)</label>
+                <label>评测场景</label>
                 <input type="text" id="up-scene" placeholder="如 human_en" required>
             </div>
             <div class="input-group">
-                <label>数据包 (.zip)</label>
+                <label>数据包</label>
                 <input type="file" id="up-file" accept=".zip" required>
             </div>
-            <button type="submit" id="up-btn" class="btn btn-primary">解压并同步</button>
+            <button type="submit" class="btn btn-primary">解压并同步</button>
         </form>
-        <div id="up-msg" style="margin-top:10px; font-size:0.85rem;"></div>
+        <div id="up-msg" style="font-size:0.85rem; margin-top:10px;"></div>
     </div>
 
+    <!-- 工具栏 -->
     <div class="card">
-        <div class="card-title">筛选与搜索对战</div>
-        <div class="search-grid">
+        <div class="card-title">
+            <span>工具面板</span>
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-outline" onclick="loadStats()">刷新</button>
+                <button class="btn btn-primary" onclick="showRanking()">排行榜</button>
+                <button class="btn btn-outline" onclick="showExport()">导出</button>
+            </div>
+        </div>
+        <div class="filter-grid">
             <div class="input-group">
-                <label>模型 A (双路或单路搜索)</label>
-                <input type="text" id="search-v1" placeholder="输入模型名称..." oninput="handleSearchInput(this, 'v1')">
-                <div id="suggest-v1" class="suggest-list"></div>
+                <label>模型A</label>
+                <input type="text" id="search-v1" placeholder="搜索..." oninput="applyFilters()">
             </div>
             <div class="input-group">
-                <label>模型 B</label>
-                <input type="text" id="search-v2" placeholder="可选：第二路对比模型" oninput="handleSearchInput(this, 'v2')">
-                <div id="suggest-v2" class="suggest-list"></div>
+                <label>模型B</label>
+                <input type="text" id="search-v2" placeholder="搜索..." oninput="applyFilters()">
             </div>
             <div class="input-group">
-                <label>场景筛选 (Scene)</label>
-                <input type="text" id="search-scene" placeholder="如 human_en" oninput="applyFilters()">
+                <label>场景</label>
+                <input type="text" id="search-scene" placeholder="搜索..." oninput="applyFilters()">
             </div>
-            <button class="btn btn-outline" onclick="resetSearch()">重置筛选</button>
+            <button class="btn btn-outline" onclick="resetFilters()">重置</button>
+            <button class="btn btn-outline" onclick="expandAll()">全部展开</button>
+            <button class="btn btn-outline" onclick="collapseAll()">全部折叠</button>
         </div>
     </div>
 
-    <div class="card" style="padding:0;">
-        <div style="padding:20px; font-weight:bold; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
-            <span>多维度对战总览</span>
-            <button onclick="loadStats()" class="btn btn-outline" style="padding:4px 10px; font-size:0.8rem;">手动刷新</button>
+    <!-- 排行榜 -->
+    <div class="card" id="ranking-card" style="display:none;">
+        <div class="card-title">
+            <span>模型排行榜</span>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <select id="ranking-dimension" onchange="loadRanking()" style="padding:5px;">
+                    <option value="overall">整体</option>
+                    <option value="aesthetic">美学</option>
+                    <option value="logic">合理</option>
+                    <option value="consistency">一致</option>
+                </select>
+                <select id="ranking-scene" onchange="loadRanking()" style="padding:5px;">
+                    <option value="">全部场景</option>
+                </select>
+                <button class="btn btn-outline" onclick="document.getElementById('ranking-card').style.display='none'">关闭</button>
+            </div>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width:180px;">对战版本 (A vs B)</th>
-                    <th>评测场景</th>
-                    <th style="text-align:left;">各维度胜率分布 (绿:A | 灰:平 | 蓝:B)</th>
-                    <th>样本量</th>
-                    <th>分析</th>
-                </tr>
-            </thead>
-            <tbody id="main-table-body"></tbody>
+        <table class="ranking-table">
+            <thead><tr><th>排名</th><th>模型</th><th>胜场</th><th>对战数</th><th>胜率</th></tr></thead>
+            <tbody id="ranking-body"></tbody>
         </table>
+    </div>
+
+    <!-- 导出 -->
+    <div class="card" id="export-card" style="display:none;">
+        <div class="card-title">
+            <span>数据导出</span>
+            <button class="btn btn-outline" onclick="document.getElementById('export-card').style.display='none'">关闭</button>
+        </div>
+        <div style="display:flex; gap:15px; align-items:center;">
+            <select id="export-format" style="padding:8px;">
+                <option value="json">JSON</option>
+                <option value="csv">CSV</option>
+            </select>
+            <button class="btn btn-primary" onclick="exportData()">导出</button>
+        </div>
+        <div id="export-result" style="margin-top:15px; padding:15px; background:#f5f5f5; border-radius:8px; display:none;"></div>
+    </div>
+
+    <!-- 对战总览 -->
+    <div class="card">
+        <div class="card-title"><span>AB版本对战总览（点击展开查看各场景详情）</span></div>
+        <div id="pairs-container">加载中...</div>
     </div>
 </div>
 
+<!-- 明细模态框 -->
 <div id="detail-modal" class="modal-overlay" onclick="closeModal('detail-modal')">
     <div class="modal-content" onclick="event.stopPropagation()">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
             <h2 id="detail-modal-title" style="margin:0;">Case By Case 明细</h2>
             <button onclick="closeModal('detail-modal')" class="btn btn-outline">关闭</button>
         </div>
-        
-        <div class="detail-filter-bar">
-            <div class="input-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                <label style="white-space: nowrap; font-size: 0.9rem;">评测员筛选:</label>
-                <select id="detail-worker-filter" onchange="filterDetailByWorker()" style="min-width: 150px;">
-                    <option value="all">全部评测员</option>
+        <!-- 筛选栏 -->
+        <div class="stats-filter-bar">
+            <div style="flex:2;">
+                <label style="font-size:0.8rem; font-weight:bold; color:#555; display:block; margin-bottom:8px;">评测员选择</label>
+                <div id="detail-worker-checkbox-container" class="worker-checkbox-group">
+                    <!-- 动态填充 -->
+                </div>
+            </div>
+            <div class="input-group" style="flex:1;">
+                <label style="font-size:0.8rem;">图片名搜索</label>
+                <input type="text" id="detail-filename-filter" placeholder="输入关键词..." oninput="filterDetailData()" style="padding:8px;">
+            </div>
+            <div class="input-group" style="flex:1;">
+                <label style="font-size:0.8rem;">判定筛选</label>
+                <select id="detail-result-filter" onchange="filterDetailData()" style="padding:8px;">
+                    <option value="">全部结果</option>
+                    <option value="a_win">A胜</option>
+                    <option value="b_win">B胜</option>
+                    <option value="tie">平局</option>
                 </select>
             </div>
-            <div id="detail-count-info" style="font-size: 0.85rem; color: #666;"></div>
+            <div style="display:flex; gap:10px; align-items:flex-end;">
+                <button class="btn btn-outline btn-sm" onclick="selectAllDetailWorkers()">全选</button>
+                <button class="btn btn-outline btn-sm" onclick="clearDetailWorkerSelection()">清空</button>
+            </div>
         </div>
-
+        <div id="detail-count-info" style="margin-bottom:10px; font-size:0.85rem; color:#666; padding:8px 12px; background:#f8f9fa; border-radius:6px;"></div>
         <div class="scroll-area">
-            <table style="table-layout: fixed;"> <thead>
-                    <tr>
-                        <th style="width:100px;">文件名</th>
-                        <th style="width:280px;">对比预览 (A | B)</th>
-                        <th style="width:300px;">Prompt 文本</th> <th style="width:140px;">维度判定</th>
-                        <th style="width:100px;">评测员</th>
-                        <th style="width:120px;">记录时间</th>
+            <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                    <tr style="background:linear-gradient(135deg, #e3f2fd, #f3e5f5);">
+                        <th style="width:100px; padding:10px;">文件名</th>
+                        <th style="width:180px; padding:10px;">对比预览</th>
+                        <th style="width:300px; padding:10px;">Prompt</th>
+                        <th style="padding:10px;">判定结果</th>
+                        <th style="width:100px; padding:10px;">评测员</th>
+                        <th style="width:130px; padding:10px;">时间</th>
                     </tr>
                 </thead>
                 <tbody id="detail-body"></tbody>
             </table>
         </div>
-        <!-- <div class="scroll-area">
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width:120px;">文件名</th>
-                        <th style="width:320px;">对比预览 (Left:A | Right:B)</th> <th style="text-align:left;">维度判定结果</th>
-                        <th>评测员</th>
-                        <th>记录时间</th>
-                    </tr>
-                </thead>
-                <tbody id="detail-body"></tbody>
-            </table>
-        </div> -->
     </div>
 </div>
 
+<!-- 评测员统计模态框 -->
 <div id="worker-modal" class="modal-overlay" onclick="closeModal('worker-modal')">
     <div class="modal-content" onclick="event.stopPropagation()">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
-            <h2 id="worker-modal-title" style="margin:0;">👤 评测人统计</h2>
-            <div style="display:flex; gap:10px;">
-                <button onclick="showWorkerDetail()" class="btn btn-primary" style="padding:4px 12px; font-size:0.85rem;">查看所有明细</button>
-                <button onclick="closeModal('worker-modal')" class="btn btn-outline">关闭</button>
+        <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+            <h2 id="worker-modal-title" style="margin:0;">评测员统计</h2>
+            <button onclick="closeModal('worker-modal')" class="btn btn-outline">关闭</button>
+        </div>
+        <!-- 筛选栏 -->
+        <div class="stats-filter-bar">
+            <div style="flex:1;">
+                <label style="font-size:0.8rem; font-weight:bold; color:#555; display:block; margin-bottom:8px;">评测员选择</label>
+                <div id="worker-checkbox-container" class="worker-checkbox-group">
+                    <!-- 动态填充 -->
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:flex-end;">
+                <button class="btn btn-outline btn-sm" onclick="selectAllWorkers()">全选</button>
+                <button class="btn btn-outline btn-sm" onclick="clearWorkerSelection()">清空</button>
             </div>
         </div>
+        <!-- 汇总显示 -->
+        <div id="worker-summary-area" style="margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px;"></div>
         <div class="scroll-area" id="worker-stats-area"></div>
     </div>
 </div>
 
+<!-- 图片预览 -->
 <div id="image-overlay" onclick="this.style.display='none'">
-    <div style="color:white; margin-bottom:15px;">点击任意空白处退出预览</div>
+    <div style="color:white; margin-bottom:15px;">点击退出预览</div>
     <div class="compare-container" onclick="event.stopPropagation()">
         <div class="compare-box">
             <img id="overlay-img-a" src="">
@@ -255,350 +335,611 @@
 <script>
     const dimNames = { overall: '整体', aesthetic: '美学', logic: '合理', consistency: '一致' };
     const dimKeys = ['overall', 'aesthetic', 'logic', 'consistency'];
-    let currentWorkerModal = { v1: '', v2: '', scene: '' };
-    let workerStatsCache = [];
-    
-    // 搜索相关状态
-    let allStatsData = []; 
-    let modelNamesSet = new Set();
+    let allPairData = [];
+    let expandedPairs = new Set();
+    let rawDetailData = [];  // 存储原始明细数据用于筛选
+    let currentDetailContext = { v1: '', v2: '', scene: '' };  // 当前明细上下文
+    let rawWorkerStats = [];  // 存储原始评测员统计数据
+    let selectedWorkers = new Set();  // 选中的评测员
+    let currentWorkerContext = { v1: '', v2: '', scene: '' };  // 当前统计上下文
+    let selectedDetailWorkers = new Set();  // 明细中选中的评测员
 
-    function triBar(aW, bW, total, showLabel) {
-        const tW = Math.max(0, total - aW - bW);
-        const t = total || 1;
-        const pA = (aW / t * 100).toFixed(1);
-        const pT = (tW / t * 100).toFixed(1);
-        const pB = (bW / t * 100).toFixed(1);
-        const label = showLabel ? `<span class="percent-label">A:${pA}% / 平:${pT}% / B:${pB}%</span>` : '';
-        return `<div class="dim-item">
-            <div class="bar-wrap">
-                <div class="bar-fill" style="width:${pA}%; background:var(--win-a)"></div>
-                <div class="bar-fill" style="width:${pT}%; background:var(--win-tie)"></div>
-                <div class="bar-fill" style="width:${pB}%; background:var(--win-b)"></div>
-            </div>
-            ${label}
-        </div>`;
-    }
-
-    // --- 1. 数据加载与渲染 ---
     async function loadStats() {
         try {
-            const res = await fetch('/api/dashboard_v2');
-            allStatsData = await res.json();
-            
-            // 更新搜索用的模型库
-            modelNamesSet.clear();
-            allStatsData.forEach(item => {
-                const [v1, v2] = item.pair.split(' vs ');
-                modelNamesSet.add(v1);
-                modelNamesSet.add(v2);
-            });
+            const res = await fetch('/api/dashboard_v3');
+            allPairData = await res.json();
 
-            applyFilters(); // 初始渲染
+            // 更新排行榜场景
+            const scenes = [...new Set(allPairData.flatMap(p => p.scenes.map(s => s.scene)))];
+            document.getElementById('ranking-scene').innerHTML =
+                '<option value="">全部场景</option>' + scenes.map(s => `<option value="${s}">${s}</option>`).join('');
+
+            applyFilters();
             document.getElementById('status-tag').innerText = "最后更新: " + new Date().toLocaleTimeString();
-        } catch (e) { console.error("加载数据失败", e); }
-    }
-
-    function renderMainTable(data) {
-        const body = document.getElementById('main-table-body');
-        body.innerHTML = data.map(item => {
-            const [v1, v2] = item.pair.split(' vs ');
-            let dimHtml = '';
-            for (let key in dimNames) {
-                const aW = item.dims[key].v_a_wins;
-                const bW = item.dims[key].v_b_wins;
-                dimHtml += `<span style="width:40px; color:#666;">${dimNames[key]}</span> ${triBar(aW, bW, item.total, true)}`;
-            }
-            return `
-                <tr>
-                    <td><strong>${v1}</strong><br><small style="color:#999">vs</small><br><strong>${v2}</strong></td>
-                    <td><span style="background:#e3f2fd; color:#1565c0; padding:4px 8px; border-radius:4px; font-weight:bold;">${item.scene}</span></td>
-                    <td>${dimHtml}</td>
-                    <td style="font-family:monospace; font-weight:bold; color:#666;">${item.total}</td>
-                    <td>
-                        <div style="display:flex; gap:6px; justify-content:center;">
-                            <button class="btn btn-outline" onclick="showDetail('${v1}','${v2}','${item.scene}')">明细</button>
-                            <button class="btn btn-worker" onclick="showWorkerStats('${v1}','${v2}','${item.scene}')">👤 统计</button>
-                        </div>
-                    </td>
-                </tr>`;
-        }).join('');
-    }
-
-    // --- 2. 搜索核心逻辑 ---
-    function handleSearchInput(input, type) {
-        const val = input.value.trim().toLowerCase();
-        const suggestBox = document.getElementById(`suggest-${type}`);
-        
-        if (val.length > 0) {
-            const matches = Array.from(modelNamesSet).filter(name => name.toLowerCase().startsWith(val));
-            if (matches.length > 0) {
-                suggestBox.innerHTML = matches.map(m => `<div class="suggest-item" onclick="selectSuggest('${type}', '${m}')">${m}</div>`).join('');
-                suggestBox.style.display = 'block';
-            } else { suggestBox.style.display = 'none'; }
-        } else { suggestBox.style.display = 'none'; }
-
-        applyFilters();
+        } catch (e) {
+            console.error("加载失败", e);
+            document.getElementById('pairs-container').innerHTML = '<div style="text-align:center; padding:40px; color:#f44336;">加载失败: ' + e.message + '</div>';
+        }
     }
 
     function applyFilters() {
         const v1Filter = document.getElementById('search-v1').value.trim().toLowerCase();
         const v2Filter = document.getElementById('search-v2').value.trim().toLowerCase();
-        const scFilter = document.getElementById('search-scene').value.trim().toLowerCase();
+        const sceneFilter = document.getElementById('search-scene').value.trim().toLowerCase();
 
-        const filtered = allStatsData.filter(item => {
-            const [v1, v2] = item.pair.toLowerCase().split(' vs ');
-            const scene = item.scene.toLowerCase();
-            
-            // 场景过滤
-            if (scFilter && !scene.includes(scFilter)) return false;
+        const filtered = allPairData.filter(pair => {
+            const v_a = pair.v_a.toLowerCase();
+            const v_b = pair.v_b.toLowerCase();
 
-            // 模型双向过滤逻辑
             if (v1Filter && v2Filter) {
-                // 必须两个模型都在对战中
-                return (v1.includes(v1Filter) && v2.includes(v2Filter)) || (v1.includes(v2Filter) && v2.includes(v1Filter));
+                if (!((v_a.includes(v1Filter) && v_b.includes(v2Filter)) || (v_a.includes(v2Filter) && v_b.includes(v1Filter)))) return false;
             } else if (v1Filter) {
-                // 单路搜索：A 或 B 匹配即可
-                return v1.includes(v1Filter) || v2.includes(v1Filter);
-            } else if (v2Filter) {
-                return v1.includes(v2Filter) || v2.includes(v2Filter);
+                if (!v_a.includes(v1Filter) && !v_b.includes(v1Filter)) return false;
+            }
+
+            if (sceneFilter) {
+                if (!pair.scenes.some(s => s.scene.toLowerCase().includes(sceneFilter))) return false;
             }
             return true;
         });
 
-        renderMainTable(filtered);
+        renderPairs(filtered);
     }
 
-    function selectSuggest(type, value) {
-        document.getElementById(`search-${type}`).value = value;
-        document.getElementById(`suggest-${type}`).style.display = 'none';
+    function renderPairs(data) {
+        const container = document.getElementById('pairs-container');
+        if (data.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">暂无数据</div>';
+            return;
+        }
+
+        container.innerHTML = data.map(pair => {
+            const isExpanded = expandedPairs.has(pair.pair);
+            return `
+                <div class="pair-card">
+                    <div class="pair-header" onclick="togglePair('${pair.pair}')">
+                        <div class="pair-title">
+                            <h3>${pair.v_a} vs ${pair.v_b}</h3>
+                            <span class="pair-meta">${pair.scenes.length}场景 · ${pair.total}样本</span>
+                        </div>
+                        <div class="pair-summary">
+                            ${renderSummaryBars(pair)}
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <button class="btn btn-sm btn-stats" onclick="event.stopPropagation(); showWorkerStatsPair('${pair.v_a}','${pair.v_b}')">统计</button>
+                            <div class="pair-toggle ${isExpanded ? 'expanded' : ''}">▼</div>
+                        </div>
+                    </div>
+                    <div class="pair-body ${isExpanded ? 'show' : ''}">
+                        ${renderSceneTable(pair)}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // 折叠时显示各维度汇总条（合并所有场景，但维度分开显示）
+    function renderSummaryBars(pair) {
+        // 合并所有场景的各维度数据
+        const mergedDims = {};
+        dimKeys.forEach(key => {
+            let aWins = 0, bWins = 0, total = 0;
+            pair.scenes.forEach(scene => {
+                aWins += scene.dims[key].v_a_wins;
+                bWins += scene.dims[key].v_b_wins;
+                total += scene.total;
+            });
+            mergedDims[key] = { aWins, bWins, total };
+        });
+
+        return dimKeys.map(key => {
+            const d = mergedDims[key];
+            const tieCount = d.total - d.aWins - d.bWins;
+            const aPct = (d.aWins / d.total * 100).toFixed(1);
+            const bPct = (d.bWins / d.total * 100).toFixed(1);
+            const tiePct = (tieCount / d.total * 100).toFixed(1);
+            return `
+                <div class="summary-item">
+                    <div class="summary-label">${dimNames[key]}</div>
+                    <div class="summary-bar">
+                        <div class="bar-a" style="width:${aPct}%"></div>
+                        <div class="bar-tie" style="width:${tiePct}%"></div>
+                        <div class="bar-b" style="width:${bPct}%"></div>
+                    </div>
+                    <div class="summary-rates">
+                        <span class="rate-a" style="color:#43a047;">${aPct}%</span> /
+                        <span class="rate-tie" style="color:#757575;">${tiePct}%</span> /
+                        <span class="rate-b" style="color:#1e88e5;">${bPct}%</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // 展开时显示各场景详细表格
+    function renderSceneTable(pair) {
+        return `
+            <table class="scene-table">
+                <thead>
+                    <tr>
+                        <th class="scene-name">场景</th>
+                        <th>样本数</th>
+                        ${dimKeys.map(k => `<th>${dimNames[k]}<br><small style="font-weight:normal">A / 平 / B</small></th>`).join('')}
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${pair.scenes.map(scene => {
+                        const sTotal = scene.total;
+                        return `
+                            <tr>
+                                <td class="scene-name"><strong>${scene.scene}</strong></td>
+                                <td>${sTotal}</td>
+                                ${dimKeys.map(k => {
+                                    const aW = scene.dims[k].v_a_wins;
+                                    const bW = scene.dims[k].v_b_wins;
+                                    const tieW = sTotal - aW - bW;
+                                    const aP = (aW/sTotal*100).toFixed(1);
+                                    const bP = (bW/sTotal*100).toFixed(1);
+                                    const tieP = (tieW/sTotal*100).toFixed(1);
+                                    return `
+                                        <td>
+                                            <div class="dim-mini-bar" style="margin:auto;">
+                                                <div class="bar-a" style="width:${aP}%"></div>
+                                                <div class="bar-tie" style="width:${tieP}%"></div>
+                                                <div class="bar-b" style="width:${bP}%"></div>
+                                            </div>
+                                            <div style="font-size:11px; margin-top:4px;">
+                                                <span style="color:#4CAF50">${aP}%</span> /
+                                                <span style="color:#999">${tieP}%</span> /
+                                                <span style="color:#2196F3">${bP}%</span>
+                                            </div>
+                                        </td>
+                                    `;
+                                }).join('')}
+                                <td>
+                                    <button class="btn btn-sm btn-outline" onclick="showDetail('${pair.v_a}','${pair.v_b}','${scene.scene}')">明细</button>
+                                    <button class="btn btn-sm btn-primary" onclick="showWorkerStats('${pair.v_a}','${pair.v_b}','${scene.scene}')">统计</button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    function togglePair(pairKey) {
+        if (expandedPairs.has(pairKey)) {
+            expandedPairs.delete(pairKey);
+        } else {
+            expandedPairs.add(pairKey);
+        }
         applyFilters();
     }
 
-    function resetSearch() {
+    function expandAll() {
+        allPairData.forEach(p => expandedPairs.add(p.pair));
+        applyFilters();
+    }
+
+    function collapseAll() {
+        expandedPairs.clear();
+        applyFilters();
+    }
+
+    function resetFilters() {
         document.getElementById('search-v1').value = '';
         document.getElementById('search-v2').value = '';
         document.getElementById('search-scene').value = '';
-        renderMainTable(allStatsData);
+        applyFilters();
     }
 
-    // 点击外部关闭建议框
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.input-group')) {
-            document.querySelectorAll('.suggest-list').forEach(el => el.style.display = 'none');
-        }
-    });
-
-    // --- 3. 原有业务逻辑 (明细、统计、上传) ---
-    let currentDetailData = []; // 缓存当前明细数据以便筛选
-
-    // 功能 2: 大图预览
-    function openImagePreview(src) {
-        const overlay = document.getElementById('image-overlay');
-        const img = document.getElementById('overlay-img');
-        img.src = src;
-        overlay.style.display = 'flex';
+    // 排行榜
+    function showRanking() {
+        document.getElementById('ranking-card').style.display = 'block';
+        loadRanking();
     }
 
-    // 功能 3: 获取 Prompt (调用后端接口)
-    async function fetchPrompt(scene, filename) {
+    async function loadRanking() {
+        const dimension = document.getElementById('ranking-dimension').value;
+        const scene = document.getElementById('ranking-scene').value;
         try {
-            // 注意：这里假设后端有一个对应的 GET 路由映射到你提供的 python 函数
-            const res = await fetch(`/api/get_prompt?scene=${scene}&filename=${filename}`);
-            return await res.text();
+            const res = await fetch(`/api/ranking?dimension=${dimension}${scene ? '&scene=' + scene : ''}`);
+            const data = await res.json();
+            document.getElementById('ranking-body').innerHTML = data.map((item, index) => {
+                const badge = index < 3 ? `<span class="rank-badge rank-badge-${index+1}">${index+1}</span>` : `<span class="rank-badge rank-badge-other">${index+1}</span>`;
+                const rowClass = index < 3 ? `rank-${index+1}` : '';
+                return `
+                    <tr class="${rowClass}">
+                        <td>${badge}</td>
+                        <td><strong>${item.model}</strong></td>
+                        <td>${item.wins}</td>
+                        <td>${item.total}</td>
+                        <td style="font-weight:bold; color:${item.win_rate >= 50 ? '#4CAF50' : '#f44336'}">${item.win_rate}%</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (e) { console.error('排行榜加载失败', e); }
+    }
+
+    // 导出
+    function showExport() {
+        document.getElementById('export-card').style.display = 'block';
+    }
+
+    async function exportData() {
+        const format = document.getElementById('export-format').value;
+        try {
+            const res = await fetch(`/api/export?format=${format}`);
+            const data = await res.json();
+            const resultDiv = document.getElementById('export-result');
+            resultDiv.style.display = 'block';
+            if (format === 'csv') {
+                const blob = new Blob([data.data], { type: 'text/csv;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                resultDiv.innerHTML = `<div style="color:#4CAF50; margin-bottom:10px;">导出成功!</div><a href="${url}" download="export.csv" class="btn btn-primary">下载CSV</a>`;
+            } else {
+                resultDiv.innerHTML = `<div style="color:#4CAF50; margin-bottom:10px;">导出成功! 共 ${data.data.length} 条</div><textarea style="width:100%; height:150px; font-family:monospace; font-size:12px;" readonly>${JSON.stringify(data.data, null, 2)}</textarea>`;
+            }
         } catch (e) {
-            return "Prompt 加载失败";
+            document.getElementById('export-result').style.display = 'block';
+            document.getElementById('export-result').innerHTML = '<div style="color:#f44336;">导出失败</div>';
         }
     }
 
-    // 修改后的 showDetail
+    // 明细
     async function showDetail(v1, v2, scene) {
+        currentDetailContext = { v1, v2, scene };
         document.getElementById('detail-modal').style.display = 'flex';
-        document.getElementById('detail-modal-title').innerText = `评测明细: ${v1} vs ${v2} [${scene}]`;
-        
+        document.getElementById('detail-modal-title').innerText = `明细: ${v1} vs ${v2} [${scene}]`;
+
+        // 清空筛选条件
+        document.getElementById('detail-filename-filter').value = '';
+        document.getElementById('detail-result-filter').value = '';
+
+        // 获取明细数据
         const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
-        currentDetailData = await res.json();
-        
-        // 功能 1: 更新评测员下拉列表
-        const workers = [...new Set(currentDetailData.map(d => d.worker))];
-        const select = document.getElementById('detail-worker-filter');
-        select.innerHTML = '<option value="all">全部评测员</option>' + 
-                        workers.map(w => `<option value="${w}">${w}</option>`).join('');
-        
-        renderDetailTable(currentDetailData, scene, v1, v2);
+        const data = await res.json();
+
+        // 为每条记录获取prompt
+        rawDetailData = await Promise.all(data.map(async d => {
+            let prompt = '';
+            try {
+                const promptRes = await fetch(`/api/get_prompt?scene=${scene}&filename=${d.filename}`);
+                prompt = await promptRes.text();
+            } catch (e) {
+                prompt = '获取失败';
+            }
+            return { ...d, prompt };
+        }));
+
+        // 初始化选中状态（全选）
+        const workers = [...new Set(rawDetailData.map(d => d.worker))].sort();
+        selectedDetailWorkers = new Set(workers);
+
+        // 渲染评测员复选框
+        renderDetailWorkerCheckboxes();
+
+        // 渲染表格
+        filterDetailData();
     }
 
-    // 功能 1: 左右双图大图对比预览
-    function openComparePreview(imgA, imgB, nameA, nameB) {
-        const overlay = document.getElementById('image-overlay');
-        document.getElementById('overlay-img-a').src = imgA;
-        document.getElementById('overlay-img-b').src = imgB;
-        document.getElementById('label-a').innerText = "Model A: " + nameA;
-        document.getElementById('label-b').innerText = "Model B: " + nameB;
-        overlay.style.display = 'flex';
+    // 渲染明细评测员复选框
+    function renderDetailWorkerCheckboxes() {
+        const workers = [...new Set(rawDetailData.map(d => d.worker))].sort();
+        const container = document.getElementById('detail-worker-checkbox-container');
+        container.innerHTML = workers.map(w => {
+            const isSelected = selectedDetailWorkers.has(w);
+            return `
+                <label class="worker-checkbox ${isSelected ? 'selected' : ''}" onclick="toggleDetailWorkerSelection('${w}')">
+                    <span>${w}</span>
+                </label>
+            `;
+        }).join('');
     }
 
-    // 修改后的渲染逻辑
-    async function renderDetailTable(data, scene, v1, v2) {
+    // 切换明细评测员选择
+    function toggleDetailWorkerSelection(worker) {
+        if (selectedDetailWorkers.has(worker)) {
+            selectedDetailWorkers.delete(worker);
+        } else {
+            selectedDetailWorkers.add(worker);
+        }
+        renderDetailWorkerCheckboxes();
+        filterDetailData();
+    }
+
+    // 全选明细评测员
+    function selectAllDetailWorkers() {
+        const workers = [...new Set(rawDetailData.map(d => d.worker))];
+        selectedDetailWorkers = new Set(workers);
+        renderDetailWorkerCheckboxes();
+        filterDetailData();
+    }
+
+    // 清空明细评测员选择
+    function clearDetailWorkerSelection() {
+        selectedDetailWorkers.clear();
+        renderDetailWorkerCheckboxes();
+        filterDetailData();
+    }
+
+    // 筛选明细数据
+    function filterDetailData() {
+        const filenameFilter = document.getElementById('detail-filename-filter').value.toLowerCase();
+        const resultFilter = document.getElementById('detail-result-filter').value;
+
+        const v1 = currentDetailContext.v1;
+        const v2 = currentDetailContext.v2;
+
+        // 筛选数据
+        let filtered = rawDetailData.filter(d => {
+            if (!selectedDetailWorkers.has(d.worker)) return false;
+            if (filenameFilter && !d.filename.toLowerCase().includes(filenameFilter)) return false;
+            if (resultFilter) {
+                const overallVal = d.overall;
+                if (resultFilter === 'a_win' && overallVal !== v1) return false;
+                if (resultFilter === 'b_win' && overallVal !== v2) return false;
+                if (resultFilter === 'tie' && overallVal !== 'tie') return false;
+            }
+            return true;
+        });
+
+        // 更新计数显示
+        document.getElementById('detail-count-info').innerText = `共 ${filtered.length} 条 (选中 ${selectedDetailWorkers.size} 位评测员)`;
+
         const body = document.getElementById('detail-body');
-        const getBadge = (val) => {
-            if(val === 'tie') return '<span class="badge badge-tie">Tie</span>';
-            return val === v1 ? '<span class="badge badge-a">A 胜</span>' : '<span class="badge badge-b">B 胜</span>';
-        };
+        if (filtered.length === 0) {
+            body.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:#999;">无匹配数据</td></tr>';
+            return;
+        }
 
-        document.getElementById('detail-count-info').innerText = `找到 ${data.length} 条数据`;
-
-        body.innerHTML = data.map(d => {
-            const rowId = `prompt-${d.filename.replace(/[^a-z0-9]/gi, '_')}`;
-            const imgA = `/images/${v1}/${scene}/${d.filename}`;
-            const imgB = `/images/${v2}/${scene}/${d.filename}`;
-            
+        body.innerHTML = filtered.map(d => {
+            const imgA = `/images/${v1}/${currentDetailContext.scene}/${d.filename}`;
+            const imgB = `/images/${v2}/${currentDetailContext.scene}/${d.filename}`;
+            const getBadge = (val) => {
+                if (val === 'tie') return '<span class="badge badge-tie">平局</span>';
+                return val === v1 ? '<span class="badge badge-a">A胜</span>' : '<span class="badge badge-b">B胜</span>';
+            };
             return `
                 <tr>
-                    <td style="font-size:10px; color:#999; word-break:break-all;">${d.filename}</td>
+                    <td style="font-size:11px; color:#666;">${d.filename}</td>
                     <td>
-                        <div style="display:flex; gap:8px; justify-content:center; align-items:center;">
-                            <img src="${imgA}" class="preview-img" onclick="openComparePreview('${imgA}','${imgB}','${v1}','${v2}')" title="点击对比大图">
-                            <img src="${imgB}" class="preview-img" onclick="openComparePreview('${imgA}','${imgB}','${v1}','${v2}')" title="点击对比大图">
+                        <div style="display:flex; gap:5px;">
+                            <img src="${imgA}" class="preview-img" onclick="openCompare('${imgA}','${imgB}','${v1}','${v2}')" onerror="this.style.display='none'">
+                            <img src="${imgB}" class="preview-img" onclick="openCompare('${imgA}','${imgB}','${v1}','${v2}')" onerror="this.style.display='none'">
                         </div>
                     </td>
-                    <td class="prompt-cell">
-                        <div id="${rowId}" class="prompt-content" onclick="copyText(this)" title="点击复制内容">⏳ 正在获取...</div>
-                    </td>
-                    <td style="text-align:left;">
-                        <div style="font-size:11px; line-height:1.6;">
-                            ${getBadge(d.overall)} <small>整体</small><br>
-                            ${getBadge(d.aesthetic)} <small>美学</small><br>
-                            ${getBadge(d.logic)} <small>合理</small><br>
-                            ${getBadge(d.consistency)} <small>一致</small>
-                        </div>
+                    <td style="font-size:12px; line-height:1.4;">${d.prompt || '-'}</td>
+                    <td>
+                        ${dimNames.overall}: ${getBadge(d.overall)}<br>
+                        ${dimNames.aesthetic}: ${getBadge(d.aesthetic)}<br>
+                        ${dimNames.logic}: ${getBadge(d.logic)}<br>
+                        ${dimNames.consistency}: ${getBadge(d.consistency)}
                     </td>
                     <td><span style="background:#fff3e0; color:#e65100; padding:2px 6px; border-radius:4px; font-size:11px;">${d.worker}</span></td>
-                    <td style="font-size:10px; color:#bbb;">${d.time.split(' ')[1] || d.time}</td>
-                </tr>`;
+                    <td style="font-size:11px; color:#999;">${d.time}</td>
+                </tr>
+            `;
         }).join('');
-
-        // 异步加载每一行的 Prompt
-        data.forEach(async (d) => {
-            const rowId = `prompt-${d.filename.replace(/[^a-z0-9]/gi, '_')}`;
-            const prompt = await fetchPrompt(scene, d.filename);
-            const el = document.getElementById(rowId);
-            if (el) el.innerText = prompt;
-        });
     }
 
-    // 辅助功能：点击复制 Prompt
-    function copyText(el) {
-        const text = el.innerText;
-        navigator.clipboard.writeText(text).then(() => {
-            const originalText = el.innerText;
-            el.innerText = "✅ 已复制到剪贴板";
-            el.style.color = "green";
-            setTimeout(() => {
-                el.innerText = originalText;
-                el.style.color = "";
-            }, 1000);
-        });
+    function openCompare(imgA, imgB, v1, v2) {
+        document.getElementById('overlay-img-a').src = imgA;
+        document.getElementById('overlay-img-b').src = imgB;
+        document.getElementById('label-a').innerText = v1;
+        document.getElementById('label-b').innerText = v2;
+        document.getElementById('image-overlay').style.display = 'flex';
     }
 
-    // 功能 1: 执行评测员筛选
-    function filterDetailByWorker() {
-        const selectedWorker = document.getElementById('detail-worker-filter').value;
-        const titleText = document.getElementById('detail-modal-title').innerText;
-        // 从标题解析出模型信息
-        const v1 = titleText.split(': ')[1].split(' vs ')[0];
-        const v2 = titleText.split(' vs ')[1].split(' [')[0];
-        const scene = titleText.split('[')[1].split(']')[0];
-
-        const filtered = selectedWorker === 'all' 
-            ? currentDetailData 
-            : currentDetailData.filter(d => d.worker === selectedWorker);
-        
-        renderDetailTable(filtered, scene, v1, v2);
-    }
-
-
+    // 评测员统计 - 单场景
     async function showWorkerStats(v1, v2, scene) {
-        currentWorkerModal = { v1, v2, scene };
+        currentWorkerContext = { v1, v2, scene };
+        await loadAndRenderWorkerStats();
+    }
+
+    // 评测员统计 - 整个版本对（所有场景）
+    async function showWorkerStatsPair(v1, v2) {
+        currentWorkerContext = { v1, v2, scene: '' };
+        await loadAndRenderWorkerStats();
+    }
+
+    // 加载并渲染评测员统计
+    async function loadAndRenderWorkerStats() {
+        const { v1, v2, scene } = currentWorkerContext;
+        const title = scene
+            ? `评测员统计: ${v1} vs ${v2} [${scene}]`
+            : `评测员统计: ${v1} vs ${v2} [所有场景]`;
+
         document.getElementById('worker-modal').style.display = 'flex';
-        document.getElementById('worker-modal-title').innerText = `👤 评测人统计: ${v1} vs ${v2} [${scene}]`;
-        const res = await fetch(`/api/worker_stats?v1=${v1}&v2=${v2}&scene=${scene}`);
-        workerStatsCache = await res.json();
-        renderWorkerStats();
+        document.getElementById('worker-modal-title').innerText = title;
+
+        // 获取数据
+        let url = `/api/worker_stats?v1=${v1}&v2=${v2}`;
+        if (scene) url += `&scene=${scene}`;
+        const res = await fetch(url);
+        rawWorkerStats = await res.json();
+
+        // 初始化选中状态（全选）
+        selectedWorkers = new Set(rawWorkerStats.map(w => w.worker));
+
+        // 渲染复选框
+        renderWorkerCheckboxes();
+
+        // 渲染统计
+        renderWorkerStatsTable();
     }
 
-    function renderWorkerStats() {
-        const workers = workerStatsCache;
-        const area = document.getElementById('worker-stats-area');
-        if (workers.length === 0) { area.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">暂无数据</div>'; return; }
+    // 渲染评测员复选框
+    function renderWorkerCheckboxes() {
+        const container = document.getElementById('worker-checkbox-container');
+        container.innerHTML = rawWorkerStats.map(w => {
+            const isSelected = selectedWorkers.has(w.worker);
+            return `
+                <label class="worker-checkbox ${isSelected ? 'selected' : ''}" onclick="toggleWorkerSelection('${w.worker}')">
+                    <span>${w.worker}</span>
+                </label>
+            `;
+        }).join('');
+    }
 
-        if (typeof workerStatsCache._selected === 'undefined') {
-            workerStatsCache._selected = {};
-            workers.forEach(w => workerStatsCache._selected[w.worker] = true);
+    // 切换评测员选择
+    function toggleWorkerSelection(worker) {
+        if (selectedWorkers.has(worker)) {
+            selectedWorkers.delete(worker);
+        } else {
+            selectedWorkers.add(worker);
         }
-        
-        const selected = workerStatsCache._selected;
-        const selectedWorkers = workers.filter(w => selected[w.worker]);
-
-        let sumTotal = 0;
-        let dimSums = {}; dimKeys.forEach(k => dimSums[k] = { a: 0, b: 0 });
-        selectedWorkers.forEach(w => {
-            sumTotal += w.total;
-            dimKeys.forEach(k => { dimSums[k].a += w[k].v_a_wins; dimSums[k].b += w[k].v_b_wins; });
-        });
-
-        let html = `<div class="worker-stat-card" style="background:#e8f5e9; border-color:#c8e6c9;">
-            <div class="worker-stat-header">
-                <div><span class="worker-name" style="color:#2e7d32;">📊 已选汇总</span><span style="font-size:0.8rem; color:#666; margin-left:8px;">(${selectedWorkers.length}人, ${sumTotal}条)</span></div>
-                <div class="select-controls">
-                    <button onclick="toggleAll(true)">全选</button>
-                    <button onclick="toggleAll(false)">全不选</button>
-                </div>
-            </div><div class="summary-bar">`;
-        
-        dimKeys.forEach(key => {
-            html += `<div class="summary-dim-block"><div class="summary-dim-label">${dimNames[key]}</div>${triBar(dimSums[key].a, dimSums[key].b, sumTotal, true)}</div>`;
-        });
-        html += `</div></div>`;
-
-        workers.forEach(w => {
-            const isChecked = selected[w.worker];
-            let dimHtml = '';
-            dimKeys.forEach(k => { dimHtml += `<span style="width:40px; color:#666;">${dimNames[k]}</span> ${triBar(w[k].v_a_wins, w[k].v_b_wins, w.total, true)}`; });
-            html += `<div class="worker-stat-card ${isChecked ? 'selected' : 'dimmed'}">
-                <div class="worker-stat-header">
-                    <label class="worker-check-label"><input type="checkbox" class="worker-check" ${isChecked ? 'checked' : ''} onchange="toggleWorker('${w.worker.replace(/'/g, "\\'")}', this.checked)">
-                    <span class="worker-name">👤 ${w.worker}</span></label>
-                    <span class="worker-total">样本: ${w.total}</span>
-                </div>${dimHtml}</div>`;
-        });
-        area.innerHTML = html;
+        renderWorkerCheckboxes();
+        renderWorkerStatsTable();
     }
 
-    function toggleWorker(name, checked) { workerStatsCache._selected[name] = checked; renderWorkerStats(); }
-    function toggleAll(state) { workerStatsCache.forEach(w => workerStatsCache._selected[w.worker] = state); renderWorkerStats(); }
-    function showWorkerDetail() { closeModal('worker-modal'); showDetail(currentWorkerModal.v1, currentWorkerModal.v2, currentWorkerModal.scene); }
-    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    // 全选评测员
+    function selectAllWorkers() {
+        selectedWorkers = new Set(rawWorkerStats.map(w => w.worker));
+        renderWorkerCheckboxes();
+        renderWorkerStatsTable();
+    }
+
+    // 清空评测员选择
+    function clearWorkerSelection() {
+        selectedWorkers.clear();
+        renderWorkerCheckboxes();
+        renderWorkerStatsTable();
+    }
+
+    // 渲染统计表格
+    function renderWorkerStatsTable() {
+        const { v1, v2 } = currentWorkerContext;
+
+        // 筛选选中的评测员
+        const filtered = rawWorkerStats.filter(w => selectedWorkers.has(w.worker));
+
+        const summaryArea = document.getElementById('worker-summary-area');
+        const tableArea = document.getElementById('worker-stats-area');
+
+        if (filtered.length === 0) {
+            summaryArea.innerHTML = '';
+            tableArea.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">请选择评测员</div>';
+            return;
+        }
+
+        // 计算汇总
+        const summary = { total: 0, dims: {} };
+        dimKeys.forEach(k => {
+            summary.dims[k] = { aWins: 0, bWins: 0 };
+        });
+        filtered.forEach(w => {
+            summary.total += w.total;
+            dimKeys.forEach(k => {
+                summary.dims[k].aWins += w[k].v_a_wins || 0;
+                summary.dims[k].bWins += w[k].v_b_wins || 0;
+            });
+        });
+
+        // 渲染汇总条
+        summaryArea.innerHTML = `
+            <div style="font-weight:bold; margin-bottom:10px; color:#555;">汇总统计 (${filtered.length}位评测员, ${summary.total}样本)</div>
+            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                ${dimKeys.map(k => {
+                    const d = summary.dims[k];
+                    const tieCount = summary.total - d.aWins - d.bWins;
+                    const aPct = summary.total > 0 ? (d.aWins / summary.total * 100).toFixed(1) : 0;
+                    const bPct = summary.total > 0 ? (d.bWins / summary.total * 100).toFixed(1) : 0;
+                    const tiePct = summary.total > 0 ? (tieCount / summary.total * 100).toFixed(1) : 0;
+                    return `
+                        <div style="flex:1; min-width:200px;">
+                            <div style="font-size:0.85rem; color:#666; margin-bottom:5px;">${dimNames[k]}</div>
+                            <div class="stats-bar-container">
+                                <div class="stats-bar-segment bar-a" style="width:${aPct}%">${aPct > 10 ? aPct + '%' : ''}</div>
+                                <div class="stats-bar-segment bar-tie" style="width:${tiePct}%">${tiePct > 10 ? tiePct + '%' : ''}</div>
+                                <div class="stats-bar-segment bar-b" style="width:${bPct}%">${bPct > 10 ? bPct + '%' : ''}</div>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-top:4px;">
+                                <span style="color:#43a047;">A: ${aPct}%</span>
+                                <span style="color:#9e9e9e;">平: ${tiePct}%</span>
+                                <span style="color:#1e88e5;">B: ${bPct}%</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+
+        // 渲染详细表格
+        tableArea.innerHTML = `
+            <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                    <tr style="background:linear-gradient(135deg, #e3f2fd, #f3e5f5);">
+                        <th style="padding:12px; text-align:left;">评测员</th>
+                        <th style="padding:12px;">样本数</th>
+                        ${dimKeys.map(k => `<th style="padding:12px;">${dimNames[k]}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filtered.map(w => {
+                        const t = w.total;
+                        return `
+                            <tr style="border-bottom:1px solid #eee;">
+                                <td style="padding:12px; font-weight:bold; color:#555;">${w.worker}</td>
+                                <td style="padding:12px; text-align:center;"><span style="background:#f5f5f5; padding:4px 10px; border-radius:12px;">${t}</span></td>
+                                ${dimKeys.map(k => {
+                                    const aW = w[k].v_a_wins || 0;
+                                    const bW = w[k].v_b_wins || 0;
+                                    const tieW = t - aW - bW;
+                                    const aP = t > 0 ? (aW/t*100).toFixed(1) : 0;
+                                    const bP = t > 0 ? (bW/t*100).toFixed(1) : 0;
+                                    const tieP = t > 0 ? (tieW/t*100).toFixed(1) : 0;
+                                    return `
+                                        <td style="padding:12px;">
+                                            <div class="stats-bar-container" style="min-width:100px;">
+                                                <div class="stats-bar-segment bar-a" style="width:${aP}%"></div>
+                                                <div class="stats-bar-segment bar-tie" style="width:${tieP}%"></div>
+                                                <div class="stats-bar-segment bar-b" style="width:${bP}%"></div>
+                                            </div>
+                                            <div style="font-size:0.75rem; margin-top:4px; text-align:center;">
+                                                <span style="color:#43a047;">${aP}</span> /
+                                                <span style="color:#9e9e9e;">${tieP}</span> /
+                                                <span style="color:#1e88e5;">${bP}</span>
+                                            </div>
+                                        </td>
+                                    `;
+                                }).join('')}
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).style.display = 'none';
+    }
 
     // 上传
     document.getElementById('upload-form').onsubmit = async (e) => {
         e.preventDefault();
-        const btn = document.getElementById('up-btn');
+        const btn = document.querySelector('#upload-form button[type="submit"]');
         const msg = document.getElementById('up-msg');
         const formData = new FormData();
         formData.append('version', document.getElementById('up-version').value);
         formData.append('scene', document.getElementById('up-scene').value);
         formData.append('file', document.getElementById('up-file').files[0]);
-        btn.disabled = true; msg.innerHTML = "⏳ 正在同步...";
+        btn.disabled = true;
+        msg.innerHTML = "同步中...";
         try {
             const res = await fetch('/api/upload', { method: 'POST', body: formData });
-            if (res.ok) { msg.innerHTML = "<span style='color:green'>✅ 成功</span>"; loadStats(); } 
-            else { msg.innerHTML = "<span style='color:red'>❌ 失败</span>"; }
-        } catch (e) { msg.innerHTML = "❌ 网络错误"; }
+            msg.innerHTML = res.ok ? "<span style='color:green'>成功</span>" : "<span style='color:red'>失败</span>";
+            if (res.ok) loadStats();
+        } catch (e) { msg.innerHTML = "网络错误"; }
         finally { btn.disabled = false; }
     };
 
+    // 初始化
     loadStats();
-    setInterval(loadStats, 15000);
+    setInterval(loadStats, 30000);
 </script>
 </body>
 </html>

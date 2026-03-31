@@ -124,3 +124,5 @@ python main.py
 - **后端**：Python + FastAPI + SQLite
 - **前端**：原生 HTML/CSS/JS（无框架依赖）
 - **部署**：uvicorn 内置服务器
+
+<!-- nohup uvicorn main:app --host 0.0.0.0 --port 8000 > 111.log 2>&1 -->

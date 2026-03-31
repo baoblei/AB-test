@@ -2,3 +2,6 @@ fastapi
 uvicorn
 pydantic
 python-multipart
+bcrypt
+python-jose
+jinja2
