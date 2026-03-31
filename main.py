@@ -4,6 +4,7 @@ import sqlite3
 import shutil
 import zipfile
 import time
+import json
 import bcrypt
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -29,6 +30,17 @@ os.makedirs(PROMPT_DIR, exist_ok=True)
 
 app.mount("/images", StaticFiles(directory=RESULT_DIR), name="images")
 templates = Jinja2Templates(directory="templates")
+
+BAD_CASE_LABELS = {
+    "美学缺陷": ["乱码", "色彩异常", "明显噪点", "网格伪影", "模糊失焦"],
+    "结构畸变": ["物体粘连", "透视问题", "空间扭曲"],
+    "安全违规": ["涉黄", "暴力", "侵权风险"],
+}
+BAD_CASE_LABEL_TO_CATEGORY = {
+    label: category
+    for category, labels in BAD_CASE_LABELS.items()
+    for label in labels
+}
 
 # --- 密码工具函数 ---
 def hash_password(password: str) -> str:
@@ -92,6 +104,10 @@ def init_db():
         skipped INTEGER DEFAULT 0,
         user_id INTEGER
     )''')
+    ensure_column(cursor, "results_log", "bad_case_tags_a", "TEXT DEFAULT '[]'")
+    ensure_column(cursor, "results_log", "bad_case_tags_b", "TEXT DEFAULT '[]'")
+    ensure_column(cursor, "results_log", "bad_case_categories_a", "TEXT DEFAULT '[]'")
+    ensure_column(cursor, "results_log", "bad_case_categories_b", "TEXT DEFAULT '[]'")
 
     # 任务分配表
     cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='pair_tasks'")
@@ -195,6 +211,8 @@ class VoteSubmit(BaseModel):
     aesthetic: str
     logic: str
     consistency: str
+    bad_case_left: Optional[List[str]] = None
+    bad_case_right: Optional[List[str]] = None
     duration_seconds: Optional[int] = None
 
 class PasswordChange(BaseModel):
@@ -227,6 +245,38 @@ def log_operation(user_id: int, action: str, details: str, ip_address: str = "")
     )
     conn.commit()
     conn.close()
+
+def ensure_column(cursor, table_name: str, column_name: str, definition: str):
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    columns = {row[1] for row in cursor.fetchall()}
+    if column_name not in columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+def normalize_bad_case_tags(tags: Optional[List[str]]) -> List[str]:
+    if not tags:
+        return []
+    unique_tags = []
+    for tag in tags:
+        if tag in BAD_CASE_LABEL_TO_CATEGORY and tag not in unique_tags:
+            unique_tags.append(tag)
+    return unique_tags
+
+def categories_from_tags(tags: List[str]) -> List[str]:
+    categories = []
+    for tag in tags:
+        category = BAD_CASE_LABEL_TO_CATEGORY.get(tag)
+        if category and category not in categories:
+            categories.append(category)
+    return categories
+
+def safe_load_json_list(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    try:
+        data = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return data if isinstance(data, list) else []
 
 # --- 启动事件 ---
 @app.on_event("startup")
@@ -466,17 +516,37 @@ def submit_vote(vote: VoteSubmit, user: dict = Depends(require_login)):
         if choice == 'right': return vote.v_right
         return 'tie'
 
+    left_tags = normalize_bad_case_tags(vote.bad_case_left)
+    right_tags = normalize_bad_case_tags(vote.bad_case_right)
+
+    if vote.v_left == vote.v_right:
+        raise HTTPException(status_code=400, detail="左右模型不能相同")
+
+    if vote.v_left < vote.v_right:
+        tags_a, tags_b = left_tags, right_tags
+    else:
+        tags_a, tags_b = right_tags, left_tags
+
+    categories_a = categories_from_tags(tags_a)
+    categories_b = categories_from_tags(tags_b)
+
     conn = sqlite3.connect(DB_PATH)
     try:
         cursor = conn.cursor()
         v_a, v_b = sorted([vote.v_left, vote.v_right])
         cursor.execute("""
-            INSERT INTO results_log (v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, worker, duration_seconds, user_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO results_log (
+                v_a, v_b, scene, filename, overall, aesthetic, logic, consistency,
+                worker, duration_seconds, user_id,
+                bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+            )
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (v_a, v_b, vote.scene, vote.filename,
               get_real_val(vote.overall), get_real_val(vote.aesthetic),
               get_real_val(vote.logic), get_real_val(vote.consistency),
-              vote.worker, vote.duration_seconds, user["id"]))
+              vote.worker, vote.duration_seconds, user["id"],
+              json.dumps(tags_a, ensure_ascii=False), json.dumps(tags_b, ensure_ascii=False),
+              json.dumps(categories_a, ensure_ascii=False), json.dumps(categories_b, ensure_ascii=False)))
 
         cursor.execute("UPDATE pair_tasks SET status='completed' WHERE id=?", (vote.task_id,))
         conn.commit()
@@ -501,9 +571,16 @@ def skip_task(task_id: int, user: dict = Depends(require_login)):
 
     # 记录跳过
     cursor.execute("""
-        INSERT INTO results_log (v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, worker, skipped, user_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
-    """, (v_a, v_b, scene, filename, 'skipped', 'skipped', 'skipped', 'skipped', worker, 1, user["id"]))
+        INSERT INTO results_log (
+            v_a, v_b, scene, filename, overall, aesthetic, logic, consistency,
+            worker, skipped, user_id,
+            bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+        )
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        v_a, v_b, scene, filename, 'skipped', 'skipped', 'skipped', 'skipped',
+        worker, 1, user["id"], '[]', '[]', '[]', '[]'
+    ))
 
     cursor.execute("UPDATE pair_tasks SET status='completed' WHERE id=?", (task_id,))
     conn.commit()
@@ -557,6 +634,41 @@ def get_my_stats(user: dict = Depends(require_login)):
         "avg_duration_seconds": round(avg_duration, 1),
         "scene_stats": scene_stats
     }
+
+def build_bad_case_stats(rows):
+    stats = {
+        "v_a": {"bad_count": 0, "total": 0, "rate": 0, "categories": {}, "tags": {}},
+        "v_b": {"bad_count": 0, "total": 0, "rate": 0, "categories": {}, "tags": {}},
+    }
+    for _, _, _, _, tags_a_raw, tags_b_raw, _, _ in rows:
+        tags_a = safe_load_json_list(tags_a_raw)
+        tags_b = safe_load_json_list(tags_b_raw)
+
+        stats["v_a"]["total"] += 1
+        stats["v_b"]["total"] += 1
+
+        if tags_a:
+            stats["v_a"]["bad_count"] += 1
+        if tags_b:
+            stats["v_b"]["bad_count"] += 1
+
+        for side_key, tags in (("v_a", tags_a), ("v_b", tags_b)):
+            side_stats = stats[side_key]
+            seen_categories = set()
+            for tag in tags:
+                category = BAD_CASE_LABEL_TO_CATEGORY.get(tag)
+                if not category:
+                    continue
+                side_stats["tags"][tag] = side_stats["tags"].get(tag, 0) + 1
+                if category not in seen_categories:
+                    side_stats["categories"][category] = side_stats["categories"].get(category, 0) + 1
+                    seen_categories.add(category)
+
+    for side_key in ("v_a", "v_b"):
+        side_stats = stats[side_key]
+        total = side_stats["total"] or 0
+        side_stats["rate"] = round(side_stats["bad_count"] / total * 100, 1) if total else 0
+    return stats
 
 # ========== 看板功能 API ==========
 
@@ -637,6 +749,14 @@ def get_dashboard_v3():
     for r in pair_rows:
         v_a, v_b = r[0], r[1]
 
+        cursor.execute("""
+            SELECT scene, filename, worker, timestamp, bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+            FROM results_log
+            WHERE v_a=? AND v_b=? AND skipped=0
+        """, (v_a, v_b))
+        pair_bad_case_rows = cursor.fetchall()
+        pair_bad_case_stats = build_bad_case_stats(pair_bad_case_rows)
+
         # 获取该版本对下所有场景的统计（使用参数绑定）
         cursor.execute("""
             SELECT scene,
@@ -655,15 +775,18 @@ def get_dashboard_v3():
 
         scenes = []
         for sr in scene_rows:
+            scene_name = sr[0]
+            scene_bad_case_rows = [row for row in pair_bad_case_rows if row[0] == scene_name]
             scenes.append({
-                "scene": sr[0],
+                "scene": scene_name,
                 "total": sr[9],
                 "dims": {
                     "overall": {"v_a_wins": sr[1], "v_b_wins": sr[2]},
                     "aesthetic": {"v_a_wins": sr[3], "v_b_wins": sr[4]},
                     "logic": {"v_a_wins": sr[5], "v_b_wins": sr[6]},
                     "consistency": {"v_a_wins": sr[7], "v_b_wins": sr[8]},
-                }
+                },
+                "bad_case": build_bad_case_stats(scene_bad_case_rows)
             })
 
         result.append({
@@ -677,6 +800,7 @@ def get_dashboard_v3():
                 "logic": {"v_a_wins": r[6], "v_b_wins": r[7]},
                 "consistency": {"v_a_wins": r[8], "v_b_wins": r[9]},
             },
+            "bad_case": pair_bad_case_stats,
             "scenes": scenes
         })
 
@@ -747,15 +871,93 @@ def get_detail_results(v1: str, v2: str, scene: str):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT filename, overall, aesthetic, logic, consistency, worker, timestamp, duration_seconds
+        SELECT filename, overall, aesthetic, logic, consistency, worker, timestamp, duration_seconds,
+               bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
         FROM results_log WHERE v_a=? AND v_b=? AND scene=? AND skipped=0 ORDER BY worker, filename, timestamp DESC
     """, (v_a, v_b, scene))
     rows = cursor.fetchall()
     conn.close()
     return [{
         "filename": r[0], "overall": r[1], "aesthetic": r[2],
-        "logic": r[3], "consistency": r[4], "worker": r[5], "time": r[6], "duration": r[7]
+        "logic": r[3], "consistency": r[4], "worker": r[5], "time": r[6], "duration": r[7],
+        "bad_case_tags_a": safe_load_json_list(r[8]),
+        "bad_case_tags_b": safe_load_json_list(r[9]),
+        "bad_case_categories_a": safe_load_json_list(r[10]),
+        "bad_case_categories_b": safe_load_json_list(r[11]),
     } for r in rows]
+
+@app.get("/api/bad_case_details")
+def get_bad_case_details(
+    v1: str,
+    v2: str,
+    scene: Optional[str] = None,
+    model: Optional[str] = None,
+    category: Optional[str] = None,
+    tag: Optional[str] = None,
+):
+    v_a, v_b = sorted([v1, v2])
+    if model and model not in {v_a, v_b}:
+        raise HTTPException(status_code=400, detail="模型参数无效")
+    if category and category not in BAD_CASE_LABELS:
+        raise HTTPException(status_code=400, detail="坏例类别无效")
+    if tag and tag not in BAD_CASE_LABEL_TO_CATEGORY:
+        raise HTTPException(status_code=400, detail="坏例标签无效")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    query = """
+        SELECT scene, filename, worker, timestamp, duration_seconds,
+               bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+        FROM results_log
+        WHERE v_a=? AND v_b=? AND skipped=0
+    """
+    params = [v_a, v_b]
+    if scene:
+        query += " AND scene=?"
+        params.append(scene)
+    query += " ORDER BY timestamp DESC"
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    results = []
+    for row in rows:
+        row_scene, filename, worker, timestamp, duration_seconds, tags_a_raw, tags_b_raw, categories_a_raw, categories_b_raw = row
+        side_payloads = [
+            {
+                "model": v_a,
+                "tags": safe_load_json_list(tags_a_raw),
+                "categories": safe_load_json_list(categories_a_raw),
+            },
+            {
+                "model": v_b,
+                "tags": safe_load_json_list(tags_b_raw),
+                "categories": safe_load_json_list(categories_b_raw),
+            },
+        ]
+        for payload in side_payloads:
+            if not payload["tags"]:
+                continue
+            if model and payload["model"] != model:
+                continue
+            if category and category not in payload["categories"]:
+                continue
+            if tag and tag not in payload["tags"]:
+                continue
+            results.append({
+                "scene": row_scene,
+                "filename": filename,
+                "worker": worker,
+                "time": timestamp,
+                "duration": duration_seconds,
+                "model": payload["model"],
+                "categories": payload["categories"],
+                "tags": payload["tags"],
+            })
+    return {
+        "filters": {"scene": scene, "model": model, "category": category, "tag": tag},
+        "results": results
+    }
 
 @app.get("/api/export")
 def export_data(format: str = "json", v1: Optional[str] = None, v2: Optional[str] = None,

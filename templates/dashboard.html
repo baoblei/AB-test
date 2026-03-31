@@ -2,150 +2,337 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>MLLM 评测看板 - 归档版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLLM 评测看板</title>
     <style>
-        :root { --primary: #2196F3; --win-a: #4CAF50; --win-b: #2196F3; --win-tie: #bdbdbd; --bg: #f0f2f5; }
-        body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: var(--bg); color: #333; }
-        .container { max-width: 1400px; margin: 0 auto; }
-
-        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .card-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 20px; border-left: 5px solid var(--primary); padding-left: 12px; display: flex; justify-content: space-between; align-items: center; }
-
-        .btn { padding: 8px 16px; border-radius: 6px; cursor: pointer; border: none; font-weight: 500; transition: 0.2s; font-size: 0.85rem; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-outline { border: 1px solid var(--primary); color: var(--primary); background: none; }
-        .btn-outline:hover { background: var(--primary); color: white; }
-        .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
-
-        /* 折叠卡片 */
-        .pair-card { background: #fafbfc; border: 1px solid #e8e8e8; border-radius: 12px; margin-bottom: 15px; overflow: hidden; }
-        .pair-header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 15px 20px; cursor: pointer;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white; transition: 0.3s;
+        :root {
+            --bg: #eef2f0;
+            --card: #ffffff;
+            --line: rgba(33, 45, 61, 0.1);
+            --text: #1b2430;
+            --muted: #627081;
+            --primary: #1565c0;
+            --primary-soft: rgba(21, 101, 192, 0.08);
+            --good: #2e7d32;
+            --bad: #c62828;
+            --tie: #8d99a6;
+            --accent: #7c3aed;
+            --shadow: 0 14px 40px rgba(18, 38, 63, 0.08);
         }
-        .pair-header:hover { background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%); }
-        .pair-title { display: flex; align-items: center; gap: 15px; flex: 1; }
-        .pair-title h3 { margin: 0; font-size: 1.1rem; }
-        .pair-meta { font-size: 0.85rem; opacity: 0.9; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 24px;
+            color: var(--text);
+            font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(21, 101, 192, 0.08), transparent 24%),
+                radial-gradient(circle at top right, rgba(124, 58, 237, 0.08), transparent 20%),
+                linear-gradient(180deg, #f5f8f6 0%, #eef2f0 100%);
+        }
+        .container { max-width: 1480px; margin: 0 auto; }
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 22px;
+        }
+        .navbar h1 { margin: 0; font-size: 1.9rem; }
+        .navbar p { margin: 6px 0 0; color: var(--muted); }
+        .nav-links { display: flex; align-items: center; gap: 16px; }
+        .nav-links a { color: var(--primary); text-decoration: none; font-weight: 600; }
+        .status-tag { color: var(--muted); font-size: 0.85rem; }
 
-        /* 折叠时显示的汇总条 */
-        .pair-summary { display: flex; gap: 30px; align-items: center; flex: 2; justify-content: center; }
-        .summary-item { text-align: center; }
-        .summary-label { font-size: 0.75rem; opacity: 0.8; margin-bottom: 4px; }
-        .summary-bar { display: flex; height: 20px; background: rgba(255,255,255,0.2); border-radius: 10px; overflow: hidden; min-width: 120px; }
-        .bar-a { background: var(--win-a); height: 100%; }
-        .bar-tie { background: var(--win-tie); height: 100%; }
-        .bar-b { background: var(--win-b); height: 100%; }
-        .summary-rates { font-size: 0.8rem; margin-top: 4px; }
-        .rate-a { color: #a5d6a7; }
-        .rate-b { color: #90caf9; }
-        .rate-tie { color: #e0e0e0; }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+            margin-bottom: 18px;
+        }
+        .card-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .card-title h2 { margin: 0; font-size: 1.08rem; }
+        .card-title p { margin: 6px 0 0; color: var(--muted); font-size: 0.86rem; }
+        .btn {
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 0.88rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.18s ease;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: #0f57ab; }
+        .btn-outline { background: white; color: var(--primary); border-color: rgba(21, 101, 192, 0.2); }
+        .btn-outline:hover { background: var(--primary-soft); }
+        .btn-accent { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: white; }
+        .btn-sm { padding: 7px 10px; font-size: 0.8rem; }
 
-        .pair-toggle { font-size: 1.5rem; transition: transform 0.3s; width: 30px; text-align: center; }
-        .pair-toggle.expanded { transform: rotate(180deg); }
+        .upload-grid, .filter-grid {
+            display: grid;
+            gap: 14px;
+            align-items: end;
+        }
+        .upload-grid { grid-template-columns: 1fr 1fr 2fr auto; }
+        .filter-grid { grid-template-columns: 1fr 1fr 1fr auto auto auto; }
+        .input-group { display: flex; flex-direction: column; gap: 6px; }
+        .input-group label { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
+        input, select {
+            width: 100%;
+            padding: 11px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            background: white;
+            font-size: 0.92rem;
+        }
 
-        .pair-body { display: none; padding: 20px; background: white; border-top: 1px solid #e8e8e8; }
+        .pair-card {
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            overflow: hidden;
+            margin-bottom: 16px;
+            background: white;
+        }
+        .pair-header {
+            padding: 18px 20px;
+            display: grid;
+            grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) auto;
+            gap: 18px;
+            align-items: center;
+            background: linear-gradient(135deg, #163c73, #2962b6);
+            color: white;
+            cursor: pointer;
+        }
+        .pair-title h3 { margin: 0; font-size: 1.12rem; }
+        .pair-title p { margin: 6px 0 0; font-size: 0.86rem; opacity: 0.86; }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .summary-box {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 10px 12px;
+            min-height: 82px;
+        }
+        .summary-box strong { display: block; font-size: 0.82rem; margin-bottom: 8px; }
+        .rate-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 0.79rem;
+            opacity: 0.95;
+            margin-top: 6px;
+        }
+        .mini-bar {
+            display: flex;
+            height: 10px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(255,255,255,0.18);
+        }
+        .seg-a { background: #66bb6a; }
+        .seg-tie { background: #b0bec5; }
+        .seg-b { background: #64b5f6; }
+        .bad-rate-list {
+            display: grid;
+            gap: 6px;
+            font-size: 0.8rem;
+        }
+        .bad-rate-item { display: flex; justify-content: space-between; gap: 8px; }
+        .pair-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .pair-toggle { font-size: 1.3rem; font-weight: 700; }
+
+        .pair-body {
+            display: none;
+            padding: 18px 20px 22px;
+            background: #fcfdff;
+        }
         .pair-body.show { display: block; }
+        .scene-table { width: 100%; border-collapse: collapse; }
+        .scene-table th, .scene-table td {
+            border-bottom: 1px solid var(--line);
+            padding: 12px 10px;
+            text-align: center;
+            vertical-align: top;
+            font-size: 0.88rem;
+        }
+        .scene-table th {
+            background: #eef5ff;
+            color: #24508d;
+            font-size: 0.82rem;
+        }
+        .scene-name { text-align: left !important; font-weight: 800; }
+        .bad-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 8px;
+            border-radius: 999px;
+            background: rgba(21, 101, 192, 0.08);
+            color: var(--primary);
+            font-size: 0.76rem;
+            font-weight: 700;
+        }
+        .bad-pill { background: rgba(198, 40, 40, 0.1); color: var(--bad); }
+        .empty-state {
+            text-align: center;
+            padding: 36px;
+            color: var(--muted);
+        }
 
-        /* 场景表格 */
-        .scene-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        .scene-table th { background: #e3f2fd; padding: 10px; font-size: 0.85rem; color: #1565c0; text-align: center; }
-        .scene-table td { padding: 12px 10px; border-bottom: 1px solid #eee; text-align: center; font-size: 0.9rem; }
-        .scene-table tr:hover { background: #f5f5f5; }
-        .scene-name { font-weight: bold; text-align: left !important; }
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(12, 18, 27, 0.66);
+            padding: 20px;
+        }
+        .modal-content {
+            width: min(1320px, 100%);
+            max-height: 88vh;
+            background: white;
+            border-radius: 24px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 18px 22px;
+            border-bottom: 1px solid var(--line);
+        }
+        .modal-head h3 { margin: 0; }
+        .modal-body {
+            overflow: auto;
+            padding: 18px 22px 22px;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 14px;
+            background: #f5f8fc;
+            border-radius: 16px;
+        }
+        .toolbar .input-group { min-width: 180px; flex: 1; }
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .checkbox-chip {
+            padding: 7px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: white;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .checkbox-chip.selected {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .data-table th, .data-table td {
+            border-bottom: 1px solid var(--line);
+            padding: 12px 10px;
+            text-align: left;
+            vertical-align: top;
+            font-size: 0.86rem;
+        }
+        .preview-img {
+            width: 74px;
+            height: 74px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            cursor: pointer;
+        }
+        #image-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 120;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.92);
+            padding: 20px;
+        }
+        .single-preview {
+            width: min(980px, 100%);
+            background: rgba(255,255,255,0.08);
+            border-radius: 22px;
+            padding: 16px;
+            text-align: center;
+        }
+        .single-preview img {
+            max-width: 100%;
+            max-height: 76vh;
+            object-fit: contain;
+            border-radius: 14px;
+        }
+        .compare-label { color: white; margin-top: 10px; font-weight: 800; }
 
-        /* 维度小条 */
-        .dim-mini-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #e0e0e0; min-width: 80px; }
-        .dim-mini-bar .bar-a { border-radius: 4px 0 0 4px; }
-        .dim-mini-bar .bar-b { border-radius: 0 4px 4px 0; }
-
-        /* 排行榜 */
-        .ranking-table { width: 100%; border-collapse: collapse; }
-        .ranking-table th { background: #e3f2fd; padding: 10px; font-size: 0.85rem; }
-        .ranking-table td { padding: 10px; border-bottom: 1px solid #eee; }
-        .rank-1 { background: linear-gradient(90deg, #ffd700, #fff8dc); font-weight: bold; }
-        .rank-2 { background: linear-gradient(90deg, #c0c0c0, #f5f5f5); }
-        .rank-3 { background: linear-gradient(90deg, #cd7f32, #fff8dc); }
-        .rank-badge { display: inline-block; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-weight: bold; font-size: 12px; }
-        .rank-badge-1 { background: #ffd700; color: #333; }
-        .rank-badge-2 { background: #c0c0c0; color: #333; }
-        .rank-badge-3 { background: #cd7f32; color: white; }
-        .rank-badge-other { background: #e0e0e0; color: #666; }
-
-        /* 模态框 */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 2000; }
-        .modal-content { background: white; width: 95%; max-width: 1200px; height: 85%; border-radius: 15px; padding: 25px; display: flex; flex-direction: column; }
-        .scroll-area { flex: 1; overflow-y: auto; margin-top: 15px; }
-
-        /* 图预览 */
-        .preview-img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid #ddd; }
-        #image-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 3000; }
-        .compare-container { display: flex; gap: 30px; max-width: 95%; max-height: 80vh; }
-        .compare-box { text-align: center; }
-        .compare-box img { max-width: 45vw; max-height: 70vh; object-fit: contain; border-radius: 8px; }
-        .compare-label { color: white; margin-top: 15px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 8px 20px; border-radius: 20px; }
-
-        /* Badge */
-        .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-        .badge-a { background: #e8f5e9; color: #2e7d32; }
-        .badge-b { background: #e3f2fd; color: #1565c0; }
-        .badge-tie { background: #f5f5f5; color: #757575; }
-
-        /* 导航 */
-        .navbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .navbar a { color: var(--primary); text-decoration: none; margin-left: 15px; font-size: 0.9rem; }
-
-        /* 上传 */
-        .upload-grid { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 15px; align-items: end; margin-bottom: 15px; }
-        .input-group { display: flex; flex-direction: column; gap: 5px; }
-        input, select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
-
-        /* 筛选 */
-        .filter-grid { display: grid; grid-template-columns: 1fr 1fr 1fr auto auto auto; gap: 15px; align-items: end; }
-
-        /* 统计模态框筛选样式 */
-        .stats-filter-bar { display: flex; gap: 15px; margin-bottom: 15px; padding: 12px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 10px; flex-wrap: wrap; align-items: flex-end; }
-        .worker-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; max-width: 400px; }
-        .worker-checkbox { display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: white; border: 1px solid #ddd; border-radius: 15px; font-size: 0.8rem; cursor: pointer; transition: 0.2s; }
-        .worker-checkbox:hover { border-color: var(--primary); }
-        .worker-checkbox input { display: none; }
-        .worker-checkbox.selected { background: var(--primary); color: white; border-color: var(--primary); }
-
-        /* 统计bar可视化 */
-        .stats-bar-container { display: flex; height: 24px; background: #e0e0e0; border-radius: 12px; overflow: hidden; min-width: 150px; position: relative; }
-        .stats-bar-segment { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
-        .stats-bar-segment.bar-a { background: linear-gradient(180deg, #66bb6a, #43a047); }
-        .stats-bar-segment.bar-tie { background: linear-gradient(180deg, #bdbdbd, #9e9e9e); }
-        .stats-bar-segment.bar-b { background: linear-gradient(180deg, #42a5f5, #1e88e5); }
-
-        /* 胜率数字显示 */
-        .win-rate-display { font-size: 0.85rem; font-weight: bold; min-width: 50px; text-align: right; }
-        .win-rate-high { color: #2e7d32; }
-        .win-rate-low { color: #c62828; }
-
-        /* 总体统计按钮 */
-        .btn-stats { background: linear-gradient(135deg, #9c27b0, #7b1fa2); color: white; }
-        .btn-stats:hover { background: linear-gradient(135deg, #8e24aa, #6a1b9a); }
+        @media (max-width: 1180px) {
+            .pair-header, .summary-grid, .upload-grid, .filter-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
-
 <div class="container">
     <div class="navbar">
-        <h1 style="margin:0;">MLLM 评测监控中心</h1>
         <div>
-            <span id="status-tag" style="font-size:0.8rem; color:#888;">正在同步...</span>
+            <h1>MLLM 评测监控中心</h1>
+            <p>包含 A/B 胜率、坏例占比和按标签下钻查看。</p>
+        </div>
+        <div class="nav-links">
+            <span class="status-tag" id="status-tag">正在同步...</span>
             <a href="/">评测终端</a>
             <a href="/profile">个人中心</a>
             <a href="/admin">管理后台</a>
         </div>
     </div>
 
-    <!-- 发布任务 -->
     <div class="card">
-        <div class="card-title"><span>发布新测试任务</span></div>
+        <div class="card-title">
+            <div>
+                <h2>发布新测试任务</h2>
+                <p>上传压缩包后自动解压到对应模型版本和场景目录。</p>
+            </div>
+        </div>
         <form id="upload-form" class="upload-grid">
             <div class="input-group">
                 <label>模型版本</label>
@@ -161,14 +348,16 @@
             </div>
             <button type="submit" class="btn btn-primary">解压并同步</button>
         </form>
-        <div id="up-msg" style="font-size:0.85rem; margin-top:10px;"></div>
+        <div id="up-msg" style="margin-top:12px; color:var(--muted); font-size:0.85rem;"></div>
     </div>
 
-    <!-- 工具栏 -->
     <div class="card">
         <div class="card-title">
-            <span>工具面板</span>
-            <div style="display:flex; gap:10px;">
+            <div>
+                <h2>工具面板</h2>
+                <p>支持模型/场景过滤、排行榜与导出。</p>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <button class="btn btn-outline" onclick="loadStats()">刷新</button>
                 <button class="btn btn-primary" onclick="showRanking()">排行榜</button>
                 <button class="btn btn-outline" onclick="showExport()">导出</button>
@@ -193,96 +382,97 @@
         </div>
     </div>
 
-    <!-- 排行榜 -->
     <div class="card" id="ranking-card" style="display:none;">
         <div class="card-title">
-            <span>模型排行榜</span>
-            <div style="display:flex; gap:10px; align-items:center;">
-                <select id="ranking-dimension" onchange="loadRanking()" style="padding:5px;">
+            <div>
+                <h2>模型排行榜</h2>
+                <p>按胜率汇总模型表现。</p>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <select id="ranking-dimension" onchange="loadRanking()" style="min-width:120px;">
                     <option value="overall">整体</option>
                     <option value="aesthetic">美学</option>
                     <option value="logic">合理</option>
                     <option value="consistency">一致</option>
                 </select>
-                <select id="ranking-scene" onchange="loadRanking()" style="padding:5px;">
+                <select id="ranking-scene" onchange="loadRanking()" style="min-width:160px;">
                     <option value="">全部场景</option>
                 </select>
                 <button class="btn btn-outline" onclick="document.getElementById('ranking-card').style.display='none'">关闭</button>
             </div>
         </div>
-        <table class="ranking-table">
+        <table class="data-table">
             <thead><tr><th>排名</th><th>模型</th><th>胜场</th><th>对战数</th><th>胜率</th></tr></thead>
             <tbody id="ranking-body"></tbody>
         </table>
     </div>
 
-    <!-- 导出 -->
     <div class="card" id="export-card" style="display:none;">
         <div class="card-title">
-            <span>数据导出</span>
+            <div>
+                <h2>数据导出</h2>
+                <p>导出当前评测结果，包含坏例标签字段。</p>
+            </div>
             <button class="btn btn-outline" onclick="document.getElementById('export-card').style.display='none'">关闭</button>
         </div>
-        <div style="display:flex; gap:15px; align-items:center;">
-            <select id="export-format" style="padding:8px;">
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+            <select id="export-format" style="max-width:140px;">
                 <option value="json">JSON</option>
                 <option value="csv">CSV</option>
             </select>
             <button class="btn btn-primary" onclick="exportData()">导出</button>
         </div>
-        <div id="export-result" style="margin-top:15px; padding:15px; background:#f5f5f5; border-radius:8px; display:none;"></div>
+        <div id="export-result" style="display:none; margin-top:14px;"></div>
     </div>
 
-    <!-- 对战总览 -->
     <div class="card">
-        <div class="card-title"><span>AB版本对战总览（点击展开查看各场景详情）</span></div>
+        <div class="card-title">
+            <div>
+                <h2>AB 版本对战总览</h2>
+                <p>每个版本对同时展示维度胜率与两侧模型的坏例占比。</p>
+            </div>
+        </div>
         <div id="pairs-container">加载中...</div>
     </div>
 </div>
 
-<!-- 明细模态框 -->
 <div id="detail-modal" class="modal-overlay" onclick="closeModal('detail-modal')">
     <div class="modal-content" onclick="event.stopPropagation()">
-        <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
-            <h2 id="detail-modal-title" style="margin:0;">Case By Case 明细</h2>
-            <button onclick="closeModal('detail-modal')" class="btn btn-outline">关闭</button>
+        <div class="modal-head">
+            <h3 id="detail-modal-title">Case 明细</h3>
+            <button class="btn btn-outline" onclick="closeModal('detail-modal')">关闭</button>
         </div>
-        <!-- 筛选栏 -->
-        <div class="stats-filter-bar">
-            <div style="flex:2;">
-                <label style="font-size:0.8rem; font-weight:bold; color:#555; display:block; margin-bottom:8px;">评测员选择</label>
-                <div id="detail-worker-checkbox-container" class="worker-checkbox-group">
-                    <!-- 动态填充 -->
+        <div class="modal-body">
+            <div class="toolbar">
+                <div class="input-group">
+                    <label>图片名搜索</label>
+                    <input type="text" id="detail-filename-filter" placeholder="输入关键词..." oninput="filterDetailData()">
+                </div>
+                <div class="input-group">
+                    <label>判定筛选</label>
+                    <select id="detail-result-filter" onchange="filterDetailData()">
+                        <option value="">全部结果</option>
+                        <option value="a_win">A胜</option>
+                        <option value="b_win">B胜</option>
+                        <option value="tie">平局</option>
+                    </select>
+                </div>
+                <div class="input-group" style="flex:2;">
+                    <label>评测员筛选</label>
+                    <div id="detail-worker-checkbox-container" class="checkbox-group"></div>
                 </div>
             </div>
-            <div class="input-group" style="flex:1;">
-                <label style="font-size:0.8rem;">图片名搜索</label>
-                <input type="text" id="detail-filename-filter" placeholder="输入关键词..." oninput="filterDetailData()" style="padding:8px;">
-            </div>
-            <div class="input-group" style="flex:1;">
-                <label style="font-size:0.8rem;">判定筛选</label>
-                <select id="detail-result-filter" onchange="filterDetailData()" style="padding:8px;">
-                    <option value="">全部结果</option>
-                    <option value="a_win">A胜</option>
-                    <option value="b_win">B胜</option>
-                    <option value="tie">平局</option>
-                </select>
-            </div>
-            <div style="display:flex; gap:10px; align-items:flex-end;">
-                <button class="btn btn-outline btn-sm" onclick="selectAllDetailWorkers()">全选</button>
-                <button class="btn btn-outline btn-sm" onclick="clearDetailWorkerSelection()">清空</button>
-            </div>
-        </div>
-        <div id="detail-count-info" style="margin-bottom:10px; font-size:0.85rem; color:#666; padding:8px 12px; background:#f8f9fa; border-radius:6px;"></div>
-        <div class="scroll-area">
-            <table style="width:100%; border-collapse:collapse;">
+            <div id="detail-count-info" style="margin-bottom:12px; color:var(--muted); font-size:0.85rem;"></div>
+            <table class="data-table">
                 <thead>
-                    <tr style="background:linear-gradient(135deg, #e3f2fd, #f3e5f5);">
-                        <th style="width:100px; padding:10px;">文件名</th>
-                        <th style="width:180px; padding:10px;">对比预览</th>
-                        <th style="width:300px; padding:10px;">Prompt</th>
-                        <th style="padding:10px;">判定结果</th>
-                        <th style="width:100px; padding:10px;">评测员</th>
-                        <th style="width:130px; padding:10px;">时间</th>
+                    <tr>
+                        <th>文件名</th>
+                        <th>对比预览</th>
+                        <th>Prompt</th>
+                        <th>判定结果</th>
+                        <th>坏例记录</th>
+                        <th>评测员</th>
+                        <th>时间</th>
                     </tr>
                 </thead>
                 <tbody id="detail-body"></tbody>
@@ -291,95 +481,120 @@
     </div>
 </div>
 
-<!-- 评测员统计模态框 -->
 <div id="worker-modal" class="modal-overlay" onclick="closeModal('worker-modal')">
     <div class="modal-content" onclick="event.stopPropagation()">
-        <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
-            <h2 id="worker-modal-title" style="margin:0;">评测员统计</h2>
-            <button onclick="closeModal('worker-modal')" class="btn btn-outline">关闭</button>
+        <div class="modal-head">
+            <h3 id="worker-modal-title">评测员统计</h3>
+            <button class="btn btn-outline" onclick="closeModal('worker-modal')">关闭</button>
         </div>
-        <!-- 筛选栏 -->
-        <div class="stats-filter-bar">
-            <div style="flex:1;">
-                <label style="font-size:0.8rem; font-weight:bold; color:#555; display:block; margin-bottom:8px;">评测员选择</label>
-                <div id="worker-checkbox-container" class="worker-checkbox-group">
-                    <!-- 动态填充 -->
+        <div class="modal-body">
+            <div class="toolbar">
+                <div class="input-group" style="flex:2;">
+                    <label>评测员筛选</label>
+                    <div id="worker-checkbox-container" class="checkbox-group"></div>
                 </div>
             </div>
-            <div style="display:flex; gap:10px; align-items:flex-end;">
-                <button class="btn btn-outline btn-sm" onclick="selectAllWorkers()">全选</button>
-                <button class="btn btn-outline btn-sm" onclick="clearWorkerSelection()">清空</button>
-            </div>
+            <div id="worker-summary-area" style="margin-bottom:14px;"></div>
+            <div id="worker-stats-area"></div>
         </div>
-        <!-- 汇总显示 -->
-        <div id="worker-summary-area" style="margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px;"></div>
-        <div class="scroll-area" id="worker-stats-area"></div>
     </div>
 </div>
 
-<!-- 图片预览 -->
+<div id="badcase-modal" class="modal-overlay" onclick="closeModal('badcase-modal')">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-head">
+            <h3 id="badcase-modal-title">坏例详情</h3>
+            <button class="btn btn-outline" onclick="closeModal('badcase-modal')">关闭</button>
+        </div>
+        <div class="modal-body">
+            <div class="toolbar">
+                <div class="input-group">
+                    <label>模型</label>
+                    <select id="badcase-model-filter" onchange="loadBadCaseDetails()"></select>
+                </div>
+                <div class="input-group">
+                    <label>坏例类别</label>
+                    <select id="badcase-category-filter" onchange="syncBadcaseTags(); loadBadCaseDetails()"></select>
+                </div>
+                <div class="input-group">
+                    <label>具体标签</label>
+                    <select id="badcase-tag-filter" onchange="loadBadCaseDetails()"></select>
+                </div>
+            </div>
+            <div id="badcase-count-info" style="margin-bottom:12px; color:var(--muted); font-size:0.85rem;"></div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>场景</th>
+                        <th>文件名</th>
+                        <th>预览</th>
+                        <th>模型</th>
+                        <th>坏例类别</th>
+                        <th>具体标签</th>
+                        <th>评测员</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody id="badcase-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <div id="image-overlay" onclick="this.style.display='none'">
-    <div style="color:white; margin-bottom:15px;">点击退出预览</div>
-    <div class="compare-container" onclick="event.stopPropagation()">
-        <div class="compare-box">
-            <img id="overlay-img-a" src="">
-            <div class="compare-label" id="label-a">Model A</div>
-        </div>
-        <div class="compare-box">
-            <img id="overlay-img-b" src="">
-            <div class="compare-label" id="label-b">Model B</div>
-        </div>
+    <div class="single-preview" onclick="event.stopPropagation()">
+        <img id="overlay-img-single" src="">
+        <div class="compare-label" id="label-single">Preview</div>
     </div>
 </div>
 
 <script>
-    const dimNames = { overall: '整体', aesthetic: '美学', logic: '合理', consistency: '一致' };
-    const dimKeys = ['overall', 'aesthetic', 'logic', 'consistency'];
+    const dimNames = { overall: "整体", aesthetic: "美学", logic: "合理", consistency: "一致" };
+    const dimKeys = ["overall", "aesthetic", "logic", "consistency"];
+    const badCaseOptions = {
+        "美学缺陷": ["乱码", "色彩异常", "明显噪点", "网格伪影", "模糊失焦"],
+        "结构畸变": ["物体粘连", "透视问题", "空间扭曲"],
+        "安全违规": ["涉黄", "暴力", "侵权风险"]
+    };
+
     let allPairData = [];
     let expandedPairs = new Set();
-    let rawDetailData = [];  // 存储原始明细数据用于筛选
-    let currentDetailContext = { v1: '', v2: '', scene: '' };  // 当前明细上下文
-    let rawWorkerStats = [];  // 存储原始评测员统计数据
-    let selectedWorkers = new Set();  // 选中的评测员
-    let currentWorkerContext = { v1: '', v2: '', scene: '' };  // 当前统计上下文
-    let selectedDetailWorkers = new Set();  // 明细中选中的评测员
+    let rawDetailData = [];
+    let rawWorkerStats = [];
+    let selectedWorkers = new Set();
+    let selectedDetailWorkers = new Set();
+    let currentDetailContext = { v1: "", v2: "", scene: "" };
+    let currentWorkerContext = { v1: "", v2: "", scene: "" };
+    let currentBadCaseContext = { v1: "", v2: "", scene: "" };
 
     async function loadStats() {
         try {
-            const res = await fetch('/api/dashboard_v3');
+            const res = await fetch("/api/dashboard_v3");
             allPairData = await res.json();
-
-            // 更新排行榜场景
             const scenes = [...new Set(allPairData.flatMap(p => p.scenes.map(s => s.scene)))];
-            document.getElementById('ranking-scene').innerHTML =
-                '<option value="">全部场景</option>' + scenes.map(s => `<option value="${s}">${s}</option>`).join('');
-
+            document.getElementById("ranking-scene").innerHTML =
+                '<option value="">全部场景</option>' + scenes.map(s => `<option value="${s}">${s}</option>`).join("");
             applyFilters();
-            document.getElementById('status-tag').innerText = "最后更新: " + new Date().toLocaleTimeString();
+            document.getElementById("status-tag").innerText = "最后更新: " + new Date().toLocaleTimeString();
         } catch (e) {
-            console.error("加载失败", e);
-            document.getElementById('pairs-container').innerHTML = '<div style="text-align:center; padding:40px; color:#f44336;">加载失败: ' + e.message + '</div>';
+            document.getElementById("pairs-container").innerHTML = `<div class="empty-state">加载失败: ${e.message}</div>`;
         }
     }
 
     function applyFilters() {
-        const v1Filter = document.getElementById('search-v1').value.trim().toLowerCase();
-        const v2Filter = document.getElementById('search-v2').value.trim().toLowerCase();
-        const sceneFilter = document.getElementById('search-scene').value.trim().toLowerCase();
+        const v1Filter = document.getElementById("search-v1").value.trim().toLowerCase();
+        const v2Filter = document.getElementById("search-v2").value.trim().toLowerCase();
+        const sceneFilter = document.getElementById("search-scene").value.trim().toLowerCase();
 
         const filtered = allPairData.filter(pair => {
-            const v_a = pair.v_a.toLowerCase();
-            const v_b = pair.v_b.toLowerCase();
-
+            const a = pair.v_a.toLowerCase();
+            const b = pair.v_b.toLowerCase();
             if (v1Filter && v2Filter) {
-                if (!((v_a.includes(v1Filter) && v_b.includes(v2Filter)) || (v_a.includes(v2Filter) && v_b.includes(v1Filter)))) return false;
-            } else if (v1Filter) {
-                if (!v_a.includes(v1Filter) && !v_b.includes(v1Filter)) return false;
+                if (!((a.includes(v1Filter) && b.includes(v2Filter)) || (a.includes(v2Filter) && b.includes(v1Filter)))) return false;
+            } else if (v1Filter && !a.includes(v1Filter) && !b.includes(v1Filter)) {
+                return false;
             }
-
-            if (sceneFilter) {
-                if (!pair.scenes.some(s => s.scene.toLowerCase().includes(sceneFilter))) return false;
-            }
+            if (sceneFilter && !pair.scenes.some(s => s.scene.toLowerCase().includes(sceneFilter))) return false;
             return true;
         });
 
@@ -387,76 +602,72 @@
     }
 
     function renderPairs(data) {
-        const container = document.getElementById('pairs-container');
-        if (data.length === 0) {
-            container.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">暂无数据</div>';
+        const container = document.getElementById("pairs-container");
+        if (!data.length) {
+            container.innerHTML = '<div class="empty-state">暂无数据</div>';
             return;
         }
 
         container.innerHTML = data.map(pair => {
-            const isExpanded = expandedPairs.has(pair.pair);
+            const expanded = expandedPairs.has(pair.pair);
             return `
                 <div class="pair-card">
-                    <div class="pair-header" onclick="togglePair('${pair.pair}')">
+                    <div class="pair-header" onclick="togglePair('${pair.pair.replace(/'/g, "\\'")}')">
                         <div class="pair-title">
                             <h3>${pair.v_a} vs ${pair.v_b}</h3>
-                            <span class="pair-meta">${pair.scenes.length}场景 · ${pair.total}样本</span>
+                            <p>${pair.scenes.length} 个场景 · ${pair.total} 条有效样本</p>
                         </div>
-                        <div class="pair-summary">
-                            ${renderSummaryBars(pair)}
+                        <div class="summary-grid">
+                            ${dimKeys.map(key => renderDimSummary(pair, key)).join("")}
+                            ${renderBadSummary(pair)}
                         </div>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <button class="btn btn-sm btn-stats" onclick="event.stopPropagation(); showWorkerStatsPair('${pair.v_a}','${pair.v_b}')">统计</button>
-                            <div class="pair-toggle ${isExpanded ? 'expanded' : ''}">▼</div>
+                        <div class="pair-actions">
+                            <button class="btn btn-accent btn-sm" onclick="event.stopPropagation(); showWorkerStatsPair('${pair.v_a}', '${pair.v_b}')">统计</button>
+                            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openBadCaseModal('${pair.v_a}', '${pair.v_b}', '')">坏例详情</button>
+                            <div class="pair-toggle">${expanded ? "▲" : "▼"}</div>
                         </div>
                     </div>
-                    <div class="pair-body ${isExpanded ? 'show' : ''}">
+                    <div class="pair-body ${expanded ? "show" : ""}">
                         ${renderSceneTable(pair)}
                     </div>
                 </div>
             `;
-        }).join('');
+        }).join("");
     }
 
-    // 折叠时显示各维度汇总条（合并所有场景，但维度分开显示）
-    function renderSummaryBars(pair) {
-        // 合并所有场景的各维度数据
-        const mergedDims = {};
-        dimKeys.forEach(key => {
-            let aWins = 0, bWins = 0, total = 0;
-            pair.scenes.forEach(scene => {
-                aWins += scene.dims[key].v_a_wins;
-                bWins += scene.dims[key].v_b_wins;
-                total += scene.total;
-            });
-            mergedDims[key] = { aWins, bWins, total };
-        });
-
-        return dimKeys.map(key => {
-            const d = mergedDims[key];
-            const tieCount = d.total - d.aWins - d.bWins;
-            const aPct = (d.aWins / d.total * 100).toFixed(1);
-            const bPct = (d.bWins / d.total * 100).toFixed(1);
-            const tiePct = (tieCount / d.total * 100).toFixed(1);
-            return `
-                <div class="summary-item">
-                    <div class="summary-label">${dimNames[key]}</div>
-                    <div class="summary-bar">
-                        <div class="bar-a" style="width:${aPct}%"></div>
-                        <div class="bar-tie" style="width:${tiePct}%"></div>
-                        <div class="bar-b" style="width:${bPct}%"></div>
-                    </div>
-                    <div class="summary-rates">
-                        <span class="rate-a" style="color:#43a047;">${aPct}%</span> /
-                        <span class="rate-tie" style="color:#757575;">${tiePct}%</span> /
-                        <span class="rate-b" style="color:#1e88e5;">${bPct}%</span>
-                    </div>
+    function renderDimSummary(pair, key) {
+        const total = pair.total || 0;
+        const a = pair.dims[key].v_a_wins || 0;
+        const b = pair.dims[key].v_b_wins || 0;
+        const tie = Math.max(total - a - b, 0);
+        const aPct = total ? (a / total * 100).toFixed(1) : "0.0";
+        const tiePct = total ? (tie / total * 100).toFixed(1) : "0.0";
+        const bPct = total ? (b / total * 100).toFixed(1) : "0.0";
+        return `
+            <div class="summary-box">
+                <strong>${dimNames[key]}</strong>
+                <div class="mini-bar">
+                    <div class="seg-a" style="width:${aPct}%"></div>
+                    <div class="seg-tie" style="width:${tiePct}%"></div>
+                    <div class="seg-b" style="width:${bPct}%"></div>
                 </div>
-            `;
-        }).join('');
+                <div class="rate-line"><span>A ${aPct}%</span><span>平 ${tiePct}%</span><span>B ${bPct}%</span></div>
+            </div>
+        `;
     }
 
-    // 展开时显示各场景详细表格
+    function renderBadSummary(pair) {
+        return `
+            <div class="summary-box">
+                <strong>坏例占比</strong>
+                <div class="bad-rate-list">
+                    <div class="bad-rate-item"><span>${pair.v_a}</span><span>${pair.bad_case.v_a.rate}%</span></div>
+                    <div class="bad-rate-item"><span>${pair.v_b}</span><span>${pair.bad_case.v_b.rate}%</span></div>
+                </div>
+            </div>
+        `;
+    }
+
     function renderSceneTable(pair) {
         return `
             <table class="scene-table">
@@ -464,57 +675,77 @@
                     <tr>
                         <th class="scene-name">场景</th>
                         <th>样本数</th>
-                        ${dimKeys.map(k => `<th>${dimNames[k]}<br><small style="font-weight:normal">A / 平 / B</small></th>`).join('')}
+                        ${dimKeys.map(k => `<th>${dimNames[k]}<br><small>A / 平 / B</small></th>`).join("")}
+                        <th>坏例占比</th>
+                        <th>高频坏例标签</th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${pair.scenes.map(scene => {
-                        const sTotal = scene.total;
-                        return `
-                            <tr>
-                                <td class="scene-name"><strong>${scene.scene}</strong></td>
-                                <td>${sTotal}</td>
-                                ${dimKeys.map(k => {
-                                    const aW = scene.dims[k].v_a_wins;
-                                    const bW = scene.dims[k].v_b_wins;
-                                    const tieW = sTotal - aW - bW;
-                                    const aP = (aW/sTotal*100).toFixed(1);
-                                    const bP = (bW/sTotal*100).toFixed(1);
-                                    const tieP = (tieW/sTotal*100).toFixed(1);
-                                    return `
-                                        <td>
-                                            <div class="dim-mini-bar" style="margin:auto;">
-                                                <div class="bar-a" style="width:${aP}%"></div>
-                                                <div class="bar-tie" style="width:${tieP}%"></div>
-                                                <div class="bar-b" style="width:${bP}%"></div>
-                                            </div>
-                                            <div style="font-size:11px; margin-top:4px;">
-                                                <span style="color:#4CAF50">${aP}%</span> /
-                                                <span style="color:#999">${tieP}%</span> /
-                                                <span style="color:#2196F3">${bP}%</span>
-                                            </div>
-                                        </td>
-                                    `;
-                                }).join('')}
-                                <td>
-                                    <button class="btn btn-sm btn-outline" onclick="showDetail('${pair.v_a}','${pair.v_b}','${scene.scene}')">明细</button>
-                                    <button class="btn btn-sm btn-primary" onclick="showWorkerStats('${pair.v_a}','${pair.v_b}','${scene.scene}')">统计</button>
-                                </td>
-                            </tr>
-                        `;
-                    }).join('')}
+                    ${pair.scenes.map(scene => renderSceneRow(pair, scene)).join("")}
                 </tbody>
             </table>
         `;
     }
 
+    function renderSceneRow(pair, scene) {
+        const total = scene.total || 0;
+        const topTags = getTopBadTags(pair, scene.bad_case);
+        return `
+            <tr>
+                <td class="scene-name">${scene.scene}</td>
+                <td>${total}</td>
+                ${dimKeys.map(k => {
+                    const a = scene.dims[k].v_a_wins || 0;
+                    const b = scene.dims[k].v_b_wins || 0;
+                    const tie = Math.max(total - a - b, 0);
+                    const aPct = total ? (a / total * 100).toFixed(1) : "0.0";
+                    const tiePct = total ? (tie / total * 100).toFixed(1) : "0.0";
+                    const bPct = total ? (b / total * 100).toFixed(1) : "0.0";
+                    return `
+                        <td>
+                            <div class="mini-bar">
+                                <div class="seg-a" style="width:${aPct}%"></div>
+                                <div class="seg-tie" style="width:${tiePct}%"></div>
+                                <div class="seg-b" style="width:${bPct}%"></div>
+                            </div>
+                            <div class="rate-line"><span>${aPct}%</span><span>${tiePct}%</span><span>${bPct}%</span></div>
+                        </td>
+                    `;
+                }).join("")}
+                <td>
+                    <div>${pair.v_a}: <strong>${scene.bad_case.v_a.rate}%</strong></div>
+                    <div>${pair.v_b}: <strong>${scene.bad_case.v_b.rate}%</strong></div>
+                </td>
+                <td>
+                    <div class="bad-pills">
+                        ${topTags.length ? topTags.map(item => `<span class="pill bad-pill">${item.model}: ${item.tag} (${item.count})</span>`).join("") : '<span style="color:var(--muted);">暂无</span>'}
+                    </div>
+                </td>
+                <td>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <button class="btn btn-sm btn-outline" onclick="showDetail('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">明细</button>
+                        <button class="btn btn-sm btn-primary" onclick="showWorkerStats('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">统计</button>
+                        <button class="btn btn-sm btn-accent" onclick="openBadCaseModal('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">坏例</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
+    function getTopBadTags(pair, badCaseStats) {
+        const items = [];
+        [["v_a", pair.v_a], ["v_b", pair.v_b]].forEach(([key, modelName]) => {
+            Object.entries(badCaseStats[key].tags || {}).forEach(([tag, count]) => {
+                items.push({ model: modelName, tag, count });
+            });
+        });
+        return items.sort((x, y) => y.count - x.count).slice(0, 4);
+    }
+
     function togglePair(pairKey) {
-        if (expandedPairs.has(pairKey)) {
-            expandedPairs.delete(pairKey);
-        } else {
-            expandedPairs.add(pairKey);
-        }
+        if (expandedPairs.has(pairKey)) expandedPairs.delete(pairKey);
+        else expandedPairs.add(pairKey);
         applyFilters();
     }
 
@@ -529,415 +760,343 @@
     }
 
     function resetFilters() {
-        document.getElementById('search-v1').value = '';
-        document.getElementById('search-v2').value = '';
-        document.getElementById('search-scene').value = '';
+        document.getElementById("search-v1").value = "";
+        document.getElementById("search-v2").value = "";
+        document.getElementById("search-scene").value = "";
         applyFilters();
     }
 
-    // 排行榜
     function showRanking() {
-        document.getElementById('ranking-card').style.display = 'block';
+        document.getElementById("ranking-card").style.display = "block";
         loadRanking();
     }
 
     async function loadRanking() {
-        const dimension = document.getElementById('ranking-dimension').value;
-        const scene = document.getElementById('ranking-scene').value;
-        try {
-            const res = await fetch(`/api/ranking?dimension=${dimension}${scene ? '&scene=' + scene : ''}`);
-            const data = await res.json();
-            document.getElementById('ranking-body').innerHTML = data.map((item, index) => {
-                const badge = index < 3 ? `<span class="rank-badge rank-badge-${index+1}">${index+1}</span>` : `<span class="rank-badge rank-badge-other">${index+1}</span>`;
-                const rowClass = index < 3 ? `rank-${index+1}` : '';
-                return `
-                    <tr class="${rowClass}">
-                        <td>${badge}</td>
-                        <td><strong>${item.model}</strong></td>
-                        <td>${item.wins}</td>
-                        <td>${item.total}</td>
-                        <td style="font-weight:bold; color:${item.win_rate >= 50 ? '#4CAF50' : '#f44336'}">${item.win_rate}%</td>
-                    </tr>
-                `;
-            }).join('');
-        } catch (e) { console.error('排行榜加载失败', e); }
+        const dimension = document.getElementById("ranking-dimension").value;
+        const scene = document.getElementById("ranking-scene").value;
+        const res = await fetch(`/api/ranking?dimension=${dimension}${scene ? `&scene=${scene}` : ""}`);
+        const data = await res.json();
+        document.getElementById("ranking-body").innerHTML = data.map((item, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td><strong>${item.model}</strong></td>
+                <td>${item.wins}</td>
+                <td>${item.total}</td>
+                <td style="color:${item.win_rate >= 50 ? "var(--good)" : "var(--bad)"}; font-weight:800;">${item.win_rate}%</td>
+            </tr>
+        `).join("");
     }
 
-    // 导出
     function showExport() {
-        document.getElementById('export-card').style.display = 'block';
+        document.getElementById("export-card").style.display = "block";
     }
 
     async function exportData() {
-        const format = document.getElementById('export-format').value;
-        try {
-            const res = await fetch(`/api/export?format=${format}`);
-            const data = await res.json();
-            const resultDiv = document.getElementById('export-result');
-            resultDiv.style.display = 'block';
-            if (format === 'csv') {
-                const blob = new Blob([data.data], { type: 'text/csv;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                resultDiv.innerHTML = `<div style="color:#4CAF50; margin-bottom:10px;">导出成功!</div><a href="${url}" download="export.csv" class="btn btn-primary">下载CSV</a>`;
-            } else {
-                resultDiv.innerHTML = `<div style="color:#4CAF50; margin-bottom:10px;">导出成功! 共 ${data.data.length} 条</div><textarea style="width:100%; height:150px; font-family:monospace; font-size:12px;" readonly>${JSON.stringify(data.data, null, 2)}</textarea>`;
-            }
-        } catch (e) {
-            document.getElementById('export-result').style.display = 'block';
-            document.getElementById('export-result').innerHTML = '<div style="color:#f44336;">导出失败</div>';
+        const format = document.getElementById("export-format").value;
+        const res = await fetch(`/api/export?format=${format}`);
+        const data = await res.json();
+        const resultDiv = document.getElementById("export-result");
+        resultDiv.style.display = "block";
+        if (format === "csv") {
+            const blob = new Blob([data.data], { type: "text/csv;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            resultDiv.innerHTML = `<a href="${url}" download="export.csv" class="btn btn-primary">下载 CSV</a>`;
+        } else {
+            resultDiv.innerHTML = `<textarea style="width:100%; height:180px; border-radius:12px; border:1px solid var(--line); padding:12px;">${JSON.stringify(data.data, null, 2)}</textarea>`;
         }
     }
 
-    // 明细
     async function showDetail(v1, v2, scene) {
         currentDetailContext = { v1, v2, scene };
-        document.getElementById('detail-modal').style.display = 'flex';
-        document.getElementById('detail-modal-title').innerText = `明细: ${v1} vs ${v2} [${scene}]`;
-
-        // 清空筛选条件
-        document.getElementById('detail-filename-filter').value = '';
-        document.getElementById('detail-result-filter').value = '';
-
-        // 获取明细数据
+        document.getElementById("detail-modal").style.display = "flex";
+        document.getElementById("detail-modal-title").innerText = `明细: ${v1} vs ${v2} [${scene}]`;
+        document.getElementById("detail-filename-filter").value = "";
+        document.getElementById("detail-result-filter").value = "";
         const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
         const data = await res.json();
-
-        // 为每条记录获取prompt
         rawDetailData = await Promise.all(data.map(async d => {
-            let prompt = '';
+            let prompt = "";
             try {
                 const promptRes = await fetch(`/api/get_prompt?scene=${scene}&filename=${d.filename}`);
                 prompt = await promptRes.text();
             } catch (e) {
-                prompt = '获取失败';
+                prompt = "获取失败";
             }
             return { ...d, prompt };
         }));
-
-        // 初始化选中状态（全选）
-        const workers = [...new Set(rawDetailData.map(d => d.worker))].sort();
-        selectedDetailWorkers = new Set(workers);
-
-        // 渲染评测员复选框
+        selectedDetailWorkers = new Set([...new Set(rawDetailData.map(d => d.worker))]);
         renderDetailWorkerCheckboxes();
-
-        // 渲染表格
         filterDetailData();
     }
 
-    // 渲染明细评测员复选框
     function renderDetailWorkerCheckboxes() {
         const workers = [...new Set(rawDetailData.map(d => d.worker))].sort();
-        const container = document.getElementById('detail-worker-checkbox-container');
-        container.innerHTML = workers.map(w => {
-            const isSelected = selectedDetailWorkers.has(w);
-            return `
-                <label class="worker-checkbox ${isSelected ? 'selected' : ''}" onclick="toggleDetailWorkerSelection('${w}')">
-                    <span>${w}</span>
-                </label>
-            `;
-        }).join('');
+        const container = document.getElementById("detail-worker-checkbox-container");
+        container.innerHTML = workers.map(worker => `
+            <span class="checkbox-chip ${selectedDetailWorkers.has(worker) ? "selected" : ""}" onclick="toggleDetailWorkerSelection('${worker}')">${worker}</span>
+        `).join("");
     }
 
-    // 切换明细评测员选择
     function toggleDetailWorkerSelection(worker) {
-        if (selectedDetailWorkers.has(worker)) {
-            selectedDetailWorkers.delete(worker);
-        } else {
-            selectedDetailWorkers.add(worker);
-        }
+        if (selectedDetailWorkers.has(worker)) selectedDetailWorkers.delete(worker);
+        else selectedDetailWorkers.add(worker);
         renderDetailWorkerCheckboxes();
         filterDetailData();
     }
 
-    // 全选明细评测员
-    function selectAllDetailWorkers() {
-        const workers = [...new Set(rawDetailData.map(d => d.worker))];
-        selectedDetailWorkers = new Set(workers);
-        renderDetailWorkerCheckboxes();
-        filterDetailData();
-    }
-
-    // 清空明细评测员选择
-    function clearDetailWorkerSelection() {
-        selectedDetailWorkers.clear();
-        renderDetailWorkerCheckboxes();
-        filterDetailData();
-    }
-
-    // 筛选明细数据
     function filterDetailData() {
-        const filenameFilter = document.getElementById('detail-filename-filter').value.toLowerCase();
-        const resultFilter = document.getElementById('detail-result-filter').value;
-
-        const v1 = currentDetailContext.v1;
-        const v2 = currentDetailContext.v2;
-
-        // 筛选数据
-        let filtered = rawDetailData.filter(d => {
+        const filenameFilter = document.getElementById("detail-filename-filter").value.toLowerCase();
+        const resultFilter = document.getElementById("detail-result-filter").value;
+        const { v1, v2, scene } = currentDetailContext;
+        const filtered = rawDetailData.filter(d => {
             if (!selectedDetailWorkers.has(d.worker)) return false;
             if (filenameFilter && !d.filename.toLowerCase().includes(filenameFilter)) return false;
-            if (resultFilter) {
-                const overallVal = d.overall;
-                if (resultFilter === 'a_win' && overallVal !== v1) return false;
-                if (resultFilter === 'b_win' && overallVal !== v2) return false;
-                if (resultFilter === 'tie' && overallVal !== 'tie') return false;
-            }
+            if (resultFilter === "a_win" && d.overall !== v1) return false;
+            if (resultFilter === "b_win" && d.overall !== v2) return false;
+            if (resultFilter === "tie" && d.overall !== "tie") return false;
             return true;
         });
-
-        // 更新计数显示
-        document.getElementById('detail-count-info').innerText = `共 ${filtered.length} 条 (选中 ${selectedDetailWorkers.size} 位评测员)`;
-
-        const body = document.getElementById('detail-body');
-        if (filtered.length === 0) {
-            body.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:#999;">无匹配数据</td></tr>';
+        document.getElementById("detail-count-info").innerText = `共 ${filtered.length} 条`;
+        const body = document.getElementById("detail-body");
+        if (!filtered.length) {
+            body.innerHTML = '<tr><td colspan="7" class="empty-state">无匹配数据</td></tr>';
             return;
         }
-
         body.innerHTML = filtered.map(d => {
-            const imgA = `/images/${v1}/${currentDetailContext.scene}/${d.filename}`;
-            const imgB = `/images/${v2}/${currentDetailContext.scene}/${d.filename}`;
-            const getBadge = (val) => {
-                if (val === 'tie') return '<span class="badge badge-tie">平局</span>';
-                return val === v1 ? '<span class="badge badge-a">A胜</span>' : '<span class="badge badge-b">B胜</span>';
-            };
+            const imgA = `/images/${v1}/${scene}/${d.filename}`;
+            const imgB = `/images/${v2}/${scene}/${d.filename}`;
             return `
                 <tr>
-                    <td style="font-size:11px; color:#666;">${d.filename}</td>
+                    <td>${d.filename}</td>
                     <td>
-                        <div style="display:flex; gap:5px;">
-                            <img src="${imgA}" class="preview-img" onclick="openCompare('${imgA}','${imgB}','${v1}','${v2}')" onerror="this.style.display='none'">
-                            <img src="${imgB}" class="preview-img" onclick="openCompare('${imgA}','${imgB}','${v1}','${v2}')" onerror="this.style.display='none'">
+                        <div style="display:flex; gap:6px;">
+                            <img src="${imgA}" class="preview-img" onclick="openCompare('${imgA}','${v1}')">
+                            <img src="${imgB}" class="preview-img" onclick="openCompare('${imgB}','${v2}')">
                         </div>
                     </td>
-                    <td style="font-size:12px; line-height:1.4;">${d.prompt || '-'}</td>
+                    <td style="max-width:320px;">${d.prompt || "-"}</td>
                     <td>
-                        ${dimNames.overall}: ${getBadge(d.overall)}<br>
-                        ${dimNames.aesthetic}: ${getBadge(d.aesthetic)}<br>
-                        ${dimNames.logic}: ${getBadge(d.logic)}<br>
-                        ${dimNames.consistency}: ${getBadge(d.consistency)}
+                        <div>整体: ${renderResultBadge(d.overall, v1, v2)}</div>
+                        <div>美学: ${renderResultBadge(d.aesthetic, v1, v2)}</div>
+                        <div>合理: ${renderResultBadge(d.logic, v1, v2)}</div>
+                        <div>一致: ${renderResultBadge(d.consistency, v1, v2)}</div>
                     </td>
-                    <td><span style="background:#fff3e0; color:#e65100; padding:2px 6px; border-radius:4px; font-size:11px;">${d.worker}</span></td>
-                    <td style="font-size:11px; color:#999;">${d.time}</td>
+                    <td>
+                        <div><strong>${v1}</strong>: ${renderTags(d.bad_case_tags_a)}</div>
+                        <div style="margin-top:6px;"><strong>${v2}</strong>: ${renderTags(d.bad_case_tags_b)}</div>
+                    </td>
+                    <td>${d.worker}</td>
+                    <td>${d.time}</td>
                 </tr>
             `;
-        }).join('');
+        }).join("");
     }
 
-    function openCompare(imgA, imgB, v1, v2) {
-        document.getElementById('overlay-img-a').src = imgA;
-        document.getElementById('overlay-img-b').src = imgB;
-        document.getElementById('label-a').innerText = v1;
-        document.getElementById('label-b').innerText = v2;
-        document.getElementById('image-overlay').style.display = 'flex';
+    function renderResultBadge(val, v1, v2) {
+        if (val === "tie") return '<span class="pill">平局</span>';
+        return val === v1 ? `<span class="pill">${v1}</span>` : `<span class="pill">${v2}</span>`;
     }
 
-    // 评测员统计 - 单场景
+    function renderTags(tags) {
+        return tags && tags.length ? tags.map(tag => `<span class="pill bad-pill">${tag}</span>`).join("") : '<span style="color:var(--muted);">无</span>';
+    }
+
     async function showWorkerStats(v1, v2, scene) {
         currentWorkerContext = { v1, v2, scene };
         await loadAndRenderWorkerStats();
     }
 
-    // 评测员统计 - 整个版本对（所有场景）
     async function showWorkerStatsPair(v1, v2) {
-        currentWorkerContext = { v1, v2, scene: '' };
+        currentWorkerContext = { v1, v2, scene: "" };
         await loadAndRenderWorkerStats();
     }
 
-    // 加载并渲染评测员统计
     async function loadAndRenderWorkerStats() {
         const { v1, v2, scene } = currentWorkerContext;
-        const title = scene
-            ? `评测员统计: ${v1} vs ${v2} [${scene}]`
-            : `评测员统计: ${v1} vs ${v2} [所有场景]`;
-
-        document.getElementById('worker-modal').style.display = 'flex';
-        document.getElementById('worker-modal-title').innerText = title;
-
-        // 获取数据
-        let url = `/api/worker_stats?v1=${v1}&v2=${v2}`;
-        if (scene) url += `&scene=${scene}`;
-        const res = await fetch(url);
+        document.getElementById("worker-modal").style.display = "flex";
+        document.getElementById("worker-modal-title").innerText = scene ? `评测员统计: ${v1} vs ${v2} [${scene}]` : `评测员统计: ${v1} vs ${v2} [全部场景]`;
+        const res = await fetch(`/api/worker_stats?v1=${v1}&v2=${v2}${scene ? `&scene=${scene}` : ""}`);
         rawWorkerStats = await res.json();
-
-        // 初始化选中状态（全选）
-        selectedWorkers = new Set(rawWorkerStats.map(w => w.worker));
-
-        // 渲染复选框
+        selectedWorkers = new Set(rawWorkerStats.map(item => item.worker));
         renderWorkerCheckboxes();
-
-        // 渲染统计
         renderWorkerStatsTable();
     }
 
-    // 渲染评测员复选框
     function renderWorkerCheckboxes() {
-        const container = document.getElementById('worker-checkbox-container');
-        container.innerHTML = rawWorkerStats.map(w => {
-            const isSelected = selectedWorkers.has(w.worker);
-            return `
-                <label class="worker-checkbox ${isSelected ? 'selected' : ''}" onclick="toggleWorkerSelection('${w.worker}')">
-                    <span>${w.worker}</span>
-                </label>
-            `;
-        }).join('');
+        const container = document.getElementById("worker-checkbox-container");
+        container.innerHTML = rawWorkerStats.map(item => `
+            <span class="checkbox-chip ${selectedWorkers.has(item.worker) ? "selected" : ""}" onclick="toggleWorkerSelection('${item.worker}')">${item.worker}</span>
+        `).join("");
     }
 
-    // 切换评测员选择
     function toggleWorkerSelection(worker) {
-        if (selectedWorkers.has(worker)) {
-            selectedWorkers.delete(worker);
-        } else {
-            selectedWorkers.add(worker);
-        }
+        if (selectedWorkers.has(worker)) selectedWorkers.delete(worker);
+        else selectedWorkers.add(worker);
         renderWorkerCheckboxes();
         renderWorkerStatsTable();
     }
 
-    // 全选评测员
-    function selectAllWorkers() {
-        selectedWorkers = new Set(rawWorkerStats.map(w => w.worker));
-        renderWorkerCheckboxes();
-        renderWorkerStatsTable();
-    }
-
-    // 清空评测员选择
-    function clearWorkerSelection() {
-        selectedWorkers.clear();
-        renderWorkerCheckboxes();
-        renderWorkerStatsTable();
-    }
-
-    // 渲染统计表格
     function renderWorkerStatsTable() {
-        const { v1, v2 } = currentWorkerContext;
-
-        // 筛选选中的评测员
-        const filtered = rawWorkerStats.filter(w => selectedWorkers.has(w.worker));
-
-        const summaryArea = document.getElementById('worker-summary-area');
-        const tableArea = document.getElementById('worker-stats-area');
-
-        if (filtered.length === 0) {
-            summaryArea.innerHTML = '';
-            tableArea.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">请选择评测员</div>';
+        const filtered = rawWorkerStats.filter(item => selectedWorkers.has(item.worker));
+        const summaryArea = document.getElementById("worker-summary-area");
+        const tableArea = document.getElementById("worker-stats-area");
+        if (!filtered.length) {
+            summaryArea.innerHTML = "";
+            tableArea.innerHTML = '<div class="empty-state">请选择评测员</div>';
             return;
         }
 
-        // 计算汇总
         const summary = { total: 0, dims: {} };
-        dimKeys.forEach(k => {
-            summary.dims[k] = { aWins: 0, bWins: 0 };
-        });
-        filtered.forEach(w => {
-            summary.total += w.total;
-            dimKeys.forEach(k => {
-                summary.dims[k].aWins += w[k].v_a_wins || 0;
-                summary.dims[k].bWins += w[k].v_b_wins || 0;
+        dimKeys.forEach(key => summary.dims[key] = { a: 0, b: 0 });
+        filtered.forEach(item => {
+            summary.total += item.total;
+            dimKeys.forEach(key => {
+                summary.dims[key].a += item[key].v_a_wins || 0;
+                summary.dims[key].b += item[key].v_b_wins || 0;
             });
         });
 
-        // 渲染汇总条
         summaryArea.innerHTML = `
-            <div style="font-weight:bold; margin-bottom:10px; color:#555;">汇总统计 (${filtered.length}位评测员, ${summary.total}样本)</div>
-            <div style="display:flex; gap:20px; flex-wrap:wrap;">
-                ${dimKeys.map(k => {
-                    const d = summary.dims[k];
-                    const tieCount = summary.total - d.aWins - d.bWins;
-                    const aPct = summary.total > 0 ? (d.aWins / summary.total * 100).toFixed(1) : 0;
-                    const bPct = summary.total > 0 ? (d.bWins / summary.total * 100).toFixed(1) : 0;
-                    const tiePct = summary.total > 0 ? (tieCount / summary.total * 100).toFixed(1) : 0;
-                    return `
-                        <div style="flex:1; min-width:200px;">
-                            <div style="font-size:0.85rem; color:#666; margin-bottom:5px;">${dimNames[k]}</div>
-                            <div class="stats-bar-container">
-                                <div class="stats-bar-segment bar-a" style="width:${aPct}%">${aPct > 10 ? aPct + '%' : ''}</div>
-                                <div class="stats-bar-segment bar-tie" style="width:${tiePct}%">${tiePct > 10 ? tiePct + '%' : ''}</div>
-                                <div class="stats-bar-segment bar-b" style="width:${bPct}%">${bPct > 10 ? bPct + '%' : ''}</div>
+            <div class="card" style="margin:0;">
+                <div style="font-weight:800; margin-bottom:10px;">汇总 (${filtered.length} 位评测员, ${summary.total} 条样本)</div>
+                <div class="summary-grid">
+                    ${dimKeys.map(key => {
+                        const a = summary.dims[key].a;
+                        const b = summary.dims[key].b;
+                        const tie = Math.max(summary.total - a - b, 0);
+                        const aPct = summary.total ? (a / summary.total * 100).toFixed(1) : "0.0";
+                        const tiePct = summary.total ? (tie / summary.total * 100).toFixed(1) : "0.0";
+                        const bPct = summary.total ? (b / summary.total * 100).toFixed(1) : "0.0";
+                        return `
+                            <div class="summary-box" style="background:#f6f9fd; color:var(--text); border-color:var(--line);">
+                                <strong>${dimNames[key]}</strong>
+                                <div class="mini-bar">
+                                    <div class="seg-a" style="width:${aPct}%"></div>
+                                    <div class="seg-tie" style="width:${tiePct}%"></div>
+                                    <div class="seg-b" style="width:${bPct}%"></div>
+                                </div>
+                                <div class="rate-line"><span>A ${aPct}%</span><span>平 ${tiePct}%</span><span>B ${bPct}%</span></div>
                             </div>
-                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-top:4px;">
-                                <span style="color:#43a047;">A: ${aPct}%</span>
-                                <span style="color:#9e9e9e;">平: ${tiePct}%</span>
-                                <span style="color:#1e88e5;">B: ${bPct}%</span>
-                            </div>
-                        </div>
-                    `;
-                }).join('')}
+                        `;
+                    }).join("")}
+                </div>
             </div>
         `;
 
-        // 渲染详细表格
         tableArea.innerHTML = `
-            <table style="width:100%; border-collapse:collapse;">
-                <thead>
-                    <tr style="background:linear-gradient(135deg, #e3f2fd, #f3e5f5);">
-                        <th style="padding:12px; text-align:left;">评测员</th>
-                        <th style="padding:12px;">样本数</th>
-                        ${dimKeys.map(k => `<th style="padding:12px;">${dimNames[k]}</th>`).join('')}
-                    </tr>
-                </thead>
+            <table class="data-table">
+                <thead><tr><th>评测员</th><th>样本数</th>${dimKeys.map(key => `<th>${dimNames[key]}</th>`).join("")}</tr></thead>
                 <tbody>
-                    ${filtered.map(w => {
-                        const t = w.total;
-                        return `
-                            <tr style="border-bottom:1px solid #eee;">
-                                <td style="padding:12px; font-weight:bold; color:#555;">${w.worker}</td>
-                                <td style="padding:12px; text-align:center;"><span style="background:#f5f5f5; padding:4px 10px; border-radius:12px;">${t}</span></td>
-                                ${dimKeys.map(k => {
-                                    const aW = w[k].v_a_wins || 0;
-                                    const bW = w[k].v_b_wins || 0;
-                                    const tieW = t - aW - bW;
-                                    const aP = t > 0 ? (aW/t*100).toFixed(1) : 0;
-                                    const bP = t > 0 ? (bW/t*100).toFixed(1) : 0;
-                                    const tieP = t > 0 ? (tieW/t*100).toFixed(1) : 0;
-                                    return `
-                                        <td style="padding:12px;">
-                                            <div class="stats-bar-container" style="min-width:100px;">
-                                                <div class="stats-bar-segment bar-a" style="width:${aP}%"></div>
-                                                <div class="stats-bar-segment bar-tie" style="width:${tieP}%"></div>
-                                                <div class="stats-bar-segment bar-b" style="width:${bP}%"></div>
-                                            </div>
-                                            <div style="font-size:0.75rem; margin-top:4px; text-align:center;">
-                                                <span style="color:#43a047;">${aP}</span> /
-                                                <span style="color:#9e9e9e;">${tieP}</span> /
-                                                <span style="color:#1e88e5;">${bP}</span>
-                                            </div>
-                                        </td>
-                                    `;
-                                }).join('')}
-                            </tr>
-                        `;
-                    }).join('')}
+                    ${filtered.map(item => `
+                        <tr>
+                            <td>${item.worker}</td>
+                            <td>${item.total}</td>
+                            ${dimKeys.map(key => {
+                                const a = item[key].v_a_wins || 0;
+                                const b = item[key].v_b_wins || 0;
+                                const tie = Math.max(item.total - a - b, 0);
+                                const aPct = item.total ? (a / item.total * 100).toFixed(1) : "0.0";
+                                const tiePct = item.total ? (tie / item.total * 100).toFixed(1) : "0.0";
+                                const bPct = item.total ? (b / item.total * 100).toFixed(1) : "0.0";
+                                return `<td>${aPct}% / ${tiePct}% / ${bPct}%</td>`;
+                            }).join("")}
+                        </tr>
+                    `).join("")}
                 </tbody>
             </table>
         `;
     }
 
-    function closeModal(id) {
-        document.getElementById(id).style.display = 'none';
+    function openBadCaseModal(v1, v2, scene) {
+        currentBadCaseContext = { v1, v2, scene };
+        document.getElementById("badcase-modal").style.display = "flex";
+        document.getElementById("badcase-modal-title").innerText = scene ? `坏例详情: ${v1} vs ${v2} [${scene}]` : `坏例详情: ${v1} vs ${v2} [全部场景]`;
+        document.getElementById("badcase-model-filter").innerHTML = `<option value="">全部模型</option><option value="${v1}">${v1}</option><option value="${v2}">${v2}</option>`;
+        document.getElementById("badcase-category-filter").innerHTML =
+            '<option value="">全部类别</option>' + Object.keys(badCaseOptions).map(key => `<option value="${key}">${key}</option>`).join("");
+        syncBadcaseTags();
+        loadBadCaseDetails();
     }
 
-    // 上传
-    document.getElementById('upload-form').onsubmit = async (e) => {
+    function syncBadcaseTags() {
+        const category = document.getElementById("badcase-category-filter").value;
+        const options = category ? badCaseOptions[category] : Object.values(badCaseOptions).flat();
+        document.getElementById("badcase-tag-filter").innerHTML =
+            '<option value="">全部标签</option>' + options.map(tag => `<option value="${tag}">${tag}</option>`).join("");
+    }
+
+    async function loadBadCaseDetails() {
+        const { v1, v2, scene } = currentBadCaseContext;
+        const model = document.getElementById("badcase-model-filter").value;
+        const category = document.getElementById("badcase-category-filter").value;
+        const tag = document.getElementById("badcase-tag-filter").value;
+        const params = new URLSearchParams({ v1, v2 });
+        if (scene) params.set("scene", scene);
+        if (model) params.set("model", model);
+        if (category) params.set("category", category);
+        if (tag) params.set("tag", tag);
+        const res = await fetch(`/api/bad_case_details?${params.toString()}`);
+        const data = await res.json();
+        document.getElementById("badcase-count-info").innerText = `共 ${data.results.length} 条坏例记录`;
+        const body = document.getElementById("badcase-body");
+        if (!data.results.length) {
+            body.innerHTML = '<tr><td colspan="8" class="empty-state">无匹配坏例</td></tr>';
+            return;
+        }
+        body.innerHTML = data.results.map(item => {
+            const imgA = `/images/${item.model}/${item.scene}/${item.filename}`;
+            return `
+                <tr>
+                    <td>${item.scene}</td>
+                    <td>${item.filename}</td>
+                    <td><img src="${imgA}" class="preview-img" onclick="openSinglePreview('${imgA}','${item.model}')"></td>
+                    <td>${item.model}</td>
+                    <td>${item.categories.map(c => `<span class="pill">${c}</span>`).join("")}</td>
+                    <td>${item.tags.map(t => `<span class="pill bad-pill">${t}</span>`).join("")}</td>
+                    <td>${item.worker}</td>
+                    <td>${item.time}</td>
+                </tr>
+            `;
+        }).join("");
+    }
+
+    function openCompare(imgSrc, label) {
+        document.getElementById("overlay-img-single").src = imgSrc;
+        document.getElementById("label-single").textContent = label;
+        document.getElementById("image-overlay").style.display = "flex";
+    }
+
+    function openSinglePreview(imgSrc, label) {
+        document.getElementById("overlay-img-single").src = imgSrc;
+        document.getElementById("label-single").textContent = label;
+        document.getElementById("image-overlay").style.display = "flex";
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).style.display = "none";
+    }
+
+    document.getElementById("upload-form").onsubmit = async (e) => {
         e.preventDefault();
         const btn = document.querySelector('#upload-form button[type="submit"]');
-        const msg = document.getElementById('up-msg');
+        const msg = document.getElementById("up-msg");
         const formData = new FormData();
-        formData.append('version', document.getElementById('up-version').value);
-        formData.append('scene', document.getElementById('up-scene').value);
-        formData.append('file', document.getElementById('up-file').files[0]);
+        formData.append("version", document.getElementById("up-version").value);
+        formData.append("scene", document.getElementById("up-scene").value);
+        formData.append("file", document.getElementById("up-file").files[0]);
         btn.disabled = true;
-        msg.innerHTML = "同步中...";
+        msg.textContent = "同步中...";
         try {
-            const res = await fetch('/api/upload', { method: 'POST', body: formData });
-            msg.innerHTML = res.ok ? "<span style='color:green'>成功</span>" : "<span style='color:red'>失败</span>";
+            const res = await fetch("/api/upload", { method: "POST", body: formData });
+            msg.textContent = res.ok ? "成功" : "失败";
             if (res.ok) loadStats();
-        } catch (e) { msg.innerHTML = "网络错误"; }
-        finally { btn.disabled = false; }
+        } catch (e) {
+            msg.textContent = "网络错误";
+        } finally {
+            btn.disabled = false;
+        }
     };
 
-    // 初始化
     loadStats();
     setInterval(loadStats, 30000);
 </script>
