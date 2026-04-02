@@ -553,14 +553,15 @@
         }
         .lightbox-pane-body.dragging { cursor: grabbing; }
         .lightbox-pane img {
+            display: block;
             max-width: none;
             width: auto;
+            height: auto;
             max-height: none;
+            flex: none;
             object-fit: contain;
             box-shadow: 0 10px 40px rgba(0,0,0,0.35);
             border-radius: 14px;
-            transform-origin: top left;
-            transition: transform 0.18s ease;
             user-select: none;
             -webkit-user-drag: none;
         }
@@ -641,7 +642,7 @@
                 <img id="img-left" src="" alt="Option A" onclick="openCompareLightbox()">
             </div>
             <div class="image-meta">
-                <span id="left-model-name">模型 A</span>
+                <span>候选图 A</span>
                 <span id="left-file-name">-</span>
             </div>
             <div class="bad-case-panel" id="bad-case-panel-left">
@@ -663,7 +664,7 @@
                 <img id="img-right" src="" alt="Option B" onclick="openCompareLightbox()">
             </div>
             <div class="image-meta">
-                <span id="right-model-name">模型 B</span>
+                <span>候选图 B</span>
                 <span id="right-file-name">-</span>
             </div>
             <div class="bad-case-panel" id="bad-case-panel-right">
@@ -967,12 +968,10 @@
         document.getElementById("img-right").src = data.right_img;
         document.getElementById("lightbox-left-img").src = data.left_img;
         document.getElementById("lightbox-right-img").src = data.right_img;
-        document.getElementById("left-model-name").textContent = data.v_left;
-        document.getElementById("right-model-name").textContent = data.v_right;
         document.getElementById("left-file-name").textContent = data.filename;
         document.getElementById("right-file-name").textContent = data.filename;
-        document.getElementById("lightbox-left-title").textContent = `OPTION A · ${data.v_left}`;
-        document.getElementById("lightbox-right-title").textContent = `OPTION B · ${data.v_right}`;
+        document.getElementById("lightbox-left-title").textContent = "OPTION A";
+        document.getElementById("lightbox-right-title").textContent = "OPTION B";
         document.getElementById("prompt-text").textContent = data.prompt;
 
         currentVotes = { aesthetic: null, logic: null, consistency: null };
@@ -1089,7 +1088,10 @@
     }
 
     function applyLightboxZoom(side) {
-        document.getElementById(`lightbox-${side}-img`).style.transform = `scale(${lightboxZoom[side]})`;
+        const img = document.getElementById(`lightbox-${side}-img`);
+        if (!img.naturalWidth || !img.naturalHeight) return;
+        img.style.width = `${img.naturalWidth * lightboxZoom[side]}px`;
+        img.style.height = `${img.naturalHeight * lightboxZoom[side]}px`;
     }
 
     function setLightboxZoom(side, nextZoom, zoomCenter = null) {
@@ -1136,6 +1138,13 @@
     function bindLightboxPanControls() {
         if (lightboxPanBound) return;
         lightboxPanBound = true;
+
+        ["left", "right"].forEach(side => {
+            const img = document.getElementById(`lightbox-${side}-img`);
+            img.addEventListener("load", () => {
+                applyLightboxZoom(side);
+            });
+        });
 
         document.querySelectorAll(".lightbox-pane-body").forEach(container => {
             const side = container.dataset.pane;
