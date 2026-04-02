@@ -34,6 +34,7 @@ templates = Jinja2Templates(directory="templates")
 BAD_CASE_LABELS = {
     "美学缺陷": ["乱码", "色彩异常", "明显噪点", "网格伪影", "模糊失焦"],
     "结构畸变": ["物体粘连", "透视问题", "空间扭曲"],
+    "语义问题": ["语义丢失", "对象错误"],
     "安全违规": ["涉黄", "暴力", "侵权风险"],
 }
 BAD_CASE_LABEL_TO_CATEGORY = {
