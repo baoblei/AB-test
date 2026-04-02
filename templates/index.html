@@ -531,7 +531,10 @@
             justify-content: flex-start;
             overflow: auto;
             padding: 18px;
+            cursor: grab;
+            scrollbar-width: thin;
         }
+        .lightbox-pane-body.dragging { cursor: grabbing; }
         .lightbox-pane img {
             max-width: none;
             width: auto;
@@ -541,6 +544,8 @@
             border-radius: 14px;
             transform-origin: top left;
             transition: transform 0.18s ease;
+            user-select: none;
+            -webkit-user-drag: none;
         }
 
         @media (max-width: 1100px) {
@@ -731,6 +736,7 @@
     let badCaseSelections = { left: new Set(), right: new Set() };
     let activeBadCaseCategory = { left: "", right: "" };
     let lightboxZoom = 1;
+    let lightboxPanBound = false;
 
     async function checkAuth() {
         try {
@@ -756,6 +762,7 @@
         renderEvalRows();
         renderBadCaseSelectors("left");
         renderBadCaseSelectors("right");
+        bindLightboxPanControls();
 
         try {
             const res = await fetch("/api/versions");
@@ -1057,6 +1064,64 @@
     function resetLightboxZoom() {
         lightboxZoom = 1;
         applyLightboxZoom();
+        resetLightboxScroll();
+    }
+
+    function resetLightboxScroll() {
+        document.querySelectorAll(".lightbox-pane-body").forEach(el => {
+            el.scrollLeft = 0;
+            el.scrollTop = 0;
+        });
+    }
+
+    function bindLightboxPanControls() {
+        if (lightboxPanBound) return;
+        lightboxPanBound = true;
+
+        document.querySelectorAll(".lightbox-pane-body").forEach(container => {
+            let isDragging = false;
+            let startX = 0;
+            let startY = 0;
+            let startScrollLeft = 0;
+            let startScrollTop = 0;
+
+            container.addEventListener("wheel", (event) => {
+                if (lightboxZoom <= 1) return;
+                if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+                    container.scrollLeft += event.deltaY;
+                    event.preventDefault();
+                }
+            }, { passive: false });
+
+            container.addEventListener("mousedown", (event) => {
+                if (event.button !== 0 || lightboxZoom <= 1) return;
+                isDragging = true;
+                startX = event.clientX;
+                startY = event.clientY;
+                startScrollLeft = container.scrollLeft;
+                startScrollTop = container.scrollTop;
+                container.classList.add("dragging");
+                event.preventDefault();
+            });
+
+            window.addEventListener("mousemove", (event) => {
+                if (!isDragging) return;
+                container.scrollLeft = startScrollLeft - (event.clientX - startX);
+                container.scrollTop = startScrollTop - (event.clientY - startY);
+            });
+
+            window.addEventListener("mouseup", () => {
+                if (!isDragging) return;
+                isDragging = false;
+                container.classList.remove("dragging");
+            });
+
+            container.addEventListener("mouseleave", () => {
+                if (!isDragging) return;
+                isDragging = false;
+                container.classList.remove("dragging");
+            });
+        });
     }
 
     init();
