@@ -491,6 +491,20 @@
             padding: 8px 12px;
             cursor: pointer;
         }
+        .lightbox-tools {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .lightbox-tool-btn {
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: transparent;
+            color: white;
+            border-radius: 999px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-weight: 700;
+        }
         .lightbox-grid {
             flex: 1;
             display: grid;
@@ -513,8 +527,8 @@
         .lightbox-pane-body {
             flex: 1;
             display: flex;
-            align-items: center;
-            justify-content: center;
+            align-items: flex-start;
+            justify-content: flex-start;
             overflow: auto;
             padding: 18px;
         }
@@ -522,10 +536,11 @@
             max-width: none;
             width: auto;
             max-height: none;
-            min-width: min(100%, 700px);
             object-fit: contain;
             box-shadow: 0 10px 40px rgba(0,0,0,0.35);
             border-radius: 14px;
+            transform-origin: top left;
+            transition: transform 0.18s ease;
         }
 
         @media (max-width: 1100px) {
@@ -669,9 +684,14 @@
         <div class="lightbox-header">
             <div>
                 <div style="font-size:1.05rem; font-weight:800;">双图高清预览</div>
-                <div style="font-size:0.82rem; color:rgba(255,255,255,0.7);">左右同时展示原图，滚动查看高清细节</div>
+                <div style="font-size:0.82rem; color:rgba(255,255,255,0.7);">左右同时展示原图，可缩放并滚动查看高清细节</div>
             </div>
-            <button class="lightbox-close" onclick="closeCompareLightbox()">关闭</button>
+            <div class="lightbox-tools">
+                <button class="lightbox-tool-btn" onclick="adjustLightboxZoom(-0.2)">缩小</button>
+                <button class="lightbox-tool-btn" onclick="resetLightboxZoom()">100%</button>
+                <button class="lightbox-tool-btn" onclick="adjustLightboxZoom(0.2)">放大</button>
+                <button class="lightbox-close" onclick="closeCompareLightbox()">关闭</button>
+            </div>
         </div>
         <div class="lightbox-grid">
             <div class="lightbox-pane">
@@ -710,6 +730,7 @@
     let startTime = null;
     let badCaseSelections = { left: new Set(), right: new Set() };
     let activeBadCaseCategory = { left: "", right: "" };
+    let lightboxZoom = 1;
 
     async function checkAuth() {
         try {
@@ -1013,6 +1034,7 @@
     }
 
     function openCompareLightbox() {
+        resetLightboxZoom();
         document.getElementById("lightbox").classList.add("open");
         document.body.style.overflow = "hidden";
     }
@@ -1020,6 +1042,21 @@
     function closeCompareLightbox() {
         document.getElementById("lightbox").classList.remove("open");
         document.body.style.overflow = "";
+    }
+
+    function applyLightboxZoom() {
+        document.getElementById("lightbox-left-img").style.transform = `scale(${lightboxZoom})`;
+        document.getElementById("lightbox-right-img").style.transform = `scale(${lightboxZoom})`;
+    }
+
+    function adjustLightboxZoom(delta) {
+        lightboxZoom = Math.max(0.4, Math.min(3, Number((lightboxZoom + delta).toFixed(2))));
+        applyLightboxZoom();
+    }
+
+    function resetLightboxZoom() {
+        lightboxZoom = 1;
+        applyLightboxZoom();
     }
 
     init();

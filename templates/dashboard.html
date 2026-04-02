@@ -302,10 +302,28 @@
             object-fit: contain;
             border-radius: 14px;
         }
+        .compare-view {
+            width: min(1440px, 100%);
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+        .compare-box {
+            background: rgba(255,255,255,0.08);
+            border-radius: 22px;
+            padding: 16px;
+            text-align: center;
+        }
+        .compare-box img {
+            max-width: 100%;
+            max-height: 76vh;
+            object-fit: contain;
+            border-radius: 14px;
+        }
         .compare-label { color: white; margin-top: 10px; font-weight: 800; }
 
         @media (max-width: 1180px) {
-            .pair-header, .summary-grid, .upload-grid, .filter-grid {
+            .pair-header, .summary-grid, .upload-grid, .filter-grid, .compare-view {
                 grid-template-columns: 1fr;
             }
         }
@@ -542,7 +560,17 @@
 </div>
 
 <div id="image-overlay" onclick="this.style.display='none'">
-    <div class="single-preview" onclick="event.stopPropagation()">
+    <div class="compare-view" id="compare-preview" style="display:none;" onclick="event.stopPropagation()">
+        <div class="compare-box">
+            <img id="overlay-img-a" src="">
+            <div class="compare-label" id="label-a">Model A</div>
+        </div>
+        <div class="compare-box">
+            <img id="overlay-img-b" src="">
+            <div class="compare-label" id="label-b">Model B</div>
+        </div>
+    </div>
+    <div class="single-preview" id="single-preview" onclick="event.stopPropagation()">
         <img id="overlay-img-single" src="">
         <div class="compare-label" id="label-single">Preview</div>
     </div>
@@ -870,8 +898,8 @@
                     <td>${d.filename}</td>
                     <td>
                         <div style="display:flex; gap:6px;">
-                            <img src="${imgA}" class="preview-img" onclick="openCompare('${imgA}','${v1}')">
-                            <img src="${imgB}" class="preview-img" onclick="openCompare('${imgB}','${v2}')">
+                            <img src="${imgA}" class="preview-img" onclick="openCompare('${imgA}','${imgB}','${v1}','${v2}')">
+                            <img src="${imgB}" class="preview-img" onclick="openCompare('${imgA}','${imgB}','${v1}','${v2}')">
                         </div>
                     </td>
                     <td style="max-width:320px;">${d.prompt || "-"}</td>
@@ -1060,13 +1088,19 @@
         }).join("");
     }
 
-    function openCompare(imgSrc, label) {
-        document.getElementById("overlay-img-single").src = imgSrc;
-        document.getElementById("label-single").textContent = label;
+    function openCompare(imgA, imgB, labelA, labelB) {
+        document.getElementById("single-preview").style.display = "none";
+        document.getElementById("compare-preview").style.display = "grid";
+        document.getElementById("overlay-img-a").src = imgA;
+        document.getElementById("overlay-img-b").src = imgB;
+        document.getElementById("label-a").textContent = labelA;
+        document.getElementById("label-b").textContent = labelB;
         document.getElementById("image-overlay").style.display = "flex";
     }
 
     function openSinglePreview(imgSrc, label) {
+        document.getElementById("compare-preview").style.display = "none";
+        document.getElementById("single-preview").style.display = "block";
         document.getElementById("overlay-img-single").src = imgSrc;
         document.getElementById("label-single").textContent = label;
         document.getElementById("image-overlay").style.display = "flex";
