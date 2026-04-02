@@ -543,16 +543,18 @@
         }
         .lightbox-pane-body {
             flex: 1;
-            display: flex;
-            align-items: flex-start;
-            justify-content: flex-start;
-            overflow: auto;
+            position: relative;
+            overflow: hidden;
             padding: 18px;
             cursor: grab;
             scrollbar-width: thin;
+            touch-action: none;
         }
         .lightbox-pane-body.dragging { cursor: grabbing; }
         .lightbox-pane img {
+            position: absolute;
+            top: 18px;
+            left: 18px;
             display: block;
             max-width: none;
             width: auto;
@@ -564,6 +566,7 @@
             border-radius: 14px;
             user-select: none;
             -webkit-user-drag: none;
+            will-change: transform;
         }
 
         @media (max-width: 1100px) {
@@ -711,7 +714,7 @@
         <div class="lightbox-header">
             <div>
                 <div style="font-size:1.05rem; font-weight:800;">双图高清预览</div>
-                <div style="font-size:0.82rem; color:rgba(255,255,255,0.7);">左右同时展示原图，可缩放并滚动查看高清细节</div>
+                <div style="font-size:0.82rem; color:rgba(255,255,255,0.7);">左右同时展示原图，滚轮按光标位置缩放，按住拖动查看细节</div>
             </div>
             <div class="lightbox-tools">
                 <button class="lightbox-tool-btn" onclick="adjustLightboxZoom(-0.2)">缩小</button>
@@ -740,7 +743,8 @@
 <script>
     const BAD_CASE_OPTIONS = {
         "美学缺陷": ["乱码", "色彩异常", "明显噪点", "网格伪影", "模糊失焦"],
-        "结构畸变": ["物体粘连", "透视问题", "空间扭曲", "肢体问题"],
+        "结构畸变": ["物体粘连", "透视问题", "空间扭曲"],
+        "人像": ["人脸扭曲", "肢体畸变"],
         "语义问题": ["语义丢失", "对象错误"],
         "安全违规": ["涉黄", "暴力", "侵权风险"]
     };
@@ -759,6 +763,7 @@
     let activeBadCaseCategory = { left: "", right: "" };
     let badCasePanelsCollapsed = false;
     let lightboxZoom = { left: 1, right: 1 };
+    let lightboxPan = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
     let lightboxPanBound = false;
     let activeLightboxPane = "left";
 
@@ -1092,6 +1097,13 @@
         if (!img.naturalWidth || !img.naturalHeight) return;
         img.style.width = `${img.naturalWidth * lightboxZoom[side]}px`;
         img.style.height = `${img.naturalHeight * lightboxZoom[side]}px`;
+        applyLightboxTransform(side);
+    }
+
+    function applyLightboxTransform(side) {
+        const img = document.getElementById(`lightbox-${side}-img`);
+        const pan = lightboxPan[side];
+        img.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
     }
 
     function setLightboxZoom(side, nextZoom, zoomCenter = null) {
@@ -1102,13 +1114,14 @@
         if (zoomCenter && zoomCenter.container) {
             const { container, clientX, clientY } = zoomCenter;
             const rect = container.getBoundingClientRect();
-            const offsetX = clientX - rect.left + container.scrollLeft;
-            const offsetY = clientY - rect.top + container.scrollTop;
-            const ratio = normalizedZoom / previousZoom;
+            const relativeX = clientX - rect.left - 18;
+            const relativeY = clientY - rect.top - 18;
+            const contentX = (relativeX - lightboxPan[side].x) / previousZoom;
+            const contentY = (relativeY - lightboxPan[side].y) / previousZoom;
             lightboxZoom[side] = normalizedZoom;
+            lightboxPan[side].x = relativeX - contentX * normalizedZoom;
+            lightboxPan[side].y = relativeY - contentY * normalizedZoom;
             applyLightboxZoom(side);
-            container.scrollLeft = offsetX * ratio - (clientX - rect.left);
-            container.scrollTop = offsetY * ratio - (clientY - rect.top);
             return;
         }
 
@@ -1123,16 +1136,9 @@
 
     function resetLightboxZoom() {
         lightboxZoom = { left: 1, right: 1 };
+        lightboxPan = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
         applyLightboxZoom("left");
         applyLightboxZoom("right");
-        resetLightboxScroll();
-    }
-
-    function resetLightboxScroll() {
-        document.querySelectorAll(".lightbox-pane-body").forEach(el => {
-            el.scrollLeft = 0;
-            el.scrollTop = 0;
-        });
     }
 
     function bindLightboxPanControls() {
@@ -1148,39 +1154,33 @@
 
         document.querySelectorAll(".lightbox-pane-body").forEach(container => {
             const side = container.dataset.pane;
-            let isDragging = false;
             let startX = 0;
             let startY = 0;
-            let startScrollLeft = 0;
-            let startScrollTop = 0;
+            let startPanX = 0;
+            let startPanY = 0;
+            let activePointerId = null;
 
             container.addEventListener("wheel", (event) => {
                 setActiveLightboxPane(side);
-                if (event.ctrlKey || event.metaKey || event.shiftKey || Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-                    const delta = event.deltaY < 0 ? 0.16 : -0.16;
-                    setLightboxZoom(side, lightboxZoom[side] + delta, {
-                        container,
-                        clientX: event.clientX,
-                        clientY: event.clientY
-                    });
-                    event.preventDefault();
-                    return;
-                }
-
-                if (lightboxZoom[side] <= 1) return;
-                container.scrollLeft += event.deltaX;
+                const delta = event.deltaY < 0 ? 0.16 : -0.16;
+                setLightboxZoom(side, lightboxZoom[side] + delta, {
+                    container,
+                    clientX: event.clientX,
+                    clientY: event.clientY
+                });
                 event.preventDefault();
             }, { passive: false });
 
-            container.addEventListener("mousedown", (event) => {
+            container.addEventListener("pointerdown", (event) => {
                 setActiveLightboxPane(side);
                 if (event.button !== 0 || lightboxZoom[side] <= 1) return;
-                isDragging = true;
+                activePointerId = event.pointerId;
                 startX = event.clientX;
                 startY = event.clientY;
-                startScrollLeft = container.scrollLeft;
-                startScrollTop = container.scrollTop;
+                startPanX = lightboxPan[side].x;
+                startPanY = lightboxPan[side].y;
                 container.classList.add("dragging");
+                container.setPointerCapture(event.pointerId);
                 event.preventDefault();
             });
 
@@ -1188,23 +1188,24 @@
                 setActiveLightboxPane(side);
             });
 
-            window.addEventListener("mousemove", (event) => {
-                if (!isDragging) return;
-                container.scrollLeft = startScrollLeft - (event.clientX - startX);
-                container.scrollTop = startScrollTop - (event.clientY - startY);
+            container.addEventListener("pointermove", (event) => {
+                if (activePointerId !== event.pointerId) return;
+                lightboxPan[side].x = startPanX + (event.clientX - startX);
+                lightboxPan[side].y = startPanY + (event.clientY - startY);
+                applyLightboxTransform(side);
             });
 
-            window.addEventListener("mouseup", () => {
-                if (!isDragging) return;
-                isDragging = false;
+            const stopDragging = (event) => {
+                if (activePointerId !== event.pointerId) return;
+                activePointerId = null;
                 container.classList.remove("dragging");
-            });
+                if (container.hasPointerCapture(event.pointerId)) {
+                    container.releasePointerCapture(event.pointerId);
+                }
+            };
 
-            container.addEventListener("mouseleave", () => {
-                if (!isDragging) return;
-                isDragging = false;
-                container.classList.remove("dragging");
-            });
+            container.addEventListener("pointerup", stopDragging);
+            container.addEventListener("pointercancel", stopDragging);
         });
     }
 
