@@ -208,7 +208,7 @@ class VoteSubmit(BaseModel):
     scene: str
     filename: str
     worker: str
-    overall: str
+    overall: Optional[str] = None
     aesthetic: str
     logic: str
     consistency: str
@@ -278,6 +278,19 @@ def safe_load_json_list(value: Optional[str]) -> List[str]:
     except (TypeError, json.JSONDecodeError):
         return []
     return data if isinstance(data, list) else []
+
+def derive_overall_result(aesthetic: str, logic: str, consistency: str) -> str:
+    choices = [aesthetic, logic, consistency]
+    counts = {}
+    for choice in choices:
+        counts[choice] = counts.get(choice, 0) + 1
+    best_choice = max(counts.items(), key=lambda item: item[1])[0]
+    top_count = counts[best_choice]
+    if top_count == 1:
+        return "tie"
+    if sum(1 for count in counts.values() if count == top_count) > 1:
+        return "tie"
+    return best_choice
 
 # --- 启动事件 ---
 @app.on_event("startup")
@@ -535,6 +548,12 @@ def submit_vote(vote: VoteSubmit, user: dict = Depends(require_login)):
     try:
         cursor = conn.cursor()
         v_a, v_b = sorted([vote.v_left, vote.v_right])
+        aesthetic_val = get_real_val(vote.aesthetic)
+        logic_val = get_real_val(vote.logic)
+        consistency_val = get_real_val(vote.consistency)
+        overall_val = get_real_val(vote.overall) if vote.overall else derive_overall_result(
+            aesthetic_val, logic_val, consistency_val
+        )
         cursor.execute("""
             INSERT INTO results_log (
                 v_a, v_b, scene, filename, overall, aesthetic, logic, consistency,
@@ -543,8 +562,7 @@ def submit_vote(vote: VoteSubmit, user: dict = Depends(require_login)):
             )
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (v_a, v_b, vote.scene, vote.filename,
-              get_real_val(vote.overall), get_real_val(vote.aesthetic),
-              get_real_val(vote.logic), get_real_val(vote.consistency),
+              overall_val, aesthetic_val, logic_val, consistency_val,
               vote.worker, vote.duration_seconds, user["id"],
               json.dumps(tags_a, ensure_ascii=False), json.dumps(tags_b, ensure_ascii=False),
               json.dumps(categories_a, ensure_ascii=False), json.dumps(categories_b, ensure_ascii=False)))

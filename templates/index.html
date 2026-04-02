@@ -174,6 +174,20 @@
             gap: 18px;
             margin-bottom: 18px;
         }
+        .compare-toolbar {
+            display: flex;
+            justify-content: center;
+            margin: 4px 0 14px;
+        }
+        .collapse-toggle {
+            border: 1px solid rgba(73, 55, 37, 0.12);
+            background: rgba(255,255,255,0.84);
+            color: var(--text);
+            border-radius: 999px;
+            padding: 9px 14px;
+            cursor: pointer;
+            font-weight: 700;
+        }
         .img-card {
             padding: 18px;
             display: flex;
@@ -249,6 +263,7 @@
             background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(247,241,232,0.9));
             padding: 14px;
         }
+        .bad-case-panel.collapsed { display: none; }
         .bad-case-title {
             display: flex;
             justify-content: space-between;
@@ -517,7 +532,9 @@
             display: flex;
             flex-direction: column;
             min-height: 0;
+            border: 1px solid transparent;
         }
+        .lightbox-pane.active { border-color: rgba(255,255,255,0.18); }
         .lightbox-pane-head {
             padding: 14px 16px;
             color: rgba(255,255,255,0.86);
@@ -627,7 +644,7 @@
                 <span id="left-model-name">模型 A</span>
                 <span id="left-file-name">-</span>
             </div>
-            <div class="bad-case-panel">
+            <div class="bad-case-panel" id="bad-case-panel-left">
                 <div class="bad-case-title">
                     <strong>记录 A 图严重坏例</strong>
                     <span>下拉多选，未命中可留空</span>
@@ -649,7 +666,7 @@
                 <span id="right-model-name">模型 B</span>
                 <span id="right-file-name">-</span>
             </div>
-            <div class="bad-case-panel">
+            <div class="bad-case-panel" id="bad-case-panel-right">
                 <div class="bad-case-title">
                     <strong>记录 B 图严重坏例</strong>
                     <span>下拉多选，未命中可留空</span>
@@ -658,6 +675,10 @@
                 <div class="selected-tags" id="selected-tags-right"></div>
             </div>
         </div>
+    </div>
+
+    <div class="compare-toolbar">
+        <button class="collapse-toggle" id="bad-case-toggle" onclick="toggleBadCasePanels()">收起严重坏例</button>
     </div>
 
     <div class="panel eval-card">
@@ -699,15 +720,15 @@
             </div>
         </div>
         <div class="lightbox-grid">
-            <div class="lightbox-pane">
+            <div class="lightbox-pane active" id="lightbox-pane-left">
                 <div class="lightbox-pane-head" id="lightbox-left-title">OPTION A</div>
-                <div class="lightbox-pane-body">
+                <div class="lightbox-pane-body" data-pane="left">
                     <img id="lightbox-left-img" src="" alt="Option A preview">
                 </div>
             </div>
-            <div class="lightbox-pane">
+            <div class="lightbox-pane" id="lightbox-pane-right">
                 <div class="lightbox-pane-head" id="lightbox-right-title">OPTION B</div>
-                <div class="lightbox-pane-body">
+                <div class="lightbox-pane-body" data-pane="right">
                     <img id="lightbox-right-img" src="" alt="Option B preview">
                 </div>
             </div>
@@ -725,7 +746,6 @@
 
     let state = { worker: "", v1: "", v2: "", scene: "", currentTask: null };
     const dims = {
-        overall: "整体体验",
         aesthetic: "美学质量",
         logic: "逻辑合理",
         consistency: "指令一致性"
@@ -736,8 +756,10 @@
     let startTime = null;
     let badCaseSelections = { left: new Set(), right: new Set() };
     let activeBadCaseCategory = { left: "", right: "" };
-    let lightboxZoom = 1;
+    let badCasePanelsCollapsed = false;
+    let lightboxZoom = { left: 1, right: 1 };
     let lightboxPanBound = false;
+    let activeLightboxPane = "left";
 
     async function checkAuth() {
         try {
@@ -852,6 +874,13 @@
             : `<span style="color:var(--muted); font-size:0.82rem;">未记录坏例</span>`;
     }
 
+    function toggleBadCasePanels() {
+        badCasePanelsCollapsed = !badCasePanelsCollapsed;
+        document.getElementById("bad-case-panel-left").classList.toggle("collapsed", badCasePanelsCollapsed);
+        document.getElementById("bad-case-panel-right").classList.toggle("collapsed", badCasePanelsCollapsed);
+        document.getElementById("bad-case-toggle").textContent = badCasePanelsCollapsed ? "展开严重坏例" : "收起严重坏例";
+    }
+
     function handleVote(dim, val) {
         currentVotes[dim] = val;
     }
@@ -946,7 +975,7 @@
         document.getElementById("lightbox-right-title").textContent = `OPTION B · ${data.v_right}`;
         document.getElementById("prompt-text").textContent = data.prompt;
 
-        currentVotes = { overall: null, aesthetic: null, logic: null, consistency: null };
+        currentVotes = { aesthetic: null, logic: null, consistency: null };
         currentDimIndex = 0;
         badCaseSelections = { left: new Set(), right: new Set() };
         activeBadCaseCategory = { left: "美学缺陷", right: "美学缺陷" };
@@ -1043,6 +1072,7 @@
 
     function openCompareLightbox() {
         resetLightboxZoom();
+        setActiveLightboxPane(activeLightboxPane);
         document.getElementById("lightbox").classList.add("open");
         document.body.style.overflow = "hidden";
     }
@@ -1052,13 +1082,18 @@
         document.body.style.overflow = "";
     }
 
-    function applyLightboxZoom() {
-        document.getElementById("lightbox-left-img").style.transform = `scale(${lightboxZoom})`;
-        document.getElementById("lightbox-right-img").style.transform = `scale(${lightboxZoom})`;
+    function setActiveLightboxPane(side) {
+        activeLightboxPane = side;
+        document.getElementById("lightbox-pane-left").classList.toggle("active", side === "left");
+        document.getElementById("lightbox-pane-right").classList.toggle("active", side === "right");
     }
 
-    function setLightboxZoom(nextZoom, zoomCenter = null) {
-        const previousZoom = lightboxZoom;
+    function applyLightboxZoom(side) {
+        document.getElementById(`lightbox-${side}-img`).style.transform = `scale(${lightboxZoom[side]})`;
+    }
+
+    function setLightboxZoom(side, nextZoom, zoomCenter = null) {
+        const previousZoom = lightboxZoom[side];
         const normalizedZoom = Math.max(0.4, Math.min(3, Number(nextZoom.toFixed(2))));
         if (normalizedZoom === previousZoom) return;
 
@@ -1068,24 +1103,26 @@
             const offsetX = clientX - rect.left + container.scrollLeft;
             const offsetY = clientY - rect.top + container.scrollTop;
             const ratio = normalizedZoom / previousZoom;
-            lightboxZoom = normalizedZoom;
-            applyLightboxZoom();
+            lightboxZoom[side] = normalizedZoom;
+            applyLightboxZoom(side);
             container.scrollLeft = offsetX * ratio - (clientX - rect.left);
             container.scrollTop = offsetY * ratio - (clientY - rect.top);
             return;
         }
 
-        lightboxZoom = normalizedZoom;
-        applyLightboxZoom();
+        lightboxZoom[side] = normalizedZoom;
+        applyLightboxZoom(side);
     }
 
     function adjustLightboxZoom(delta) {
-        setLightboxZoom(lightboxZoom + delta);
+        setLightboxZoom("left", lightboxZoom.left + delta);
+        setLightboxZoom("right", lightboxZoom.right + delta);
     }
 
     function resetLightboxZoom() {
-        lightboxZoom = 1;
-        applyLightboxZoom();
+        lightboxZoom = { left: 1, right: 1 };
+        applyLightboxZoom("left");
+        applyLightboxZoom("right");
         resetLightboxScroll();
     }
 
@@ -1101,6 +1138,7 @@
         lightboxPanBound = true;
 
         document.querySelectorAll(".lightbox-pane-body").forEach(container => {
+            const side = container.dataset.pane;
             let isDragging = false;
             let startX = 0;
             let startY = 0;
@@ -1108,9 +1146,10 @@
             let startScrollTop = 0;
 
             container.addEventListener("wheel", (event) => {
+                setActiveLightboxPane(side);
                 if (event.ctrlKey || event.metaKey || event.shiftKey || Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
                     const delta = event.deltaY < 0 ? 0.16 : -0.16;
-                    setLightboxZoom(lightboxZoom + delta, {
+                    setLightboxZoom(side, lightboxZoom[side] + delta, {
                         container,
                         clientX: event.clientX,
                         clientY: event.clientY
@@ -1119,13 +1158,14 @@
                     return;
                 }
 
-                if (lightboxZoom <= 1) return;
+                if (lightboxZoom[side] <= 1) return;
                 container.scrollLeft += event.deltaX;
                 event.preventDefault();
             }, { passive: false });
 
             container.addEventListener("mousedown", (event) => {
-                if (event.button !== 0 || lightboxZoom <= 1) return;
+                setActiveLightboxPane(side);
+                if (event.button !== 0 || lightboxZoom[side] <= 1) return;
                 isDragging = true;
                 startX = event.clientX;
                 startY = event.clientY;
@@ -1133,6 +1173,10 @@
                 startScrollTop = container.scrollTop;
                 container.classList.add("dragging");
                 event.preventDefault();
+            });
+
+            container.addEventListener("mouseenter", () => {
+                setActiveLightboxPane(side);
             });
 
             window.addEventListener("mousemove", (event) => {
