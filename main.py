@@ -1,267 +1,354 @@
+import csv
+import json
 import os
 import random
-import sqlite3
 import shutil
+import sqlite3
 import zipfile
-import time
-import json
-import bcrypt
 from datetime import datetime, timedelta
-from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request, Cookie
+from io import StringIO
+from typing import Dict, List, Optional
+
+import bcrypt
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 from jose import JWTError, jwt
+from pydantic import BaseModel
 
 app = FastAPI(title="MLLM Multi-Dim Eval Professional")
 
-# --- 配置区 ---
 RESULT_DIR = "results"
 PROMPT_DIR = "prompt"
+REF_IMAGE_DIR = "ref_images"
 DB_PATH = "database.db"
 SECRET_KEY = "ab_test_secret_key_2024_secure"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440
 
-os.makedirs(RESULT_DIR, exist_ok=True)
-os.makedirs(PROMPT_DIR, exist_ok=True)
+for path in (RESULT_DIR, PROMPT_DIR, REF_IMAGE_DIR):
+    os.makedirs(path, exist_ok=True)
 
 app.mount("/images", StaticFiles(directory=RESULT_DIR), name="images")
-templates = Jinja2Templates(directory="templates")
+app.mount("/ref-images", StaticFiles(directory=REF_IMAGE_DIR), name="ref_images")
 
-BAD_CASE_LABELS = {
-    "美学缺陷": ["乱码", "色彩异常", "明显噪点", "网格伪影", "模糊失焦"],
-    "结构畸变": ["物体粘连", "透视问题", "空间扭曲"],
-    "人像": ["人脸扭曲", "肢体畸变"],
-    "语义问题": ["语义丢失", "对象错误"],
-    "安全违规": ["涉黄", "暴力", "侵权风险"],
+TASK_CONFIGS: Dict[str, Dict[str, object]] = {
+    "T2I": {
+        "result_root": os.path.join(RESULT_DIR, "T2I"),
+        "prompt_root": os.path.join(PROMPT_DIR, "T2I"),
+        "ref_root": os.path.join(REF_IMAGE_DIR, "T2I"),
+        "eval_dims": ["aesthetic", "logic", "consistency"],
+        "dashboard_dims": ["overall", "aesthetic", "logic", "consistency"],
+        "bad_case_options": {
+            "美学缺陷": ["乱码", "色彩异常", "明显噪点", "网格伪影", "模糊失焦"],
+            "结构畸变": ["物体粘连", "透视问题", "空间扭曲"],
+            "人像": ["人脸扭曲", "肢体畸变"],
+            "语义问题": ["语义丢失", "对象错误"],
+            "文本错误": ["文字乱码", "文字缺失", "额外文字"],
+            "安全违规": ["涉黄", "暴力", "侵权风险"],
+        },
+        "show_ref": False,
+        "upload_has_ref": False,
+    },
+    "TI2I": {
+        "result_root": os.path.join(RESULT_DIR, "TI2I"),
+        "prompt_root": os.path.join(PROMPT_DIR, "TI2I"),
+        "ref_root": os.path.join(REF_IMAGE_DIR, "TI2I"),
+        "eval_dims": ["aesthetic", "logic", "consistency", "fidelity"],
+        "dashboard_dims": ["overall", "aesthetic", "logic", "consistency", "fidelity"],
+        "bad_case_options": {
+            "美学缺陷": ["乱码", "色彩异常", "明显噪点", "网格伪影", "模糊失焦"],
+            "结构畸变": ["物体粘连", "透视问题", "空间扭曲"],
+            "人像": ["人脸扭曲", "肢体畸变"],
+            "语义问题": ["语义丢失", "对象错误"],
+            "文本错误": ["文字乱码", "文字缺失", "额外文字"],
+            "保真": ["过度编辑", "属性污染", "保真度差"],
+            "安全违规": ["涉黄", "暴力", "侵权风险"],
+        },
+        "show_ref": True,
+        "upload_has_ref": True,
+    },
 }
+
+DIM_LABELS = {
+    "overall": "整体",
+    "aesthetic": "美学",
+    "logic": "合理性",
+    "consistency": "一致性",
+    "fidelity": "保真度",
+}
+
 BAD_CASE_LABEL_TO_CATEGORY = {
     label: category
-    for category, labels in BAD_CASE_LABELS.items()
+    for config in TASK_CONFIGS.values()
+    for category, labels in config["bad_case_options"].items()
     for label in labels
 }
 
-# --- 密码工具函数 ---
+
 def hash_password(password: str) -> str:
-    """使用 bcrypt 加密密码"""
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码"""
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
-# --- JWT 工具函数 ---
+
 def create_access_token(data: dict) -> str:
-    """创建 JWT token"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode["exp"] = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+
 def decode_token(token: str) -> Optional[dict]:
-    """解码 JWT token"""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         return None
 
-# --- 数据库初始化 ---
+
+def get_task_config(task_type: str) -> dict:
+    if task_type not in TASK_CONFIGS:
+        raise HTTPException(status_code=400, detail="无效任务类型")
+    return TASK_CONFIGS[task_type]
+
+
+def ensure_column(cursor, table_name: str, column_name: str, definition: str):
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    existing = {row[1] for row in cursor.fetchall()}
+    if column_name not in existing:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # 用户表
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        email TEXT UNIQUE,
-        role TEXT DEFAULT 'evaluator',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        last_login DATETIME,
-        is_active INTEGER DEFAULT 1
-    )''')
-
-    # 操作日志表
-    cursor.execute('''CREATE TABLE IF NOT EXISTS operation_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        action TEXT,
-        details TEXT,
-        ip_address TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )''')
-
-    # 评测记录表 (扩展字段)
-    cursor.execute('''CREATE TABLE IF NOT EXISTS results_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        v_a TEXT, v_b TEXT, scene TEXT, filename TEXT,
-        overall TEXT, aesthetic TEXT, logic TEXT, consistency TEXT,
-        worker TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        duration_seconds INTEGER,
-        skipped INTEGER DEFAULT 0,
-        user_id INTEGER
-    )''')
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            email TEXT UNIQUE,
+            role TEXT DEFAULT 'evaluator',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login DATETIME,
+            is_active INTEGER DEFAULT 1
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS operation_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            action TEXT,
+            details TEXT,
+            ip_address TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS results_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_type TEXT DEFAULT 'T2I',
+            v_a TEXT,
+            v_b TEXT,
+            scene TEXT,
+            filename TEXT,
+            overall TEXT,
+            aesthetic TEXT,
+            logic TEXT,
+            consistency TEXT,
+            fidelity TEXT,
+            worker TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            duration_seconds INTEGER,
+            skipped INTEGER DEFAULT 0,
+            user_id INTEGER,
+            bad_case_tags_a TEXT DEFAULT '[]',
+            bad_case_tags_b TEXT DEFAULT '[]',
+            bad_case_categories_a TEXT DEFAULT '[]',
+            bad_case_categories_b TEXT DEFAULT '[]'
+        )
+        """
+    )
+    ensure_column(cursor, "results_log", "task_type", "TEXT DEFAULT 'T2I'")
+    ensure_column(cursor, "results_log", "fidelity", "TEXT DEFAULT 'tie'")
     ensure_column(cursor, "results_log", "bad_case_tags_a", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_tags_b", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_categories_a", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_categories_b", "TEXT DEFAULT '[]'")
 
-    # 任务分配表
     cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='pair_tasks'")
     row = cursor.fetchone()
-    if row and "UNIQUE(v_a, v_b, scene, filename)" in row[0]:
-        cursor.execute("CREATE TABLE IF NOT EXISTS pair_tasks_new ("
-                       "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                       "v_a TEXT, v_b TEXT, scene TEXT, filename TEXT,"
-                       "status TEXT DEFAULT 'pending',"
-                       "worker TEXT,"
-                       "assigned_user_id INTEGER,"
-                       "UNIQUE(v_a, v_b, scene, filename, worker))")
-        cursor.execute("INSERT OR IGNORE INTO pair_tasks_new "
-                       "(id, v_a, v_b, scene, filename, status, worker) "
-                       "SELECT id, v_a, v_b, scene, filename, status, worker FROM pair_tasks")
+    if row and "task_type" not in (row[0] or ""):
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pair_tasks_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type TEXT DEFAULT 'T2I',
+                v_a TEXT,
+                v_b TEXT,
+                scene TEXT,
+                filename TEXT,
+                status TEXT DEFAULT 'pending',
+                worker TEXT,
+                assigned_user_id INTEGER,
+                UNIQUE(task_type, v_a, v_b, scene, filename, worker)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO pair_tasks_new
+            (id, task_type, v_a, v_b, scene, filename, status, worker, assigned_user_id)
+            SELECT id, 'T2I', v_a, v_b, scene, filename, status, worker, assigned_user_id
+            FROM pair_tasks
+            """
+        )
         cursor.execute("DROP TABLE pair_tasks")
         cursor.execute("ALTER TABLE pair_tasks_new RENAME TO pair_tasks")
-        conn.commit()
 
-    cursor.execute('''CREATE TABLE IF NOT EXISTS pair_tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        v_a TEXT, v_b TEXT, scene TEXT, filename TEXT,
-        status TEXT DEFAULT 'pending',
-        worker TEXT,
-        assigned_user_id INTEGER,
-        UNIQUE(v_a, v_b, scene, filename, worker)
-    )''')
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pair_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_type TEXT DEFAULT 'T2I',
+            v_a TEXT,
+            v_b TEXT,
+            scene TEXT,
+            filename TEXT,
+            status TEXT DEFAULT 'pending',
+            worker TEXT,
+            assigned_user_id INTEGER,
+            UNIQUE(task_type, v_a, v_b, scene, filename, worker)
+        )
+        """
+    )
+    ensure_column(cursor, "pair_tasks", "task_type", "TEXT DEFAULT 'T2I'")
 
-    # 创建默认管理员账户
     cursor.execute("SELECT id FROM users WHERE username='admin'")
     if not cursor.fetchone():
-        admin_hash = hash_password("admin123")
-        cursor.execute("INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)",
-                      ("admin", admin_hash, "admin", "admin@example.com"))
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)",
+            ("admin", hash_password("admin123"), "admin", "admin@example.com"),
+        )
 
     conn.commit()
     conn.close()
 
-# --- 认证依赖 ---
-async def get_current_user(request: Request, access_token: Optional[str] = Cookie(None)) -> Optional[dict]:
-    """获取当前登录用户"""
-    if not access_token:
-        # 尝试从 header 获取
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            access_token = auth_header[7:]
-        else:
-            return None
 
-    payload = decode_token(access_token)
-    if not payload:
-        return None
+def normalize_task_type(task_type: str) -> str:
+    return task_type.upper()
 
-    user_id = payload.get("sub")
-    if not user_id:
-        return None
 
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, username, role, email FROM users WHERE id=? AND is_active=1", (user_id,))
-    user = cursor.fetchone()
-    conn.close()
+def get_result_root(task_type: str) -> str:
+    task_type = normalize_task_type(task_type)
+    config = get_task_config(task_type)
+    preferred = config["result_root"]
+    if os.path.isdir(preferred):
+        return preferred
+    if task_type == "T2I":
+        return RESULT_DIR
+    return preferred
 
-    if not user:
-        return None
 
-    return {"id": user[0], "username": user[1], "role": user[2], "email": user[3]}
+def get_prompt_root(task_type: str) -> str:
+    config = get_task_config(normalize_task_type(task_type))
+    preferred = config["prompt_root"]
+    if os.path.isdir(preferred):
+        return preferred
+    return PROMPT_DIR
 
-async def require_login(user: dict = Depends(get_current_user)) -> dict:
-    """要求用户登录"""
-    if not user:
-        raise HTTPException(status_code=401, detail="请先登录")
-    return user
 
-async def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    """要求管理员权限"""
-    if not user:
-        raise HTTPException(status_code=401, detail="请先登录")
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    return user
+def get_ref_root(task_type: str) -> str:
+    config = get_task_config(normalize_task_type(task_type))
+    preferred = config["ref_root"]
+    if os.path.isdir(preferred):
+        return preferred
+    return REF_IMAGE_DIR
 
-# --- 数据模型 ---
-class UserRegister(BaseModel):
-    username: str
-    password: str
-    email: Optional[str] = None
 
-class UserLogin(BaseModel):
-    username: str
-    password: str
+def get_versions_for_type(task_type: str) -> List[str]:
+    root = get_result_root(task_type)
+    if not os.path.isdir(root):
+        return []
+    return sorted([name for name in os.listdir(root) if os.path.isdir(os.path.join(root, name))])
 
-class VoteSubmit(BaseModel):
-    task_id: int
-    v_left: str
-    v_right: str
-    scene: str
-    filename: str
-    worker: str
-    overall: Optional[str] = None
-    aesthetic: str
-    logic: str
-    consistency: str
-    bad_case_left: Optional[List[str]] = None
-    bad_case_right: Optional[List[str]] = None
-    duration_seconds: Optional[int] = None
 
-class PasswordChange(BaseModel):
-    old_password: str
-    new_password: str
+def get_scene_path(task_type: str, version: str, scene: str) -> str:
+    return os.path.join(get_result_root(task_type), version, scene)
 
-# --- 辅助函数 ---
-def get_prompt_text(scene: str, filename: str) -> str:
-    prompt_file = os.path.join(PROMPT_DIR, f"{scene}.txt")
-    if not os.path.exists(prompt_file):
-        return "Prompt file not found."
-    img_id = os.path.splitext(filename)[0]
-    try:
-        with open(prompt_file, 'r', encoding='utf-8') as f:
+
+def get_common_scenes(task_type: str, v1: str, v2: str) -> List[str]:
+    p1 = os.path.join(get_result_root(task_type), v1)
+    p2 = os.path.join(get_result_root(task_type), v2)
+    if not (os.path.isdir(p1) and os.path.isdir(p2)):
+        return []
+    s1 = {d for d in os.listdir(p1) if os.path.isdir(os.path.join(p1, d))}
+    s2 = {d for d in os.listdir(p2) if os.path.isdir(os.path.join(p2, d))}
+    return sorted(list(s1 & s2))
+
+
+def list_scene_files(task_type: str, version: str, scene: str) -> List[str]:
+    scene_path = get_scene_path(task_type, version, scene)
+    if not os.path.isdir(scene_path):
+        return []
+    return sorted([f for f in os.listdir(scene_path) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])
+
+
+def get_prompt_text(task_type: str, scene: str, filename: str) -> str:
+    prompt_root = get_prompt_root(task_type)
+    candidates = [os.path.join(prompt_root, f"{scene}.txt"), os.path.join(PROMPT_DIR, f"{scene}.txt")]
+    image_id = os.path.splitext(filename)[0]
+    for prompt_file in candidates:
+        if not os.path.exists(prompt_file):
+            continue
+        with open(prompt_file, "r", encoding="utf-8") as f:
             for line in f:
-                parts = line.strip().split('\t')
-                if len(parts) >= 2 and parts[0] == img_id:
+                parts = line.strip().split("\t")
+                if len(parts) >= 2 and parts[0] == image_id:
                     return parts[1]
-    except Exception as e:
-        print(f"Error reading prompt: {e}")
     return "Prompt content not found."
 
+
+def get_ref_image_url(task_type: str, scene: str, filename: str) -> Optional[str]:
+    ref_root = get_ref_root(task_type)
+    direct_path = os.path.join(ref_root, scene, filename)
+    if os.path.exists(direct_path):
+        rel = os.path.relpath(direct_path, REF_IMAGE_DIR).replace(os.sep, "/")
+        return f"/ref-images/{rel}"
+    fallback = os.path.join(REF_IMAGE_DIR, scene, filename)
+    if os.path.exists(fallback):
+        rel = os.path.relpath(fallback, REF_IMAGE_DIR).replace(os.sep, "/")
+        return f"/ref-images/{rel}"
+    return None
+
+
 def log_operation(user_id: int, action: str, details: str, ip_address: str = ""):
-    """记录操作日志"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO operation_logs (user_id, action, details, ip_address) VALUES (?, ?, ?, ?)",
-        (user_id, action, details, ip_address)
+        (user_id, action, details, ip_address),
     )
     conn.commit()
     conn.close()
 
-def ensure_column(cursor, table_name: str, column_name: str, definition: str):
-    cursor.execute(f"PRAGMA table_info({table_name})")
-    columns = {row[1] for row in cursor.fetchall()}
-    if column_name not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
 def normalize_bad_case_tags(tags: Optional[List[str]]) -> List[str]:
     if not tags:
         return []
-    unique_tags = []
+    result = []
     for tag in tags:
-        if tag in BAD_CASE_LABEL_TO_CATEGORY and tag not in unique_tags:
-            unique_tags.append(tag)
-    return unique_tags
+        if tag in BAD_CASE_LABEL_TO_CATEGORY and tag not in result:
+            result.append(tag)
+    return result
+
 
 def categories_from_tags(tags: List[str]) -> List[str]:
     categories = []
@@ -270,6 +357,7 @@ def categories_from_tags(tags: List[str]) -> List[str]:
         if category and category not in categories:
             categories.append(category)
     return categories
+
 
 def safe_load_json_list(value: Optional[str]) -> List[str]:
     if not value:
@@ -280,11 +368,13 @@ def safe_load_json_list(value: Optional[str]) -> List[str]:
         return []
     return data if isinstance(data, list) else []
 
-def derive_overall_result(aesthetic: str, logic: str, consistency: str) -> str:
-    choices = [aesthetic, logic, consistency]
+
+def derive_overall_result(dim_results: List[str]) -> str:
     counts = {}
-    for choice in choices:
-        counts[choice] = counts.get(choice, 0) + 1
+    for result in dim_results:
+        counts[result] = counts.get(result, 0) + 1
+    if not counts:
+        return "tie"
     best_choice = max(counts.items(), key=lambda item: item[1])[0]
     top_count = counts[best_choice]
     if top_count == 1:
@@ -293,7 +383,104 @@ def derive_overall_result(aesthetic: str, logic: str, consistency: str) -> str:
         return "tie"
     return best_choice
 
-# --- 启动事件 ---
+
+def build_bad_case_stats(rows):
+    stats = {
+        "v_a": {"bad_count": 0, "total": 0, "rate": 0.0, "categories": {}, "tags": {}},
+        "v_b": {"bad_count": 0, "total": 0, "rate": 0.0, "categories": {}, "tags": {}},
+    }
+    for row in rows:
+        tags_a = safe_load_json_list(row["bad_case_tags_a"])
+        tags_b = safe_load_json_list(row["bad_case_tags_b"])
+        stats["v_a"]["total"] += 1
+        stats["v_b"]["total"] += 1
+        if tags_a:
+            stats["v_a"]["bad_count"] += 1
+        if tags_b:
+            stats["v_b"]["bad_count"] += 1
+        for side_key, tags in (("v_a", tags_a), ("v_b", tags_b)):
+            seen_categories = set()
+            for tag in tags:
+                category = BAD_CASE_LABEL_TO_CATEGORY.get(tag)
+                if not category:
+                    continue
+                stats[side_key]["tags"][tag] = stats[side_key]["tags"].get(tag, 0) + 1
+                if category not in seen_categories:
+                    stats[side_key]["categories"][category] = stats[side_key]["categories"].get(category, 0) + 1
+                    seen_categories.add(category)
+    for key in ("v_a", "v_b"):
+        total = stats[key]["total"]
+        stats[key]["rate"] = round(stats[key]["bad_count"] / total * 100, 1) if total else 0.0
+    return stats
+
+
+async def get_current_user(request: Request, access_token: Optional[str] = Cookie(None)) -> Optional[dict]:
+    if not access_token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            access_token = auth_header[7:]
+        else:
+            return None
+    payload = decode_token(access_token)
+    if not payload or not payload.get("sub"):
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, role, email FROM users WHERE id=? AND is_active=1", (payload["sub"],))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"id": row[0], "username": row[1], "role": row[2], "email": row[3]}
+
+
+async def require_login(user: dict = Depends(get_current_user)) -> dict:
+    if not user:
+        raise HTTPException(status_code=401, detail="请先登录")
+    return user
+
+
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if not user:
+        raise HTTPException(status_code=401, detail="请先登录")
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
+class UserRegister(BaseModel):
+    username: str
+    password: str
+    email: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class VoteSubmit(BaseModel):
+    task_type: str
+    task_id: int
+    v_left: str
+    v_right: str
+    scene: str
+    filename: str
+    worker: str
+    aesthetic: str
+    logic: str
+    consistency: str
+    fidelity: Optional[str] = None
+    bad_case_left: Optional[List[str]] = None
+    bad_case_right: Optional[List[str]] = None
+    duration_seconds: Optional[int] = None
+
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -302,612 +489,514 @@ def startup():
     conn.commit()
     conn.close()
 
-# ========== 用户认证 API ==========
 
 @app.post("/api/auth/register")
 def register(user: UserRegister, request: Request):
-    """用户注册"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # 检查用户名是否已存在
     cursor.execute("SELECT id FROM users WHERE username=?", (user.username,))
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="用户名已存在")
-
-    # 检查邮箱是否已存在
     if user.email:
         cursor.execute("SELECT id FROM users WHERE email=?", (user.email,))
         if cursor.fetchone():
             conn.close()
             raise HTTPException(status_code=400, detail="邮箱已被注册")
-
-    # 创建用户
-    password_hash = hash_password(user.password)
     cursor.execute(
         "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
-        (user.username, password_hash, user.email)
+        (user.username, hash_password(user.password), user.email),
     )
     conn.commit()
     user_id = cursor.lastrowid
     conn.close()
-
-    # 记录日志
     log_operation(user_id, "register", f"新用户注册: {user.username}", request.client.host)
+    return {"status": "ok"}
 
-    return {"status": "ok", "message": "注册成功"}
 
 @app.post("/api/auth/login")
 def login(user: UserLogin, request: Request):
-    """用户登录"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
     cursor.execute("SELECT id, password_hash, role FROM users WHERE username=? AND is_active=1", (user.username,))
-    result = cursor.fetchone()
-
-    if not result or not verify_password(user.password, result[1]):
+    row = cursor.fetchone()
+    if not row or not verify_password(user.password, row[1]):
         conn.close()
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-
-    user_id, _, role = result
-
-    # 更新最后登录时间
-    cursor.execute("UPDATE users SET last_login=CURRENT_TIMESTAMP WHERE id=?", (user_id,))
+    cursor.execute("UPDATE users SET last_login=CURRENT_TIMESTAMP WHERE id=?", (row[0],))
     conn.commit()
     conn.close()
-
-    # 创建 token
-    access_token = create_access_token({"sub": str(user_id), "role": role})
-
-    # 记录日志
-    log_operation(user_id, "login", f"用户登录: {user.username}", request.client.host)
-
-    response = JSONResponse({"status": "ok", "role": role})
+    access_token = create_access_token({"sub": str(row[0]), "role": row[2]})
+    log_operation(row[0], "login", f"用户登录: {user.username}", request.client.host)
+    response = JSONResponse({"status": "ok", "role": row[2]})
     response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=86400)
     return response
 
+
 @app.post("/api/auth/logout")
 def logout(user: dict = Depends(require_login)):
-    """用户登出"""
     response = JSONResponse({"status": "ok"})
     response.delete_cookie(key="access_token")
     return response
 
+
 @app.get("/api/auth/me")
 def get_me(user: dict = Depends(require_login)):
-    """获取当前用户信息"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, username, email, role, created_at, last_login FROM users WHERE id=?",
-        (user["id"],)
+        (user["id"],),
     )
-    result = cursor.fetchone()
+    row = cursor.fetchone()
     conn.close()
-
-    if not result:
-        raise HTTPException(status_code=404, detail="用户不存在")
-
     return {
-        "id": result[0],
-        "username": result[1],
-        "email": result[2],
-        "role": result[3],
-        "created_at": result[4],
-        "last_login": result[5]
+        "id": row[0],
+        "username": row[1],
+        "email": row[2],
+        "role": row[3],
+        "created_at": row[4],
+        "last_login": row[5],
     }
+
 
 @app.put("/api/auth/password")
 def change_password(data: PasswordChange, user: dict = Depends(require_login)):
-    """修改密码"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # 验证旧密码
     cursor.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],))
-    result = cursor.fetchone()
-    if not result or not verify_password(data.old_password, result[0]):
+    row = cursor.fetchone()
+    if not row or not verify_password(data.old_password, row[0]):
         conn.close()
         raise HTTPException(status_code=400, detail="旧密码错误")
+    cursor.execute("UPDATE users SET password_hash=? WHERE id=?", (hash_password(data.new_password), user["id"]))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
 
-    # 更新密码
-    new_hash = hash_password(data.new_password)
-    cursor.execute("UPDATE users SET password_hash=? WHERE id=?", (new_hash, user["id"]))
+
+@app.get("/api/task_types")
+def get_task_types():
+    return [
+        {
+            "key": key,
+            "label": key,
+            "show_ref": config["show_ref"],
+            "dims": config["eval_dims"],
+        }
+        for key, config in TASK_CONFIGS.items()
+    ]
+
+
+@app.get("/api/task_config")
+def api_task_config(task_type: str):
+    task_type = normalize_task_type(task_type)
+    config = get_task_config(task_type)
+    return {
+        "task_type": task_type,
+        "show_ref": config["show_ref"],
+        "eval_dims": [{"key": dim, "label": DIM_LABELS[dim]} for dim in config["eval_dims"]],
+        "dashboard_dims": [{"key": dim, "label": DIM_LABELS[dim]} for dim in config["dashboard_dims"]],
+        "bad_case_options": config["bad_case_options"],
+    }
+
+
+@app.get("/api/versions")
+def get_versions(task_type: str):
+    return get_versions_for_type(normalize_task_type(task_type))
+
+
+@app.get("/api/scenes")
+def get_scenes(task_type: str, v1: str, v2: str):
+    return get_common_scenes(normalize_task_type(task_type), v1, v2)
+
+
+@app.get("/api/get_prompt")
+def get_prompt(task_type: str, scene: str, filename: str):
+    return get_prompt_text(normalize_task_type(task_type), scene, filename)
+
+
+def ensure_pair_tasks(task_type: str, worker: str, v_a: str, v_b: str, scene: str, user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    for filename in list_scene_files(task_type, v_a, scene):
+        if os.path.exists(os.path.join(get_scene_path(task_type, v_b, scene), filename)):
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO pair_tasks (task_type, v_a, v_b, scene, filename, worker, assigned_user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_type, v_a, v_b, scene, filename, worker, user_id),
+            )
     conn.commit()
     conn.close()
 
-    return {"status": "ok", "message": "密码修改成功"}
-
-# ========== 评测功能 API ==========
-
-@app.get("/api/versions")
-def get_versions():
-    return sorted([d for d in os.listdir(RESULT_DIR) if os.path.isdir(os.path.join(RESULT_DIR, d))])
-
-@app.get("/api/scenes")
-def get_scenes(v1: str, v2: str):
-    p1 = os.path.join(RESULT_DIR, v1)
-    p2 = os.path.join(RESULT_DIR, v2)
-    if not (os.path.exists(p1) and os.path.exists(p2)): return []
-    s1 = set([d for d in os.listdir(p1) if os.path.isdir(os.path.join(p1, d))])
-    s2 = set([d for d in os.listdir(p2) if os.path.isdir(os.path.join(p2, d))])
-    return sorted(list(s1 & s2))
 
 @app.get("/api/get_task")
-def get_task(worker: str, v1: str, v2: str, scene: str, user: dict = Depends(require_login)):
+def get_task(task_type: str, worker: str, v1: str, v2: str, scene: str, user: dict = Depends(require_login)):
+    task_type = normalize_task_type(task_type)
+    get_task_config(task_type)
     v_a, v_b = sorted([v1, v2])
+    ensure_pair_tasks(task_type, worker, v_a, v_b, scene, user["id"])
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # 1. 优先获取该用户未完成的"断点"任务
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT id, filename FROM pair_tasks
-        WHERE v_a=? AND v_b=? AND scene=? AND status='working' AND worker=?
+        WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND status='working' AND worker=?
         LIMIT 1
-    """, (v_a, v_b, scene, worker))
-    task = cursor.fetchone()
-
-    if not task:
-        # 2. 如果没有，检查是否需要为该用户初始化该场景任务到DB
-        scene_path = os.path.join(RESULT_DIR, v_a, scene)
-        if os.path.exists(scene_path):
-            files = [f for f in os.listdir(scene_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            for f in files:
-                cursor.execute(
-                    "INSERT OR IGNORE INTO pair_tasks (v_a, v_b, scene, filename, worker, assigned_user_id) VALUES (?,?,?,?,?,?)",
-                    (v_a, v_b, scene, f, worker, user["id"]))
-            conn.commit()
-
-        # 3. 随机抢占该用户的一个 pending 任务
+        """,
+        (task_type, v_a, v_b, scene, worker),
+    )
+    row = cursor.fetchone()
+    if not row:
         cursor.execute("BEGIN EXCLUSIVE TRANSACTION")
         cursor.execute(
-            "SELECT id, filename FROM pair_tasks WHERE v_a=? AND v_b=? AND scene=? AND status='pending' AND worker=?",
-            (v_a, v_b, scene, worker))
+            """
+            SELECT id, filename FROM pair_tasks
+            WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND status='pending' AND worker=?
+            """,
+            (task_type, v_a, v_b, scene, worker),
+        )
         pending = cursor.fetchall()
-        task = random.choice(pending) if pending else None
-        if task:
-            cursor.execute("UPDATE pair_tasks SET status='working' WHERE id=?", (task[0],))
+        row = random.choice(pending) if pending else None
+        if row:
+            cursor.execute("UPDATE pair_tasks SET status='working' WHERE id=?", (row[0],))
             conn.commit()
-
     conn.close()
-    if not task: return {"status": "finished"}
+    if not row:
+        return {"status": "finished"}
 
-    t_id, fname = task
     display = [v_a, v_b]
     random.shuffle(display)
-
-    return {
-        "task_id": t_id, "scene": scene, "filename": fname,
-        "prompt": get_prompt_text(scene, fname),
-        "left_img": f"/images/{display[0]}/{scene}/{fname}",
-        "right_img": f"/images/{display[1]}/{scene}/{fname}",
-        "v_left": display[0], "v_right": display[1]
+    filename = row[1]
+    payload = {
+        "task_type": task_type,
+        "task_id": row[0],
+        "scene": scene,
+        "filename": filename,
+        "prompt": get_prompt_text(task_type, scene, filename),
+        "left_img": f"/images/{task_type}/{display[0]}/{scene}/{filename}" if os.path.isdir(os.path.join(RESULT_DIR, task_type)) else f"/images/{display[0]}/{scene}/{filename}",
+        "right_img": f"/images/{task_type}/{display[1]}/{scene}/{filename}" if os.path.isdir(os.path.join(RESULT_DIR, task_type)) else f"/images/{display[1]}/{scene}/{filename}",
+        "v_left": display[0],
+        "v_right": display[1],
+        "show_ref": bool(get_task_config(task_type)["show_ref"]),
+        "ref_img": get_ref_image_url(task_type, scene, filename),
     }
+    return payload
+
 
 @app.get("/api/progress")
-def get_progress(worker: str, v1: str, v2: str, scene: str, user: dict = Depends(require_login)):
-    """获取评测进度"""
+def get_progress(task_type: str, worker: str, v1: str, v2: str, scene: str, user: dict = Depends(require_login)):
+    task_type = normalize_task_type(task_type)
     v_a, v_b = sorted([v1, v2])
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # 获取总数
-    cursor.execute("""
-        SELECT COUNT(*) FROM pair_tasks
-        WHERE v_a=? AND v_b=? AND scene=? AND worker=?
-    """, (v_a, v_b, scene, worker))
+    cursor.execute(
+        "SELECT COUNT(*) FROM pair_tasks WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND worker=?",
+        (task_type, v_a, v_b, scene, worker),
+    )
     total = cursor.fetchone()[0]
-
-    # 获取已完成数
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT COUNT(*) FROM pair_tasks
-        WHERE v_a=? AND v_b=? AND scene=? AND worker=? AND status='completed'
-    """, (v_a, v_b, scene, worker))
+        WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND worker=? AND status='completed'
+        """,
+        (task_type, v_a, v_b, scene, worker),
+    )
     completed = cursor.fetchone()[0]
-
-    # 获取跳过数
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT COUNT(*) FROM results_log
-        WHERE v_a=? AND v_b=? AND scene=? AND worker=? AND skipped=1
-    """, (v_a, v_b, scene, worker))
+        WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND worker=? AND skipped=1
+        """,
+        (task_type, v_a, v_b, scene, worker),
+    )
     skipped = cursor.fetchone()[0]
-
     conn.close()
-
+    percent = round((completed + skipped) / total * 100, 1) if total else 0
     return {
         "total": total,
         "completed": completed,
         "skipped": skipped,
-        "remaining": total - completed - skipped,
-        "percent": round((completed + skipped) / total * 100, 1) if total > 0 else 0
+        "remaining": max(total - completed - skipped, 0),
+        "percent": percent,
     }
+
 
 @app.post("/api/submit")
 def submit_vote(vote: VoteSubmit, user: dict = Depends(require_login)):
-    def get_real_val(choice):
-        if choice == 'left': return vote.v_left
-        if choice == 'right': return vote.v_right
-        return 'tie'
+    task_type = normalize_task_type(vote.task_type)
+    config = get_task_config(task_type)
+
+    def resolve(choice: Optional[str]) -> str:
+        if choice == "left":
+            return vote.v_left
+        if choice == "right":
+            return vote.v_right
+        return "tie"
 
     left_tags = normalize_bad_case_tags(vote.bad_case_left)
     right_tags = normalize_bad_case_tags(vote.bad_case_right)
-
-    if vote.v_left == vote.v_right:
-        raise HTTPException(status_code=400, detail="左右模型不能相同")
-
     if vote.v_left < vote.v_right:
         tags_a, tags_b = left_tags, right_tags
     else:
         tags_a, tags_b = right_tags, left_tags
 
-    categories_a = categories_from_tags(tags_a)
-    categories_b = categories_from_tags(tags_b)
+    dim_values = {
+        "aesthetic": resolve(vote.aesthetic),
+        "logic": resolve(vote.logic),
+        "consistency": resolve(vote.consistency),
+        "fidelity": resolve(vote.fidelity) if "fidelity" in config["eval_dims"] else "tie",
+    }
+    overall = derive_overall_result([dim_values[dim] for dim in config["eval_dims"]])
+    v_a, v_b = sorted([vote.v_left, vote.v_right])
 
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        cursor = conn.cursor()
-        v_a, v_b = sorted([vote.v_left, vote.v_right])
-        aesthetic_val = get_real_val(vote.aesthetic)
-        logic_val = get_real_val(vote.logic)
-        consistency_val = get_real_val(vote.consistency)
-        overall_val = get_real_val(vote.overall) if vote.overall else derive_overall_result(
-            aesthetic_val, logic_val, consistency_val
-        )
-        cursor.execute("""
-            INSERT INTO results_log (
-                v_a, v_b, scene, filename, overall, aesthetic, logic, consistency,
-                worker, duration_seconds, user_id,
-                bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
-            )
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (v_a, v_b, vote.scene, vote.filename,
-              overall_val, aesthetic_val, logic_val, consistency_val,
-              vote.worker, vote.duration_seconds, user["id"],
-              json.dumps(tags_a, ensure_ascii=False), json.dumps(tags_b, ensure_ascii=False),
-              json.dumps(categories_a, ensure_ascii=False), json.dumps(categories_b, ensure_ascii=False)))
-
-        cursor.execute("UPDATE pair_tasks SET status='completed' WHERE id=?", (vote.task_id,))
-        conn.commit()
-    finally:
-        conn.close()
-    return {"status": "ok"}
-
-@app.post("/api/skip_task")
-def skip_task(task_id: int, user: dict = Depends(require_login)):
-    """跳过任务"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO results_log (
+            task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity,
+            worker, duration_seconds, user_id,
+            bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            task_type,
+            v_a,
+            v_b,
+            vote.scene,
+            vote.filename,
+            overall,
+            dim_values["aesthetic"],
+            dim_values["logic"],
+            dim_values["consistency"],
+            dim_values["fidelity"],
+            vote.worker,
+            vote.duration_seconds,
+            user["id"],
+            json.dumps(tags_a, ensure_ascii=False),
+            json.dumps(tags_b, ensure_ascii=False),
+            json.dumps(categories_from_tags(tags_a), ensure_ascii=False),
+            json.dumps(categories_from_tags(tags_b), ensure_ascii=False),
+        ),
+    )
+    cursor.execute("UPDATE pair_tasks SET status='completed' WHERE id=?", (vote.task_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
 
-    # 获取任务信息
-    cursor.execute("SELECT v_a, v_b, scene, filename, worker FROM pair_tasks WHERE id=?", (task_id,))
+
+@app.post("/api/skip_task")
+def skip_task(task_id: int, task_type: str, user: dict = Depends(require_login)):
+    task_type = normalize_task_type(task_type)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT v_a, v_b, scene, filename, worker FROM pair_tasks WHERE id=? AND task_type=?",
+        (task_id, task_type),
+    )
     task = cursor.fetchone()
     if not task:
         conn.close()
         raise HTTPException(status_code=404, detail="任务不存在")
-
-    v_a, v_b, scene, filename, worker = task
-
-    # 记录跳过
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO results_log (
-            v_a, v_b, scene, filename, overall, aesthetic, logic, consistency,
+            task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity,
             worker, skipped, user_id,
             bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
         )
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        v_a, v_b, scene, filename, 'skipped', 'skipped', 'skipped', 'skipped',
-        worker, 1, user["id"], '[]', '[]', '[]', '[]'
-    ))
-
+        VALUES (?, ?, ?, ?, ?, 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', ?, 1, ?, '[]', '[]', '[]', '[]')
+        """,
+        (task_type, task[0], task[1], task[2], task[3], task[4], user["id"]),
+    )
     cursor.execute("UPDATE pair_tasks SET status='completed' WHERE id=?", (task_id,))
     conn.commit()
     conn.close()
-
     return {"status": "ok"}
+
 
 @app.get("/api/my_history")
 def get_my_history(user: dict = Depends(require_login)):
-    """获取个人评测历史"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, timestamp, duration_seconds, skipped
+    cursor.execute(
+        """
+        SELECT task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity, timestamp, duration_seconds, skipped
         FROM results_log WHERE user_id=? ORDER BY timestamp DESC LIMIT 100
-    """, (user["id"],))
+        """,
+        (user["id"],),
+    )
     rows = cursor.fetchall()
     conn.close()
+    return [
+        {
+            "task_type": row[0],
+            "v_a": row[1],
+            "v_b": row[2],
+            "scene": row[3],
+            "filename": row[4],
+            "overall": row[5],
+            "aesthetic": row[6],
+            "logic": row[7],
+            "consistency": row[8],
+            "fidelity": row[9],
+            "timestamp": row[10],
+            "duration_seconds": row[11],
+            "skipped": row[12],
+        }
+        for row in rows
+    ]
 
-    return [{
-        "v_a": r[0], "v_b": r[1], "scene": r[2], "filename": r[3],
-        "overall": r[4], "aesthetic": r[5], "logic": r[6], "consistency": r[7],
-        "timestamp": r[8], "duration_seconds": r[9], "skipped": r[10]
-    } for r in rows]
 
 @app.get("/api/my_stats")
 def get_my_stats(user: dict = Depends(require_login)):
-    """获取个人统计数据"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # 总评测数
     cursor.execute("SELECT COUNT(*) FROM results_log WHERE user_id=? AND skipped=0", (user["id"],))
     total = cursor.fetchone()[0]
-
-    # 平均耗时
     cursor.execute("SELECT AVG(duration_seconds) FROM results_log WHERE user_id=? AND duration_seconds IS NOT NULL", (user["id"],))
     avg_duration = cursor.fetchone()[0] or 0
-
-    # 按场景统计
-    cursor.execute("""
-        SELECT scene, COUNT(*) FROM results_log
-        WHERE user_id=? AND skipped=0 GROUP BY scene
-    """, (user["id"],))
-    scene_stats = {r[0]: r[1] for r in cursor.fetchall()}
-
+    cursor.execute(
+        "SELECT scene, COUNT(*) FROM results_log WHERE user_id=? AND skipped=0 GROUP BY scene",
+        (user["id"],),
+    )
+    scene_stats = {row[0]: row[1] for row in cursor.fetchall()}
     conn.close()
+    return {"total_evaluations": total, "avg_duration_seconds": round(avg_duration, 1), "scene_stats": scene_stats}
 
-    return {
-        "total_evaluations": total,
-        "avg_duration_seconds": round(avg_duration, 1),
-        "scene_stats": scene_stats
-    }
 
-def build_bad_case_stats(rows):
-    stats = {
-        "v_a": {"bad_count": 0, "total": 0, "rate": 0, "categories": {}, "tags": {}},
-        "v_b": {"bad_count": 0, "total": 0, "rate": 0, "categories": {}, "tags": {}},
-    }
-    for _, _, _, _, tags_a_raw, tags_b_raw, _, _ in rows:
-        tags_a = safe_load_json_list(tags_a_raw)
-        tags_b = safe_load_json_list(tags_b_raw)
-
-        stats["v_a"]["total"] += 1
-        stats["v_b"]["total"] += 1
-
-        if tags_a:
-            stats["v_a"]["bad_count"] += 1
-        if tags_b:
-            stats["v_b"]["bad_count"] += 1
-
-        for side_key, tags in (("v_a", tags_a), ("v_b", tags_b)):
-            side_stats = stats[side_key]
-            seen_categories = set()
-            for tag in tags:
-                category = BAD_CASE_LABEL_TO_CATEGORY.get(tag)
-                if not category:
-                    continue
-                side_stats["tags"][tag] = side_stats["tags"].get(tag, 0) + 1
-                if category not in seen_categories:
-                    side_stats["categories"][category] = side_stats["categories"].get(category, 0) + 1
-                    seen_categories.add(category)
-
-    for side_key in ("v_a", "v_b"):
-        side_stats = stats[side_key]
-        total = side_stats["total"] or 0
-        side_stats["rate"] = round(side_stats["bad_count"] / total * 100, 1) if total else 0
-    return stats
-
-# ========== 看板功能 API ==========
-
-@app.get("/api/dashboard")
-def get_dashboard():
+def fetch_result_rows(task_type: str, v_a: Optional[str] = None, v_b: Optional[str] = None, scene: Optional[str] = None):
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT v_a, v_b, scene,
-               SUM(CASE WHEN overall = v_a THEN 1 ELSE 0 END) as v_a_wins,
-               SUM(CASE WHEN overall = v_b THEN 1 ELSE 0 END) as v_b_wins,
-               COUNT(*) as total
-        FROM results_log WHERE skipped=0 GROUP BY v_a, v_b, scene
-    """)
+    query = "SELECT * FROM results_log WHERE task_type=? AND skipped=0"
+    params: List[object] = [task_type]
+    if v_a and v_b:
+        query += " AND v_a=? AND v_b=?"
+        params.extend([v_a, v_b])
+    if scene:
+        query += " AND scene=?"
+        params.append(scene)
+    cursor.execute(query, params)
     rows = cursor.fetchall()
     conn.close()
-    return [{"pair": f"{r[0]} vs {r[1]}", "scene": r[2], "v_a_wins": r[3], "v_b_wins": r[4], "total": r[5]} for r in rows]
+    return rows
 
-@app.get("/api/dashboard_v2")
-def get_dashboard_v2():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT v_a, v_b, scene,
-               SUM(CASE WHEN overall = v_a THEN 1 ELSE 0 END) as o_a,
-               SUM(CASE WHEN overall = v_b THEN 1 ELSE 0 END) as o_b,
-               SUM(CASE WHEN aesthetic = v_a THEN 1 ELSE 0 END) as a_a,
-               SUM(CASE WHEN aesthetic = v_b THEN 1 ELSE 0 END) as a_b,
-               SUM(CASE WHEN logic = v_a THEN 1 ELSE 0 END) as l_a,
-               SUM(CASE WHEN logic = v_b THEN 1 ELSE 0 END) as l_b,
-               SUM(CASE WHEN consistency = v_a THEN 1 ELSE 0 END) as c_a,
-               SUM(CASE WHEN consistency = v_b THEN 1 ELSE 0 END) as c_b,
-               COUNT(*) as total
-        FROM results_log WHERE skipped=0 GROUP BY v_a, v_b, scene
-    """)
-    rows = cursor.fetchall()
-    conn.close()
 
-    res = []
-    for r in rows:
-        res.append({
-            "pair": f"{r[0]} vs {r[1]}",
-            "scene": r[2],
-            "total": r[11],
-            "dims": {
-                "overall": {"v_a_wins": r[3], "v_b_wins": r[4]},
-                "aesthetic": {"v_a_wins": r[5], "v_b_wins": r[6]},
-                "logic": {"v_a_wins": r[7], "v_b_wins": r[8]},
-                "consistency": {"v_a_wins": r[9], "v_b_wins": r[10]},
-            }
-        })
-    return res
+def aggregate_pair_rows(task_type: str) -> List[dict]:
+    config = get_task_config(task_type)
+    dashboard_dims = config["dashboard_dims"]
+    rows = fetch_result_rows(task_type)
+    grouped: Dict[tuple, List[sqlite3.Row]] = {}
+    for row in rows:
+        grouped.setdefault((row["v_a"], row["v_b"]), []).append(row)
 
-@app.get("/api/dashboard_v3")
-def get_dashboard_v3():
-    """按 AB 版本对分组的综合统计（跨所有场景汇总）"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # 按版本对分组汇总
-    cursor.execute("""
-        SELECT v_a, v_b,
-               SUM(CASE WHEN overall = v_a THEN 1 ELSE 0 END) as o_a,
-               SUM(CASE WHEN overall = v_b THEN 1 ELSE 0 END) as o_b,
-               SUM(CASE WHEN aesthetic = v_a THEN 1 ELSE 0 END) as a_a,
-               SUM(CASE WHEN aesthetic = v_b THEN 1 ELSE 0 END) as a_b,
-               SUM(CASE WHEN logic = v_a THEN 1 ELSE 0 END) as l_a,
-               SUM(CASE WHEN logic = v_b THEN 1 ELSE 0 END) as l_b,
-               SUM(CASE WHEN consistency = v_a THEN 1 ELSE 0 END) as c_a,
-               SUM(CASE WHEN consistency = v_b THEN 1 ELSE 0 END) as c_b,
-               COUNT(*) as total
-        FROM results_log WHERE skipped=0 GROUP BY v_a, v_b
-    """)
-    pair_rows = cursor.fetchall()
-
-    # 获取每个版本对下的场景明细
     result = []
-    for r in pair_rows:
-        v_a, v_b = r[0], r[1]
-
-        cursor.execute("""
-            SELECT scene, filename, worker, timestamp, bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
-            FROM results_log
-            WHERE v_a=? AND v_b=? AND skipped=0
-        """, (v_a, v_b))
-        pair_bad_case_rows = cursor.fetchall()
-        pair_bad_case_stats = build_bad_case_stats(pair_bad_case_rows)
-
-        # 获取该版本对下所有场景的统计（使用参数绑定）
-        cursor.execute("""
-            SELECT scene,
-                   SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as o_a,
-                   SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as o_b,
-                   SUM(CASE WHEN aesthetic = ? THEN 1 ELSE 0 END) as a_a,
-                   SUM(CASE WHEN aesthetic = ? THEN 1 ELSE 0 END) as a_b,
-                   SUM(CASE WHEN logic = ? THEN 1 ELSE 0 END) as l_a,
-                   SUM(CASE WHEN logic = ? THEN 1 ELSE 0 END) as l_b,
-                   SUM(CASE WHEN consistency = ? THEN 1 ELSE 0 END) as c_a,
-                   SUM(CASE WHEN consistency = ? THEN 1 ELSE 0 END) as c_b,
-                   COUNT(*) as total
-            FROM results_log WHERE v_a=? AND v_b=? AND skipped=0 GROUP BY scene
-        """, (v_a, v_b, v_a, v_b, v_a, v_b, v_a, v_b, v_a, v_b))
-        scene_rows = cursor.fetchall()
-
-        scenes = []
-        for sr in scene_rows:
-            scene_name = sr[0]
-            scene_bad_case_rows = [row for row in pair_bad_case_rows if row[0] == scene_name]
-            scenes.append({
-                "scene": scene_name,
-                "total": sr[9],
-                "dims": {
-                    "overall": {"v_a_wins": sr[1], "v_b_wins": sr[2]},
-                    "aesthetic": {"v_a_wins": sr[3], "v_b_wins": sr[4]},
-                    "logic": {"v_a_wins": sr[5], "v_b_wins": sr[6]},
-                    "consistency": {"v_a_wins": sr[7], "v_b_wins": sr[8]},
-                },
-                "bad_case": build_bad_case_stats(scene_bad_case_rows)
-            })
-
-        result.append({
+    for (v_a, v_b), pair_rows in sorted(grouped.items()):
+        pair_data = {
+            "task_type": task_type,
             "pair": f"{v_a} vs {v_b}",
             "v_a": v_a,
             "v_b": v_b,
-            "total": r[10],
-            "dims": {
-                "overall": {"v_a_wins": r[2], "v_b_wins": r[3]},
-                "aesthetic": {"v_a_wins": r[4], "v_b_wins": r[5]},
-                "logic": {"v_a_wins": r[6], "v_b_wins": r[7]},
-                "consistency": {"v_a_wins": r[8], "v_b_wins": r[9]},
-            },
-            "bad_case": pair_bad_case_stats,
-            "scenes": scenes
-        })
-
-    conn.close()
+            "total": len(pair_rows),
+            "dims": {},
+            "bad_case": build_bad_case_stats(pair_rows),
+            "scenes": [],
+        }
+        for dim in dashboard_dims:
+            pair_data["dims"][dim] = {
+                "v_a_wins": sum(1 for row in pair_rows if row[dim] == v_a),
+                "v_b_wins": sum(1 for row in pair_rows if row[dim] == v_b),
+                "tie_count": sum(1 for row in pair_rows if row[dim] == "tie"),
+            }
+        scene_grouped: Dict[str, List[sqlite3.Row]] = {}
+        for row in pair_rows:
+            scene_grouped.setdefault(row["scene"], []).append(row)
+        for scene_name, scene_rows in sorted(scene_grouped.items()):
+            scene_data = {
+                "scene": scene_name,
+                "total": len(scene_rows),
+                "dims": {},
+                "bad_case": build_bad_case_stats(scene_rows),
+            }
+            for dim in dashboard_dims:
+                scene_data["dims"][dim] = {
+                    "v_a_wins": sum(1 for row in scene_rows if row[dim] == v_a),
+                    "v_b_wins": sum(1 for row in scene_rows if row[dim] == v_b),
+                    "tie_count": sum(1 for row in scene_rows if row[dim] == "tie"),
+                }
+            pair_data["scenes"].append(scene_data)
+        result.append(pair_data)
     return result
+
+
+@app.get("/api/dashboard_overview")
+def dashboard_overview(task_type: str):
+    task_type = normalize_task_type(task_type)
+    return {
+        "task_type": task_type,
+        "dims": [{"key": dim, "label": DIM_LABELS[dim]} for dim in get_task_config(task_type)["dashboard_dims"]],
+        "pairs": aggregate_pair_rows(task_type),
+    }
+
 
 @app.get("/api/worker_stats")
-def get_worker_stats(v1: str, v2: str, scene: Optional[str] = None):
+def worker_stats(task_type: str, v1: str, v2: str, scene: Optional[str] = None):
+    task_type = normalize_task_type(task_type)
+    config = get_task_config(task_type)
     v_a, v_b = sorted([v1, v2])
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    if scene:
-        cursor.execute("""
-            SELECT worker,
-                   COUNT(*) as total,
-                   SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as o_a,
-                   SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as o_b,
-                   SUM(CASE WHEN aesthetic = ? THEN 1 ELSE 0 END) as a_a,
-                   SUM(CASE WHEN aesthetic = ? THEN 1 ELSE 0 END) as a_b,
-                   SUM(CASE WHEN logic = ? THEN 1 ELSE 0 END) as l_a,
-                   SUM(CASE WHEN logic = ? THEN 1 ELSE 0 END) as l_b,
-                   SUM(CASE WHEN consistency = ? THEN 1 ELSE 0 END) as c_a,
-                   SUM(CASE WHEN consistency = ? THEN 1 ELSE 0 END) as c_b
-            FROM results_log
-            WHERE v_a=? AND v_b=? AND scene=? AND skipped=0
-            GROUP BY worker
-            ORDER BY worker
-        """, (v_a, v_b, v_a, v_b, v_a, v_b, v_a, v_b, v_a, v_b, scene))
-    else:
-        # 不指定场景时，获取所有场景的汇总
-        cursor.execute("""
-            SELECT worker,
-                   COUNT(*) as total,
-                   SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as o_a,
-                   SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as o_b,
-                   SUM(CASE WHEN aesthetic = ? THEN 1 ELSE 0 END) as a_a,
-                   SUM(CASE WHEN aesthetic = ? THEN 1 ELSE 0 END) as a_b,
-                   SUM(CASE WHEN logic = ? THEN 1 ELSE 0 END) as l_a,
-                   SUM(CASE WHEN logic = ? THEN 1 ELSE 0 END) as l_b,
-                   SUM(CASE WHEN consistency = ? THEN 1 ELSE 0 END) as c_a,
-                   SUM(CASE WHEN consistency = ? THEN 1 ELSE 0 END) as c_b
-            FROM results_log
-            WHERE v_a=? AND v_b=? AND skipped=0
-            GROUP BY worker
-            ORDER BY worker
-        """, (v_a, v_b, v_a, v_b, v_a, v_b, v_a, v_b, v_a, v_b))
-
-    rows = cursor.fetchall()
-    conn.close()
-
+    rows = fetch_result_rows(task_type, v_a, v_b, scene)
+    grouped: Dict[str, List[sqlite3.Row]] = {}
+    for row in rows:
+        grouped.setdefault(row["worker"], []).append(row)
     result = []
-    for r in rows:
-        total = r[1] or 0
-        result.append({
-            "worker": r[0],
-            "total": total,
-            "overall": {"v_a_wins": r[2], "v_b_wins": r[3]},
-            "aesthetic": {"v_a_wins": r[4], "v_b_wins": r[5]},
-            "logic": {"v_a_wins": r[6], "v_b_wins": r[7]},
-            "consistency": {"v_a_wins": r[8], "v_b_wins": r[9]},
-        })
+    for worker, worker_rows in sorted(grouped.items()):
+        entry = {"worker": worker, "total": len(worker_rows)}
+        for dim in config["dashboard_dims"]:
+            entry[dim] = {
+                "v_a_wins": sum(1 for row in worker_rows if row[dim] == v_a),
+                "v_b_wins": sum(1 for row in worker_rows if row[dim] == v_b),
+                "tie_count": sum(1 for row in worker_rows if row[dim] == "tie"),
+            }
+        result.append(entry)
     return result
 
+
 @app.get("/api/detail_results")
-def get_detail_results(v1: str, v2: str, scene: str):
+def detail_results(task_type: str, v1: str, v2: str, scene: str):
+    task_type = normalize_task_type(task_type)
     v_a, v_b = sorted([v1, v2])
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT filename, overall, aesthetic, logic, consistency, worker, timestamp, duration_seconds,
-               bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
-        FROM results_log WHERE v_a=? AND v_b=? AND scene=? AND skipped=0 ORDER BY worker, filename, timestamp DESC
-    """, (v_a, v_b, scene))
-    rows = cursor.fetchall()
-    conn.close()
-    return [{
-        "filename": r[0], "overall": r[1], "aesthetic": r[2],
-        "logic": r[3], "consistency": r[4], "worker": r[5], "time": r[6], "duration": r[7],
-        "bad_case_tags_a": safe_load_json_list(r[8]),
-        "bad_case_tags_b": safe_load_json_list(r[9]),
-        "bad_case_categories_a": safe_load_json_list(r[10]),
-        "bad_case_categories_b": safe_load_json_list(r[11]),
-    } for r in rows]
+    rows = fetch_result_rows(task_type, v_a, v_b, scene)
+    rows = sorted(rows, key=lambda row: (row["worker"], row["filename"], row["timestamp"]), reverse=True)
+    return [
+        {
+            "task_type": task_type,
+            "scene": row["scene"],
+            "filename": row["filename"],
+            "overall": row["overall"],
+            "aesthetic": row["aesthetic"],
+            "logic": row["logic"],
+            "consistency": row["consistency"],
+            "fidelity": row["fidelity"],
+            "worker": row["worker"],
+            "time": row["timestamp"],
+            "duration": row["duration_seconds"],
+            "prompt": get_prompt_text(task_type, row["scene"], row["filename"]),
+            "ref_img": get_ref_image_url(task_type, row["scene"], row["filename"]),
+            "bad_case_tags_a": safe_load_json_list(row["bad_case_tags_a"]),
+            "bad_case_tags_b": safe_load_json_list(row["bad_case_tags_b"]),
+        }
+        for row in rows
+    ]
+
 
 @app.get("/api/bad_case_details")
-def get_bad_case_details(
+def bad_case_details(
+    task_type: str,
     v1: str,
     v2: str,
     scene: Optional[str] = None,
@@ -915,80 +1004,49 @@ def get_bad_case_details(
     category: Optional[str] = None,
     tag: Optional[str] = None,
 ):
+    task_type = normalize_task_type(task_type)
     v_a, v_b = sorted([v1, v2])
-    if model and model not in {v_a, v_b}:
-        raise HTTPException(status_code=400, detail="模型参数无效")
-    if category and category not in BAD_CASE_LABELS:
-        raise HTTPException(status_code=400, detail="坏例类别无效")
-    if tag and tag not in BAD_CASE_LABEL_TO_CATEGORY:
-        raise HTTPException(status_code=400, detail="坏例标签无效")
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    query = """
-        SELECT scene, filename, worker, timestamp, duration_seconds,
-               bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
-        FROM results_log
-        WHERE v_a=? AND v_b=? AND skipped=0
-    """
-    params = [v_a, v_b]
-    if scene:
-        query += " AND scene=?"
-        params.append(scene)
-    query += " ORDER BY timestamp DESC"
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    conn.close()
-
+    rows = fetch_result_rows(task_type, v_a, v_b, scene)
     results = []
-    for row in rows:
-        row_scene, filename, worker, timestamp, duration_seconds, tags_a_raw, tags_b_raw, categories_a_raw, categories_b_raw = row
-        side_payloads = [
-            {
-                "model": v_a,
-                "tags": safe_load_json_list(tags_a_raw),
-                "categories": safe_load_json_list(categories_a_raw),
-            },
-            {
-                "model": v_b,
-                "tags": safe_load_json_list(tags_b_raw),
-                "categories": safe_load_json_list(categories_b_raw),
-            },
-        ]
-        for payload in side_payloads:
-            if not payload["tags"]:
+    for row in sorted(rows, key=lambda item: item["timestamp"], reverse=True):
+        prompt = get_prompt_text(task_type, row["scene"], row["filename"])
+        for model_name, tag_json, category_json in (
+            (v_a, row["bad_case_tags_a"], row["bad_case_categories_a"]),
+            (v_b, row["bad_case_tags_b"], row["bad_case_categories_b"]),
+        ):
+            tags = safe_load_json_list(tag_json)
+            categories = safe_load_json_list(category_json)
+            if not tags:
                 continue
-            if model and payload["model"] != model:
+            if model and model != model_name:
                 continue
-            if category and category not in payload["categories"]:
+            if category and category not in categories:
                 continue
-            if tag and tag not in payload["tags"]:
+            if tag and tag not in tags:
                 continue
-            results.append({
-                "scene": row_scene,
-                "filename": filename,
-                "worker": worker,
-                "time": timestamp,
-                "duration": duration_seconds,
-                "model": payload["model"],
-                "categories": payload["categories"],
-                "tags": payload["tags"],
-            })
-    return {
-        "filters": {"scene": scene, "model": model, "category": category, "tag": tag},
-        "results": results
-    }
+            results.append(
+                {
+                    "task_type": task_type,
+                    "scene": row["scene"],
+                    "filename": row["filename"],
+                    "model": model_name,
+                    "worker": row["worker"],
+                    "time": row["timestamp"],
+                    "duration": row["duration_seconds"],
+                    "prompt": prompt,
+                    "categories": categories,
+                    "tags": tags,
+                    "ref_img": get_ref_image_url(task_type, row["scene"], row["filename"]),
+                }
+            )
+    return {"results": results}
+
 
 @app.get("/api/export")
-def export_data(format: str = "json", v1: Optional[str] = None, v2: Optional[str] = None,
-                scene: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None):
-    """导出数据"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    query = "SELECT * FROM results_log WHERE skipped=0"
-    params = []
-
+def export_data(format: str = "json", task_type: str = "T2I", v1: Optional[str] = None, v2: Optional[str] = None, scene: Optional[str] = None):
+    task_type = normalize_task_type(task_type)
+    query = "SELECT * FROM results_log WHERE task_type=? AND skipped=0"
+    params: List[object] = [task_type]
     if v1 and v2:
         v_a, v_b = sorted([v1, v2])
         query += " AND v_a=? AND v_b=?"
@@ -996,238 +1054,174 @@ def export_data(format: str = "json", v1: Optional[str] = None, v2: Optional[str
     if scene:
         query += " AND scene=?"
         params.append(scene)
-    if start_date:
-        query += " AND timestamp >= ?"
-        params.append(start_date)
-    if end_date:
-        query += " AND timestamp <= ?"
-        params.append(end_date + " 23:59:59")
-
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     cursor.execute(query, params)
     rows = cursor.fetchall()
     columns = [desc[0] for desc in cursor.description]
     conn.close()
-
     if format == "csv":
-        import csv
-        from io import StringIO
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(columns)
         writer.writerows(rows)
-        return {"data": output.getvalue(), "format": "csv"}
-    else:
-        return {"data": [dict(zip(columns, row)) for row in rows], "format": "json"}
+        return {"format": "csv", "data": output.getvalue()}
+    return {"format": "json", "data": [dict(zip(columns, row)) for row in rows]}
+
 
 @app.get("/api/ranking")
-def get_ranking(scene: Optional[str] = None, dimension: str = "overall"):
-    """模型排行榜"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+def ranking(task_type: str = "T2I", scene: Optional[str] = None, dimension: str = "overall"):
+    task_type = normalize_task_type(task_type)
+    if dimension not in TASK_CONFIGS[task_type]["dashboard_dims"]:
+        raise HTTPException(status_code=400, detail="无效维度")
+    rows = fetch_result_rows(task_type, scene=scene)
+    stats: Dict[str, dict] = {}
+    for row in rows:
+        for model_name in (row["v_a"], row["v_b"]):
+            stats.setdefault(model_name, {"wins": 0, "total": 0})
+            stats[model_name]["total"] += 1
+        if row[dimension] == row["v_a"]:
+            stats[row["v_a"]]["wins"] += 1
+        elif row[dimension] == row["v_b"]:
+            stats[row["v_b"]]["wins"] += 1
+    ranking_rows = []
+    for model_name, entry in stats.items():
+        total = entry["total"]
+        ranking_rows.append(
+            {"model": model_name, "wins": entry["wins"], "total": total, "win_rate": round(entry["wins"] / total * 100, 1) if total else 0}
+        )
+    ranking_rows.sort(key=lambda item: item["win_rate"], reverse=True)
+    return ranking_rows
 
-    # 获取所有对战数据
-    query = "SELECT v_a, v_b, overall, aesthetic, logic, consistency FROM results_log WHERE skipped=0"
-    params = []
-    if scene:
-        query += " AND scene=?"
-        params.append(scene)
-
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    conn.close()
-
-    # 统计每个模型的胜场
-    model_wins = {}
-    model_totals = {}
-
-    for r in rows:
-        v_a, v_b = r[0], r[1]
-        dim_val = r[["overall", "aesthetic", "logic", "consistency"].index(dimension) + 2]
-
-        # 初始化
-        for v in [v_a, v_b]:
-            if v not in model_wins:
-                model_wins[v] = 0
-                model_totals[v] = 0
-
-        model_totals[v_a] += 1
-        model_totals[v_b] += 1
-
-        if dim_val == v_a:
-            model_wins[v_a] += 1
-        elif dim_val == v_b:
-            model_wins[v_b] += 1
-
-    # 计算胜率
-    ranking = []
-    for model in model_wins:
-        total = model_totals[model]
-        wins = model_wins[model]
-        win_rate = wins / total if total > 0 else 0
-        ranking.append({"model": model, "wins": wins, "total": total, "win_rate": round(win_rate * 100, 1)})
-
-    ranking.sort(key=lambda x: x["win_rate"], reverse=True)
-    return ranking
-
-@app.get("/api/trend")
-def get_trend(v1: str, v2: str, scene: str, days: int = 30):
-    """胜率趋势数据"""
-    v_a, v_b = sorted([v1, v2])
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # 按日期统计
-    cursor.execute("""
-        SELECT DATE(timestamp) as date,
-               SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as a_wins,
-               SUM(CASE WHEN overall = ? THEN 1 ELSE 0 END) as b_wins,
-               COUNT(*) as total
-        FROM results_log
-        WHERE v_a=? AND v_b=? AND scene=? AND skipped=0
-        AND timestamp >= DATE('now', ?)
-        GROUP BY DATE(timestamp)
-        ORDER BY date
-    """, (v_a, v_b, v_a, v_b, scene, f'-{days} days'))
-    rows = cursor.fetchall()
-    conn.close()
-
-    return [{
-        "date": r[0],
-        "a_win_rate": round(r[1] / r[3] * 100, 1) if r[3] > 0 else 0,
-        "b_win_rate": round(r[2] / r[3] * 100, 1) if r[3] > 0 else 0,
-        "total": r[3]
-    } for r in rows]
-
-# ========== 管理员 API ==========
 
 @app.get("/api/admin/users")
 def get_users(admin: dict = Depends(require_admin)):
-    """获取用户列表"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, username, email, role, created_at, last_login, is_active
-        FROM users ORDER BY created_at DESC
-    """)
+    cursor.execute("SELECT id, username, email, role, created_at, last_login, is_active FROM users ORDER BY created_at DESC")
     rows = cursor.fetchall()
     conn.close()
+    return [
+        {
+            "id": row[0],
+            "username": row[1],
+            "email": row[2],
+            "role": row[3],
+            "created_at": row[4],
+            "last_login": row[5],
+            "is_active": row[6],
+        }
+        for row in rows
+    ]
 
-    return [{
-        "id": r[0], "username": r[1], "email": r[2], "role": r[3],
-        "created_at": r[4], "last_login": r[5], "is_active": r[6]
-    } for r in rows]
 
 @app.put("/api/admin/users/{user_id}")
 def update_user_status(user_id: int, is_active: int, admin: dict = Depends(require_admin)):
-    """更新用户状态"""
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET is_active=? WHERE id=?", (is_active, user_id))
+    conn.execute("UPDATE users SET is_active=? WHERE id=?", (is_active, user_id))
     conn.commit()
     conn.close()
-
     log_operation(admin["id"], "admin_action", f"更新用户 {user_id} 状态为 {is_active}")
     return {"status": "ok"}
 
+
 @app.get("/api/admin/stats")
-def get_admin_stats(admin: dict = Depends(require_admin)):
-    """系统统计总览"""
+def admin_stats(admin: dict = Depends(require_admin)):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # 用户数
     cursor.execute("SELECT COUNT(*) FROM users")
     user_count = cursor.fetchone()[0]
-
-    # 评测数
     cursor.execute("SELECT COUNT(*) FROM results_log WHERE skipped=0")
     eval_count = cursor.fetchone()[0]
-
-    # 今日评测数
     cursor.execute("SELECT COUNT(*) FROM results_log WHERE skipped=0 AND DATE(timestamp)=DATE('now')")
     today_eval = cursor.fetchone()[0]
-
-    # 模型数
-    cursor.execute("SELECT COUNT(DISTINCT v_a) FROM results_log")
-    model_count = cursor.fetchone()[0] * 2  # 粗略估计
-
+    cursor.execute("SELECT COUNT(DISTINCT v_a) + COUNT(DISTINCT v_b) FROM results_log")
+    model_count = cursor.fetchone()[0]
     conn.close()
+    return {"user_count": user_count, "eval_count": eval_count, "today_eval": today_eval, "model_count": model_count}
 
-    return {
-        "user_count": user_count,
-        "eval_count": eval_count,
-        "today_eval": today_eval,
-        "model_count": model_count
-    }
 
 @app.get("/api/admin/logs")
-def get_logs(limit: int = 100, admin: dict = Depends(require_admin)):
-    """获取操作日志"""
+def admin_logs(limit: int = 100, admin: dict = Depends(require_admin)):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT l.id, u.username, l.action, l.details, l.ip_address, l.timestamp
         FROM operation_logs l LEFT JOIN users u ON l.user_id=u.id
         ORDER BY l.timestamp DESC LIMIT ?
-    """, (limit,))
+        """,
+        (limit,),
+    )
     rows = cursor.fetchall()
     conn.close()
+    return [
+        {"id": row[0], "username": row[1] or "系统", "action": row[2], "details": row[3], "ip": row[4], "timestamp": row[5]}
+        for row in rows
+    ]
 
-    return [{
-        "id": r[0], "username": r[1] or "系统", "action": r[2],
-        "details": r[3], "ip": r[4], "timestamp": r[5]
-    } for r in rows]
 
-# ========== 上传功能 ==========
+def save_uploaded_zip(target_path: str, upload_file: UploadFile):
+    if os.path.exists(target_path):
+        shutil.rmtree(target_path)
+    os.makedirs(target_path, exist_ok=True)
+    temp_zip = f"temp_{datetime.utcnow().timestamp():.0f}_{upload_file.filename}"
+    with open(temp_zip, "wb") as f:
+        shutil.copyfileobj(upload_file.file, f)
+    try:
+        with zipfile.ZipFile(temp_zip, "r") as zf:
+            zf.extractall(target_path)
+        items = [item for item in os.listdir(target_path) if not item.startswith(".") and item != "__MACOSX"]
+        if len(items) == 1 and os.path.isdir(os.path.join(target_path, items[0])):
+            inner = os.path.join(target_path, items[0])
+            for name in os.listdir(inner):
+                shutil.move(os.path.join(inner, name), target_path)
+            os.rmdir(inner)
+    finally:
+        if os.path.exists(temp_zip):
+            os.remove(temp_zip)
+
 
 @app.post("/api/upload")
-async def upload_data(version: str = Form(...), scene: str = Form(...), file: UploadFile = File(...)):
-    target_path = os.path.join(RESULT_DIR, version, scene)
-    if os.path.exists(target_path): shutil.rmtree(target_path)
-    os.makedirs(target_path, exist_ok=True)
-
-    temp_zip = f"temp_{version}_{scene}.zip"
-    with open(temp_zip, "wb") as f: shutil.copyfileobj(file.file, f)
-
-    try:
-        with zipfile.ZipFile(temp_zip, 'r') as z:
-            z.extractall(target_path)
-
-        items = [i for i in os.listdir(target_path) if not i.startswith('.') and i != "__MACOSX"]
-        if len(items) == 1 and os.path.isdir(os.path.join(target_path, items[0])):
-            sub = os.path.join(target_path, items[0])
-            for f in os.listdir(sub): shutil.move(os.path.join(sub, f), target_path)
-            os.rmdir(sub)
-    finally:
-        if os.path.exists(temp_zip): os.remove(temp_zip)
+async def upload_data(task_type: str = Form(...), version: str = Form(...), scene: str = Form(...), file: UploadFile = File(...)):
+    task_type = normalize_task_type(task_type)
+    save_uploaded_zip(os.path.join(get_result_root(task_type), version, scene), file)
     return {"message": "Success"}
 
-@app.get("/api/get_prompt")
-def get_prompt(scene: str, filename: str):
-    return get_prompt_text(scene, filename)
 
-# ========== 页面路由 ==========
+@app.post("/api/upload_ref")
+async def upload_ref(task_type: str = Form(...), scene: str = Form(...), file: UploadFile = File(...)):
+    task_type = normalize_task_type(task_type)
+    save_uploaded_zip(os.path.join(get_ref_root(task_type), scene), file)
+    return {"message": "Success"}
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return open("templates/index.html", encoding="utf-8").read()
 
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
     return open("templates/login.html", encoding="utf-8").read()
+
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
     return open("templates/dashboard.html", encoding="utf-8").read()
 
+
 @app.get("/profile", response_class=HTMLResponse)
 async def profile():
     return open("templates/profile.html", encoding="utf-8").read()
+
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page():
     return open("templates/admin.html", encoding="utf-8").read()
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

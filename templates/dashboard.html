@@ -3,50 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MLLM 评测看板</title>
+    <title>评测看板</title>
     <style>
         :root {
-            --bg: #eef2f0;
-            --card: #ffffff;
-            --line: rgba(33, 45, 61, 0.1);
+            --bg: #eef3f1;
+            --card: #fff;
+            --line: rgba(28, 45, 66, 0.1);
             --text: #1b2430;
-            --muted: #627081;
-            --primary: #1565c0;
-            --primary-soft: rgba(21, 101, 192, 0.08);
-            --good: #2e7d32;
+            --muted: #647487;
+            --primary: #1664c0;
+            --primary-soft: rgba(22, 100, 192, 0.08);
+            --green: #2e7d32;
+            --blue: #1976d2;
+            --tie: #9aa7b4;
             --bad: #c62828;
-            --tie: #8d99a6;
             --accent: #7c3aed;
-            --shadow: 0 14px 40px rgba(18, 38, 63, 0.08);
+            --shadow: 0 14px 36px rgba(18, 38, 63, 0.08);
         }
         * { box-sizing: border-box; }
         body {
             margin: 0;
             padding: 24px;
             color: var(--text);
-            font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+            font-family: "Segoe UI", "PingFang SC", sans-serif;
             background:
-                radial-gradient(circle at top left, rgba(21, 101, 192, 0.08), transparent 24%),
-                radial-gradient(circle at top right, rgba(124, 58, 237, 0.08), transparent 20%),
-                linear-gradient(180deg, #f5f8f6 0%, #eef2f0 100%);
+                radial-gradient(circle at top left, rgba(22, 100, 192, 0.08), transparent 24%),
+                radial-gradient(circle at top right, rgba(124, 58, 237, 0.08), transparent 22%),
+                linear-gradient(180deg, #f5f8f7 0%, #edf2ef 100%);
         }
-        .container { max-width: 1480px; margin: 0 auto; }
+        .container { max-width: 1560px; margin: 0 auto; }
         .navbar {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 16px;
             margin-bottom: 22px;
         }
         .navbar h1 { margin: 0; font-size: 1.9rem; }
         .navbar p { margin: 6px 0 0; color: var(--muted); }
         .nav-links { display: flex; align-items: center; gap: 16px; }
-        .nav-links a { color: var(--primary); text-decoration: none; font-weight: 600; }
-        .status-tag { color: var(--muted); font-size: 0.85rem; }
-
+        .nav-links a { color: var(--primary); text-decoration: none; font-weight: 700; }
         .card {
             background: var(--card);
             border: 1px solid var(--line);
-            border-radius: 22px;
+            border-radius: 24px;
             padding: 20px;
             box-shadow: var(--shadow);
             margin-bottom: 18px;
@@ -55,164 +55,148 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 16px;
+            gap: 14px;
             margin-bottom: 18px;
         }
-        .card-title h2 { margin: 0; font-size: 1.08rem; }
+        .card-title h2 { margin: 0; font-size: 1.1rem; }
         .card-title p { margin: 6px 0 0; color: var(--muted); font-size: 0.86rem; }
-        .btn {
-            border: 1px solid transparent;
-            border-radius: 12px;
-            padding: 10px 14px;
-            font-size: 0.88rem;
-            font-weight: 700;
-            cursor: pointer;
-            transition: 0.18s ease;
-        }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover { background: #0f57ab; }
-        .btn-outline { background: white; color: var(--primary); border-color: rgba(21, 101, 192, 0.2); }
-        .btn-outline:hover { background: var(--primary-soft); }
-        .btn-accent { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: white; }
-        .btn-sm { padding: 7px 10px; font-size: 0.8rem; }
-
-        .upload-grid, .filter-grid {
+        .toolbar, .filter-grid, .upload-grid {
             display: grid;
             gap: 14px;
             align-items: end;
         }
-        .upload-grid { grid-template-columns: 1fr 1fr 2fr auto; }
-        .filter-grid { grid-template-columns: 1fr 1fr 1fr auto auto auto; }
+        .toolbar { grid-template-columns: 200px 1fr auto auto; }
+        .filter-grid { grid-template-columns: 180px 1fr 1fr 1fr auto auto auto; }
+        .upload-grid { grid-template-columns: 180px 1fr 1fr 2fr auto; }
         .input-group { display: flex; flex-direction: column; gap: 6px; }
         .input-group label { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
-        input, select {
+        input, select, textarea {
             width: 100%;
             padding: 11px 12px;
-            border-radius: 12px;
+            border-radius: 14px;
             border: 1px solid var(--line);
             background: white;
             font-size: 0.92rem;
         }
-
+        .btn {
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 10px 14px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.88rem;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { background: white; color: var(--primary); border-color: rgba(22, 100, 192, 0.24); }
+        .btn-accent { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: white; }
+        .btn-sm { padding: 7px 10px; font-size: 0.8rem; }
         .pair-card {
             border: 1px solid var(--line);
             border-radius: 22px;
             overflow: hidden;
-            margin-bottom: 16px;
             background: white;
+            margin-bottom: 16px;
         }
-        .pair-header {
+        .pair-head {
             padding: 18px 20px;
             display: grid;
             grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) auto;
-            gap: 18px;
+            gap: 16px;
             align-items: center;
-            background: linear-gradient(135deg, #163c73, #2962b6);
+            background: linear-gradient(135deg, #163c73, #285fb2);
             color: white;
             cursor: pointer;
         }
-        .pair-title h3 { margin: 0; font-size: 1.12rem; }
-        .pair-title p { margin: 6px 0 0; font-size: 0.86rem; opacity: 0.86; }
+        .pair-title h3 { margin: 0; font-size: 1.1rem; }
+        .pair-title p { margin: 6px 0 0; opacity: 0.86; font-size: 0.85rem; }
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
+            grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 12px;
         }
         .summary-box {
+            border-radius: 16px;
             background: rgba(255,255,255,0.12);
             border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 16px;
             padding: 10px 12px;
-            min-height: 82px;
+            min-height: 92px;
         }
-        .summary-box strong { display: block; font-size: 0.82rem; margin-bottom: 8px; }
-        .rate-line {
+        .summary-box strong { display: block; margin-bottom: 8px; font-size: 0.82rem; }
+        .bar-track {
             display: flex;
-            justify-content: space-between;
-            gap: 8px;
-            font-size: 0.79rem;
-            opacity: 0.95;
-            margin-top: 6px;
-        }
-        .mini-bar {
-            display: flex;
-            height: 10px;
+            height: 12px;
             border-radius: 999px;
             overflow: hidden;
             background: rgba(255,255,255,0.18);
         }
-        .seg-a { background: #66bb6a; }
-        .seg-tie { background: #b0bec5; }
-        .seg-b { background: #64b5f6; }
-        .bad-rate-list {
+        .seg-a { background: var(--green); }
+        .seg-tie { background: var(--tie); }
+        .seg-b { background: var(--blue); }
+        .legend {
+            margin-top: 6px;
+            font-size: 0.76rem;
             display: grid;
-            gap: 6px;
-            font-size: 0.8rem;
+            gap: 2px;
         }
-        .bad-rate-item { display: flex; justify-content: space-between; gap: 8px; }
-        .pair-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .pair-toggle { font-size: 1.3rem; font-weight: 700; }
-
+        .pair-actions { display: flex; align-items: center; gap: 8px; }
         .pair-body {
             display: none;
             padding: 18px 20px 22px;
             background: #fcfdff;
         }
         .pair-body.show { display: block; }
-        .scene-table { width: 100%; border-collapse: collapse; }
+        .scene-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
         .scene-table th, .scene-table td {
             border-bottom: 1px solid var(--line);
             padding: 12px 10px;
-            text-align: center;
             vertical-align: top;
-            font-size: 0.88rem;
+            text-align: center;
+            font-size: 0.86rem;
         }
         .scene-table th {
             background: #eef5ff;
-            color: #24508d;
+            color: #275190;
             font-size: 0.82rem;
         }
         .scene-name { text-align: left !important; font-weight: 800; }
-        .bad-pills {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 8px;
-        }
-        .pill {
+        .pill, .result-badge {
             display: inline-flex;
             align-items: center;
             padding: 5px 8px;
             border-radius: 999px;
-            background: rgba(21, 101, 192, 0.08);
-            color: var(--primary);
             font-size: 0.76rem;
             font-weight: 700;
+            margin: 2px 4px 2px 0;
         }
-        .bad-pill { background: rgba(198, 40, 40, 0.1); color: var(--bad); }
-        .empty-state {
-            text-align: center;
-            padding: 36px;
-            color: var(--muted);
+        .pill { background: rgba(22, 100, 192, 0.08); color: var(--primary); }
+        .pill-bad { background: rgba(198, 40, 40, 0.1); color: var(--bad); }
+        .badge-a { background: rgba(46, 125, 50, 0.12); color: var(--green); }
+        .badge-b { background: rgba(25, 118, 210, 0.12); color: var(--blue); }
+        .badge-tie { background: rgba(154, 167, 180, 0.14); color: #55616f; }
+        .preview-img {
+            width: 76px;
+            height: 76px;
+            object-fit: cover;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            cursor: pointer;
         }
-
         .modal-overlay {
             position: fixed;
             inset: 0;
-            z-index: 100;
             display: none;
             align-items: center;
             justify-content: center;
-            background: rgba(12, 18, 27, 0.66);
             padding: 20px;
+            background: rgba(12, 18, 27, 0.66);
+            z-index: 60;
         }
         .modal-content {
-            width: min(1320px, 100%);
-            max-height: 88vh;
+            width: min(1360px, 100%);
+            max-height: 90vh;
             background: white;
             border-radius: 24px;
             overflow: hidden;
@@ -223,25 +207,23 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
             padding: 18px 22px;
             border-bottom: 1px solid var(--line);
         }
-        .modal-head h3 { margin: 0; }
         .modal-body {
             overflow: auto;
             padding: 18px 22px 22px;
         }
-        .toolbar {
+        .filter-row {
             display: flex;
             flex-wrap: wrap;
             gap: 12px;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             padding: 14px;
             background: #f5f8fc;
             border-radius: 16px;
         }
-        .toolbar .input-group { min-width: 180px; flex: 1; }
         .checkbox-group {
             display: flex;
             flex-wrap: wrap;
@@ -250,8 +232,8 @@
         .checkbox-chip {
             padding: 7px 10px;
             border-radius: 999px;
-            border: 1px solid var(--line);
             background: white;
+            border: 1px solid var(--line);
             cursor: pointer;
             font-size: 0.8rem;
         }
@@ -260,7 +242,7 @@
             color: white;
             border-color: var(--primary);
         }
-        table.data-table {
+        .data-table {
             width: 100%;
             border-collapse: collapse;
         }
@@ -271,43 +253,28 @@
             vertical-align: top;
             font-size: 0.86rem;
         }
-        .preview-img {
-            width: 74px;
-            height: 74px;
-            object-fit: cover;
-            border-radius: 10px;
-            border: 1px solid var(--line);
-            cursor: pointer;
+        .empty-state {
+            text-align: center;
+            padding: 36px;
+            color: var(--muted);
         }
         #image-overlay {
             position: fixed;
             inset: 0;
-            z-index: 120;
             display: none;
             align-items: center;
             justify-content: center;
-            background: rgba(0,0,0,0.92);
             padding: 20px;
+            background: rgba(0,0,0,0.92);
+            z-index: 80;
         }
-        .single-preview {
-            width: min(980px, 100%);
-            background: rgba(255,255,255,0.08);
-            border-radius: 22px;
-            padding: 16px;
-            text-align: center;
-        }
-        .single-preview img {
-            max-width: 100%;
-            max-height: 76vh;
-            object-fit: contain;
-            border-radius: 14px;
-        }
-        .compare-view {
-            width: min(1440px, 100%);
+        .compare-preview {
+            width: min(1500px, 100%);
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 18px;
+            gap: 16px;
         }
+        .compare-preview.t2i { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .compare-preview.ti2i { grid-template-columns: minmax(280px, 0.8fr) repeat(2, minmax(0, 1fr)); }
         .compare-box {
             background: rgba(255,255,255,0.08);
             border-radius: 22px;
@@ -321,820 +288,778 @@
             border-radius: 14px;
         }
         .compare-label { color: white; margin-top: 10px; font-weight: 800; }
-
         @media (max-width: 1180px) {
-            .pair-header, .summary-grid, .upload-grid, .filter-grid, .compare-view {
+            .toolbar, .filter-grid, .upload-grid, .pair-head, .summary-grid, .compare-preview.t2i, .compare-preview.ti2i {
                 grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-<div class="container">
-    <div class="navbar">
-        <div>
-            <h1>MLLM 评测监控中心</h1>
-            <p>包含 A/B 胜率、坏例占比和按标签下钻查看。</p>
-        </div>
-        <div class="nav-links">
-            <span class="status-tag" id="status-tag">正在同步...</span>
-            <a href="/">评测终端</a>
-            <a href="/profile">个人中心</a>
-            <a href="/admin">管理后台</a>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">
+    <div class="container">
+        <div class="navbar">
             <div>
-                <h2>发布新测试任务</h2>
-                <p>上传压缩包后自动解压到对应模型版本和场景目录。</p>
+                <h1>评测看板</h1>
+                <p>T2I / TI2I 统一看板，按任务类型切换对应的专属维度和编辑视图。</p>
+            </div>
+            <div class="nav-links">
+                <span id="status-tag" style="color:var(--muted); font-size:0.85rem;">正在同步...</span>
+                <a href="/">评测终端</a>
+                <a href="/profile">个人中心</a>
+                <a href="/admin">管理后台</a>
             </div>
         </div>
-        <form id="upload-form" class="upload-grid">
-            <div class="input-group">
-                <label>模型版本</label>
-                <input type="text" id="up-version" placeholder="如 Pangu_3B" required>
-            </div>
-            <div class="input-group">
-                <label>评测场景</label>
-                <input type="text" id="up-scene" placeholder="如 human_en" required>
-            </div>
-            <div class="input-group">
-                <label>数据包</label>
-                <input type="file" id="up-file" accept=".zip" required>
-            </div>
-            <button type="submit" class="btn btn-primary">解压并同步</button>
-        </form>
-        <div id="up-msg" style="margin-top:12px; color:var(--muted); font-size:0.85rem;"></div>
-    </div>
 
-    <div class="card">
-        <div class="card-title">
-            <div>
-                <h2>工具面板</h2>
-                <p>支持模型/场景过滤、排行榜与导出。</p>
+        <div class="card">
+            <div class="card-title">
+                <div>
+                    <h2>任务控制</h2>
+                    <p>先选 T2I / TI2I，再筛选对应模型和场景。</p>
+                </div>
             </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <button class="btn btn-outline" onclick="loadStats()">刷新</button>
-                <button class="btn btn-primary" onclick="showRanking()">排行榜</button>
-                <button class="btn btn-outline" onclick="showExport()">导出</button>
-            </div>
-        </div>
-        <div class="filter-grid">
-            <div class="input-group">
-                <label>模型A</label>
-                <input type="text" id="search-v1" placeholder="搜索..." oninput="applyFilters()">
-            </div>
-            <div class="input-group">
-                <label>模型B</label>
-                <input type="text" id="search-v2" placeholder="搜索..." oninput="applyFilters()">
-            </div>
-            <div class="input-group">
-                <label>场景</label>
-                <input type="text" id="search-scene" placeholder="搜索..." oninput="applyFilters()">
-            </div>
-            <button class="btn btn-outline" onclick="resetFilters()">重置</button>
-            <button class="btn btn-outline" onclick="expandAll()">全部展开</button>
-            <button class="btn btn-outline" onclick="collapseAll()">全部折叠</button>
-        </div>
-    </div>
-
-    <div class="card" id="ranking-card" style="display:none;">
-        <div class="card-title">
-            <div>
-                <h2>模型排行榜</h2>
-                <p>按胜率汇总模型表现。</p>
-            </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <select id="ranking-dimension" onchange="loadRanking()" style="min-width:120px;">
-                    <option value="overall">整体</option>
-                    <option value="aesthetic">美学</option>
-                    <option value="logic">合理</option>
-                    <option value="consistency">一致</option>
-                </select>
-                <select id="ranking-scene" onchange="loadRanking()" style="min-width:160px;">
-                    <option value="">全部场景</option>
-                </select>
-                <button class="btn btn-outline" onclick="document.getElementById('ranking-card').style.display='none'">关闭</button>
-            </div>
-        </div>
-        <table class="data-table">
-            <thead><tr><th>排名</th><th>模型</th><th>胜场</th><th>对战数</th><th>胜率</th></tr></thead>
-            <tbody id="ranking-body"></tbody>
-        </table>
-    </div>
-
-    <div class="card" id="export-card" style="display:none;">
-        <div class="card-title">
-            <div>
-                <h2>数据导出</h2>
-                <p>导出当前评测结果，包含坏例标签字段。</p>
-            </div>
-            <button class="btn btn-outline" onclick="document.getElementById('export-card').style.display='none'">关闭</button>
-        </div>
-        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-            <select id="export-format" style="max-width:140px;">
-                <option value="json">JSON</option>
-                <option value="csv">CSV</option>
-            </select>
-            <button class="btn btn-primary" onclick="exportData()">导出</button>
-        </div>
-        <div id="export-result" style="display:none; margin-top:14px;"></div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">
-            <div>
-                <h2>AB 版本对战总览</h2>
-                <p>每个版本对同时展示维度胜率与两侧模型的坏例占比。</p>
-            </div>
-        </div>
-        <div id="pairs-container">加载中...</div>
-    </div>
-</div>
-
-<div id="detail-modal" class="modal-overlay" onclick="closeModal('detail-modal')">
-    <div class="modal-content" onclick="event.stopPropagation()">
-        <div class="modal-head">
-            <h3 id="detail-modal-title">Case 明细</h3>
-            <button class="btn btn-outline" onclick="closeModal('detail-modal')">关闭</button>
-        </div>
-        <div class="modal-body">
             <div class="toolbar">
                 <div class="input-group">
-                    <label>图片名搜索</label>
-                    <input type="text" id="detail-filename-filter" placeholder="输入关键词..." oninput="filterDetailData()">
-                </div>
-                <div class="input-group">
-                    <label>判定筛选</label>
-                    <select id="detail-result-filter" onchange="filterDetailData()">
-                        <option value="">全部结果</option>
-                        <option value="a_win">A胜</option>
-                        <option value="b_win">B胜</option>
-                        <option value="tie">平局</option>
+                    <label>任务类型</label>
+                    <select id="task-type-select" onchange="handleTaskTypeChange()">
+                        <option value="T2I">T2I</option>
+                        <option value="TI2I">TI2I</option>
                     </select>
                 </div>
-                <div class="input-group" style="flex:2;">
-                    <label>评测员筛选</label>
-                    <div id="detail-worker-checkbox-container" class="checkbox-group"></div>
+                <div></div>
+                <button class="btn btn-outline" onclick="loadDashboard()">刷新</button>
+                <button class="btn btn-primary" onclick="showRanking()">排行榜</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                <div>
+                    <h2>发布新测试任务</h2>
+                    <p>结果包存到 `results/T2I|TI2I/<version>/<scene>`，参考图单独上传到 `ref_images/TI2I/<scene>`。</p>
                 </div>
             </div>
-            <div id="detail-count-info" style="margin-bottom:12px; color:var(--muted); font-size:0.85rem;"></div>
+            <form id="upload-form" class="upload-grid">
+                <div class="input-group">
+                    <label>任务类型</label>
+                    <select id="up-task-type">
+                        <option value="T2I">T2I</option>
+                        <option value="TI2I">TI2I</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>模型版本</label>
+                    <input type="text" id="up-version" placeholder="如 model_v1" required>
+                </div>
+                <div class="input-group">
+                    <label>场景</label>
+                    <input type="text" id="up-scene" placeholder="如 portrait" required>
+                </div>
+                <div class="input-group">
+                    <label>结果 zip</label>
+                    <input type="file" id="up-file" accept=".zip" required>
+                </div>
+                <button class="btn btn-primary" type="submit">上传结果</button>
+            </form>
+            <div style="height:12px;"></div>
+            <form id="upload-ref-form" class="upload-grid">
+                <div class="input-group">
+                    <label>任务类型</label>
+                    <select id="ref-task-type">
+                        <option value="TI2I">TI2I</option>
+                        <option value="T2I">T2I</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>场景</label>
+                    <input type="text" id="ref-scene" placeholder="如 portrait">
+                </div>
+                <div class="input-group">
+                    <label></label>
+                    <div style="color:var(--muted); font-size:0.84rem; padding:11px 0;">用于编辑任务的参考图 zip。</div>
+                </div>
+                <div class="input-group">
+                    <label>参考图 zip</label>
+                    <input type="file" id="ref-file" accept=".zip">
+                </div>
+                <button class="btn btn-outline" type="submit">上传参考图</button>
+            </form>
+            <div id="upload-msg" style="margin-top:12px; color:var(--muted); font-size:0.85rem;"></div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                <div>
+                    <h2>筛选</h2>
+                    <p>看板结果默认只显示当前任务类型的数据。</p>
+                </div>
+            </div>
+            <div class="filter-grid">
+                <div class="input-group">
+                    <label>任务类型</label>
+                    <input id="filter-task-type-label" disabled>
+                </div>
+                <div class="input-group">
+                    <label>模型 A</label>
+                    <input id="search-v1" placeholder="搜索..." oninput="applyFilters()">
+                </div>
+                <div class="input-group">
+                    <label>模型 B</label>
+                    <input id="search-v2" placeholder="搜索..." oninput="applyFilters()">
+                </div>
+                <div class="input-group">
+                    <label>场景</label>
+                    <input id="search-scene" placeholder="搜索..." oninput="applyFilters()">
+                </div>
+                <button class="btn btn-outline" onclick="resetFilters()">重置</button>
+                <button class="btn btn-outline" onclick="expandAll()">全部展开</button>
+                <button class="btn btn-outline" onclick="collapseAll()">全部折叠</button>
+            </div>
+        </div>
+
+        <div class="card" id="ranking-card" style="display:none;">
+            <div class="card-title">
+                <div>
+                    <h2>模型排行榜</h2>
+                    <p>按当前任务类型和选中维度统计。</p>
+                </div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <select id="ranking-dimension" onchange="loadRanking()"></select>
+                    <select id="ranking-scene" onchange="loadRanking()"><option value="">全部场景</option></select>
+                    <button class="btn btn-outline" onclick="document.getElementById('ranking-card').style.display='none'">关闭</button>
+                </div>
+            </div>
             <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>文件名</th>
-                        <th>对比预览</th>
-                        <th>Prompt</th>
-                        <th>判定结果</th>
-                        <th>坏例记录</th>
-                        <th>评测员</th>
-                        <th>时间</th>
-                    </tr>
-                </thead>
-                <tbody id="detail-body"></tbody>
+                <thead><tr><th>排名</th><th>模型</th><th>胜场</th><th>对战数</th><th>胜率</th></tr></thead>
+                <tbody id="ranking-body"></tbody>
             </table>
         </div>
-    </div>
-</div>
 
-<div id="worker-modal" class="modal-overlay" onclick="closeModal('worker-modal')">
-    <div class="modal-content" onclick="event.stopPropagation()">
-        <div class="modal-head">
-            <h3 id="worker-modal-title">评测员统计</h3>
-            <button class="btn btn-outline" onclick="closeModal('worker-modal')">关闭</button>
-        </div>
-        <div class="modal-body">
-            <div class="toolbar">
-                <div class="input-group" style="flex:2;">
-                    <label>评测员筛选</label>
-                    <div id="worker-checkbox-container" class="checkbox-group"></div>
+        <div class="card">
+            <div class="card-title">
+                <div>
+                    <h2 id="overview-title">T2I 看板总览</h2>
+                    <p id="overview-desc">T2I 看板强调生成质量和坏例占比。</p>
                 </div>
             </div>
-            <div id="worker-summary-area" style="margin-bottom:14px;"></div>
-            <div id="worker-stats-area"></div>
+            <div id="pairs-container">加载中...</div>
         </div>
     </div>
-</div>
 
-<div id="badcase-modal" class="modal-overlay" onclick="closeModal('badcase-modal')">
-    <div class="modal-content" onclick="event.stopPropagation()">
-        <div class="modal-head">
-            <h3 id="badcase-modal-title">坏例详情</h3>
-            <button class="btn btn-outline" onclick="closeModal('badcase-modal')">关闭</button>
-        </div>
-        <div class="modal-body">
-            <div class="toolbar">
-                <div class="input-group">
-                    <label>模型</label>
-                    <select id="badcase-model-filter" onchange="loadBadCaseDetails()"></select>
-                </div>
-                <div class="input-group">
-                    <label>坏例类别</label>
-                    <select id="badcase-category-filter" onchange="syncBadcaseTags(); loadBadCaseDetails()"></select>
-                </div>
-                <div class="input-group">
-                    <label>具体标签</label>
-                    <select id="badcase-tag-filter" onchange="loadBadCaseDetails()"></select>
-                </div>
+    <div class="modal-overlay" id="detail-modal" onclick="closeModal('detail-modal')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-head">
+                <h3 id="detail-title">明细</h3>
+                <button class="btn btn-outline" onclick="closeModal('detail-modal')">关闭</button>
             </div>
-            <div id="badcase-count-info" style="margin-bottom:12px; color:var(--muted); font-size:0.85rem;"></div>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>场景</th>
-                        <th>文件名</th>
-                        <th>预览</th>
-                        <th>模型</th>
-                        <th>坏例类别</th>
-                        <th>具体标签</th>
-                        <th>评测员</th>
-                        <th>时间</th>
-                    </tr>
-                </thead>
-                <tbody id="badcase-body"></tbody>
-            </table>
+            <div class="modal-body">
+                <div class="filter-row">
+                    <div class="input-group" style="min-width:220px;">
+                        <label>文件名搜索</label>
+                        <input id="detail-filename-filter" placeholder="输入关键词..." oninput="renderDetailTable()">
+                    </div>
+                    <div class="input-group" style="min-width:180px;">
+                        <label>判定</label>
+                        <select id="detail-result-filter" onchange="renderDetailTable()">
+                            <option value="">全部</option>
+                            <option value="a_win">A胜</option>
+                            <option value="b_win">B胜</option>
+                            <option value="tie">平局</option>
+                        </select>
+                    </div>
+                    <div class="input-group" style="flex:1;">
+                        <label>评测员</label>
+                        <div class="checkbox-group" id="detail-worker-group"></div>
+                    </div>
+                </div>
+                <div id="detail-count" style="margin-bottom:12px; color:var(--muted); font-size:0.85rem;"></div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>文件名</th>
+                            <th>预览</th>
+                            <th>Prompt</th>
+                            <th>判定</th>
+                            <th>坏例</th>
+                            <th>评测员</th>
+                            <th>时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detail-body"></tbody>
+                </table>
+            </div>
         </div>
     </div>
-</div>
 
-<div id="image-overlay" onclick="this.style.display='none'">
-    <div class="compare-view" id="compare-preview" style="display:none;" onclick="event.stopPropagation()">
-        <div class="compare-box">
-            <img id="overlay-img-a" src="">
-            <div class="compare-label" id="label-a">Model A</div>
-        </div>
-        <div class="compare-box">
-            <img id="overlay-img-b" src="">
-            <div class="compare-label" id="label-b">Model B</div>
+    <div class="modal-overlay" id="worker-modal" onclick="closeModal('worker-modal')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-head">
+                <h3 id="worker-title">评测员统计</h3>
+                <button class="btn btn-outline" onclick="closeModal('worker-modal')">关闭</button>
+            </div>
+            <div class="modal-body">
+                <div class="filter-row">
+                    <div class="input-group" style="flex:1;">
+                        <label>评测员</label>
+                        <div class="checkbox-group" id="worker-group"></div>
+                    </div>
+                </div>
+                <div id="worker-summary"></div>
+                <div id="worker-table"></div>
+            </div>
         </div>
     </div>
-    <div class="single-preview" id="single-preview" onclick="event.stopPropagation()">
-        <img id="overlay-img-single" src="">
-        <div class="compare-label" id="label-single">Preview</div>
+
+    <div class="modal-overlay" id="badcase-modal" onclick="closeModal('badcase-modal')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-head">
+                <h3 id="badcase-title">坏例详情</h3>
+                <button class="btn btn-outline" onclick="closeModal('badcase-modal')">关闭</button>
+            </div>
+            <div class="modal-body">
+                <div class="filter-row">
+                    <div class="input-group">
+                        <label>模型</label>
+                        <select id="badcase-model-filter" onchange="loadBadcaseDetails()"></select>
+                    </div>
+                    <div class="input-group">
+                        <label>类别</label>
+                        <select id="badcase-category-filter" onchange="syncBadcaseTags(); loadBadcaseDetails()"></select>
+                    </div>
+                    <div class="input-group">
+                        <label>标签</label>
+                        <select id="badcase-tag-filter" onchange="loadBadcaseDetails()"></select>
+                    </div>
+                </div>
+                <div id="badcase-count" style="margin-bottom:12px; color:var(--muted); font-size:0.85rem;"></div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>场景</th>
+                            <th>文件名</th>
+                            <th>预览</th>
+                            <th>Prompt</th>
+                            <th>模型</th>
+                            <th>坏例类别</th>
+                            <th>标签</th>
+                            <th>评测员</th>
+                            <th>时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="badcase-body"></tbody>
+                </table>
+            </div>
+        </div>
     </div>
-</div>
 
-<script>
-    const dimNames = { overall: "整体", aesthetic: "美学", logic: "合理", consistency: "一致" };
-    const dimKeys = ["overall", "aesthetic", "logic", "consistency"];
-    const badCaseOptions = {
-        "美学缺陷": ["乱码", "色彩异常", "明显噪点", "网格伪影", "模糊失焦"],
-        "结构畸变": ["物体粘连", "透视问题", "空间扭曲"],
-        "人像": ["人脸扭曲", "肢体畸变"],
-        "语义问题": ["语义丢失", "对象错误"],
-        "安全违规": ["涉黄", "暴力", "侵权风险"]
-    };
+    <div id="image-overlay" onclick="this.style.display='none'">
+        <div class="compare-preview t2i" id="image-preview" onclick="event.stopPropagation()"></div>
+    </div>
 
-    let allPairData = [];
-    let expandedPairs = new Set();
-    let rawDetailData = [];
-    let rawWorkerStats = [];
-    let selectedWorkers = new Set();
-    let selectedDetailWorkers = new Set();
-    let currentDetailContext = { v1: "", v2: "", scene: "" };
-    let currentWorkerContext = { v1: "", v2: "", scene: "" };
-    let currentBadCaseContext = { v1: "", v2: "", scene: "" };
+    <script>
+        let state = {
+            taskType: "T2I",
+            config: null,
+            overview: null,
+            pairs: [],
+            expanded: new Set(),
+            detailRows: [],
+            selectedDetailWorkers: new Set(),
+            currentDetail: null,
+            workerRows: [],
+            selectedWorkers: new Set(),
+            currentWorker: null,
+            badcaseRows: [],
+            currentBadcase: null
+        };
 
-    async function loadStats() {
-        try {
-            const res = await fetch("/api/dashboard_v3");
-            allPairData = await res.json();
-            const scenes = [...new Set(allPairData.flatMap(p => p.scenes.map(s => s.scene)))];
-            document.getElementById("ranking-scene").innerHTML =
-                '<option value="">全部场景</option>' + scenes.map(s => `<option value="${s}">${s}</option>`).join("");
-            applyFilters();
-            document.getElementById("status-tag").innerText = "最后更新: " + new Date().toLocaleTimeString();
-        } catch (e) {
-            document.getElementById("pairs-container").innerHTML = `<div class="empty-state">加载失败: ${e.message}</div>`;
-        }
-    }
-
-    function applyFilters() {
-        const v1Filter = document.getElementById("search-v1").value.trim().toLowerCase();
-        const v2Filter = document.getElementById("search-v2").value.trim().toLowerCase();
-        const sceneFilter = document.getElementById("search-scene").value.trim().toLowerCase();
-
-        const filtered = allPairData.filter(pair => {
-            const a = pair.v_a.toLowerCase();
-            const b = pair.v_b.toLowerCase();
-            if (v1Filter && v2Filter) {
-                if (!((a.includes(v1Filter) && b.includes(v2Filter)) || (a.includes(v2Filter) && b.includes(v1Filter)))) return false;
-            } else if (v1Filter && !a.includes(v1Filter) && !b.includes(v1Filter)) {
-                return false;
+        async function api(url, options) {
+            const res = await fetch(url, options);
+            if (!res.ok) {
+                let message = "请求失败";
+                try {
+                    const data = await res.json();
+                    message = data.detail || data.message || message;
+                } catch (_) {}
+                throw new Error(message);
             }
-            if (sceneFilter && !pair.scenes.some(s => s.scene.toLowerCase().includes(sceneFilter))) return false;
-            return true;
-        });
-
-        renderPairs(filtered);
-    }
-
-    function renderPairs(data) {
-        const container = document.getElementById("pairs-container");
-        if (!data.length) {
-            container.innerHTML = '<div class="empty-state">暂无数据</div>';
-            return;
+            return res;
         }
 
-        container.innerHTML = data.map(pair => {
-            const expanded = expandedPairs.has(pair.pair);
-            return `
+        async function init() {
+            await handleTaskTypeChange();
+            bindUploadForms();
+        }
+
+        async function handleTaskTypeChange() {
+            state.taskType = document.getElementById("task-type-select").value;
+            state.config = await api(`/api/task_config?task_type=${state.taskType}`).then(r => r.json());
+            document.getElementById("filter-task-type-label").value = state.taskType;
+            document.getElementById("overview-title").textContent = `${state.taskType} 看板总览`;
+            document.getElementById("overview-desc").textContent = state.taskType === "TI2I"
+                ? "TI2I 看板额外展示保真度维度和参考图预览。"
+                : "T2I 看板展示生成质量、文本错误和坏例分布。";
+            document.getElementById("ranking-dimension").innerHTML = state.config.dashboard_dims.map(dim => `<option value="${dim.key}">${dim.label}</option>`).join("");
+            await loadDashboard();
+        }
+
+        async function loadDashboard() {
+            const data = await api(`/api/dashboard_overview?task_type=${state.taskType}`).then(r => r.json());
+            state.overview = data;
+            state.pairs = data.pairs;
+            const scenes = [...new Set(data.pairs.flatMap(pair => pair.scenes.map(scene => scene.scene)))];
+            document.getElementById("ranking-scene").innerHTML = '<option value="">全部场景</option>' + scenes.map(scene => `<option value="${scene}">${scene}</option>`).join("");
+            applyFilters();
+            document.getElementById("status-tag").textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function applyFilters() {
+            const v1 = document.getElementById("search-v1").value.trim().toLowerCase();
+            const v2 = document.getElementById("search-v2").value.trim().toLowerCase();
+            const scene = document.getElementById("search-scene").value.trim().toLowerCase();
+            const filtered = state.pairs.filter(pair => {
+                const a = pair.v_a.toLowerCase();
+                const b = pair.v_b.toLowerCase();
+                if (v1 && !a.includes(v1) && !b.includes(v1)) return false;
+                if (v2 && !a.includes(v2) && !b.includes(v2)) return false;
+                if (scene && !pair.scenes.some(item => item.scene.toLowerCase().includes(scene))) return false;
+                return true;
+            });
+            renderPairs(filtered);
+        }
+
+        function renderPairs(pairs) {
+            const dims = state.config.dashboard_dims;
+            const container = document.getElementById("pairs-container");
+            if (!pairs.length) {
+                container.innerHTML = '<div class="empty-state">暂无数据</div>';
+                return;
+            }
+            container.innerHTML = pairs.map(pair => `
                 <div class="pair-card">
-                    <div class="pair-header" onclick="togglePair('${pair.pair.replace(/'/g, "\\'")}')">
+                    <div class="pair-head" onclick="togglePair('${pair.pair.replace(/'/g, "\\'")}')">
                         <div class="pair-title">
                             <h3>${pair.v_a} vs ${pair.v_b}</h3>
-                            <p>${pair.scenes.length} 个场景 · ${pair.total} 条有效样本</p>
+                            <p>${pair.scenes.length} 个场景 · ${pair.total} 条样本</p>
                         </div>
                         <div class="summary-grid">
-                            ${dimKeys.map(key => renderDimSummary(pair, key)).join("")}
-                            ${renderBadSummary(pair)}
+                            ${dims.map(dim => renderSummaryBox(pair, dim.key, dim.label)).join("")}
+                            ${renderBadcaseSummary(pair)}
                         </div>
                         <div class="pair-actions">
-                            <button class="btn btn-accent btn-sm" onclick="event.stopPropagation(); showWorkerStatsPair('${pair.v_a}', '${pair.v_b}')">统计</button>
-                            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openBadCaseModal('${pair.v_a}', '${pair.v_b}', '')">坏例详情</button>
-                            <div class="pair-toggle">${expanded ? "▲" : "▼"}</div>
+                            <button class="btn btn-accent btn-sm" onclick="event.stopPropagation(); openWorkerModal('${pair.v_a}', '${pair.v_b}', '')">统计</button>
+                            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openBadcaseModal('${pair.v_a}', '${pair.v_b}', '')">坏例详情</button>
+                            <span>${state.expanded.has(pair.pair) ? "▲" : "▼"}</span>
                         </div>
                     </div>
-                    <div class="pair-body ${expanded ? "show" : ""}">
-                        ${renderSceneTable(pair)}
+                    <div class="pair-body ${state.expanded.has(pair.pair) ? "show" : ""}">
+                        <table class="scene-table">
+                            <thead>
+                                <tr>
+                                    <th class="scene-name">场景</th>
+                                    <th>样本</th>
+                                    ${dims.map(dim => `<th>${dim.label}<br><small>A / 平 / B</small></th>`).join("")}
+                                    <th>坏例占比</th>
+                                    <th>高频坏例</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${pair.scenes.map(scene => renderSceneRow(pair, scene, dims)).join("")}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        function renderSummaryBox(pair, dimKey, label) {
+            const stat = pair.dims[dimKey];
+            const total = pair.total || 1;
+            const aPct = (stat.v_a_wins / total * 100).toFixed(1);
+            const tiePct = (stat.tie_count / total * 100).toFixed(1);
+            const bPct = (stat.v_b_wins / total * 100).toFixed(1);
+            return `
+                <div class="summary-box">
+                    <strong>${label}</strong>
+                    <div class="bar-track">
+                        <div class="seg-a" style="width:${aPct}%"></div>
+                        <div class="seg-tie" style="width:${tiePct}%"></div>
+                        <div class="seg-b" style="width:${bPct}%"></div>
+                    </div>
+                    <div class="legend">
+                        <span>A: ${aPct}% (${stat.v_a_wins})</span>
+                        <span>平: ${tiePct}% (${stat.tie_count})</span>
+                        <span>B: ${bPct}% (${stat.v_b_wins})</span>
                     </div>
                 </div>
             `;
-        }).join("");
-    }
-
-    function renderDimSummary(pair, key) {
-        const total = pair.total || 0;
-        const a = pair.dims[key].v_a_wins || 0;
-        const b = pair.dims[key].v_b_wins || 0;
-        const tie = Math.max(total - a - b, 0);
-        const aPct = total ? (a / total * 100).toFixed(1) : "0.0";
-        const tiePct = total ? (tie / total * 100).toFixed(1) : "0.0";
-        const bPct = total ? (b / total * 100).toFixed(1) : "0.0";
-        return `
-            <div class="summary-box">
-                <strong>${dimNames[key]}</strong>
-                <div class="mini-bar">
-                    <div class="seg-a" style="width:${aPct}%"></div>
-                    <div class="seg-tie" style="width:${tiePct}%"></div>
-                    <div class="seg-b" style="width:${bPct}%"></div>
-                </div>
-                <div class="rate-line"><span>A ${aPct}%</span><span>平 ${tiePct}%</span><span>B ${bPct}%</span></div>
-            </div>
-        `;
-    }
-
-    function renderBadSummary(pair) {
-        return `
-            <div class="summary-box">
-                <strong>坏例占比</strong>
-                <div class="bad-rate-list">
-                    <div class="bad-rate-item"><span>${pair.v_a}</span><span>${pair.bad_case.v_a.rate}%</span></div>
-                    <div class="bad-rate-item"><span>${pair.v_b}</span><span>${pair.bad_case.v_b.rate}%</span></div>
-                </div>
-            </div>
-        `;
-    }
-
-    function renderSceneTable(pair) {
-        return `
-            <table class="scene-table">
-                <thead>
-                    <tr>
-                        <th class="scene-name">场景</th>
-                        <th>样本数</th>
-                        ${dimKeys.map(k => `<th>${dimNames[k]}<br><small>A / 平 / B</small></th>`).join("")}
-                        <th>坏例占比</th>
-                        <th>高频坏例标签</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${pair.scenes.map(scene => renderSceneRow(pair, scene)).join("")}
-                </tbody>
-            </table>
-        `;
-    }
-
-    function renderSceneRow(pair, scene) {
-        const total = scene.total || 0;
-        const topTags = getTopBadTags(pair, scene.bad_case);
-        return `
-            <tr>
-                <td class="scene-name">${scene.scene}</td>
-                <td>${total}</td>
-                ${dimKeys.map(k => {
-                    const a = scene.dims[k].v_a_wins || 0;
-                    const b = scene.dims[k].v_b_wins || 0;
-                    const tie = Math.max(total - a - b, 0);
-                    const aPct = total ? (a / total * 100).toFixed(1) : "0.0";
-                    const tiePct = total ? (tie / total * 100).toFixed(1) : "0.0";
-                    const bPct = total ? (b / total * 100).toFixed(1) : "0.0";
-                    return `
-                        <td>
-                            <div class="mini-bar">
-                                <div class="seg-a" style="width:${aPct}%"></div>
-                                <div class="seg-tie" style="width:${tiePct}%"></div>
-                                <div class="seg-b" style="width:${bPct}%"></div>
-                            </div>
-                            <div class="rate-line"><span>${aPct}%</span><span>${tiePct}%</span><span>${bPct}%</span></div>
-                        </td>
-                    `;
-                }).join("")}
-                <td>
-                    <div>${pair.v_a}: <strong>${scene.bad_case.v_a.rate}%</strong></div>
-                    <div>${pair.v_b}: <strong>${scene.bad_case.v_b.rate}%</strong></div>
-                </td>
-                <td>
-                    <div class="bad-pills">
-                        ${topTags.length ? topTags.map(item => `<span class="pill bad-pill">${item.model}: ${item.tag} (${item.count})</span>`).join("") : '<span style="color:var(--muted);">暂无</span>'}
-                    </div>
-                </td>
-                <td>
-                    <div style="display:flex; flex-direction:column; gap:8px;">
-                        <button class="btn btn-sm btn-outline" onclick="showDetail('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">明细</button>
-                        <button class="btn btn-sm btn-primary" onclick="showWorkerStats('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">统计</button>
-                        <button class="btn btn-sm btn-accent" onclick="openBadCaseModal('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">坏例</button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    }
-
-    function getTopBadTags(pair, badCaseStats) {
-        const items = [];
-        [["v_a", pair.v_a], ["v_b", pair.v_b]].forEach(([key, modelName]) => {
-            Object.entries(badCaseStats[key].tags || {}).forEach(([tag, count]) => {
-                items.push({ model: modelName, tag, count });
-            });
-        });
-        return items.sort((x, y) => y.count - x.count).slice(0, 4);
-    }
-
-    function togglePair(pairKey) {
-        if (expandedPairs.has(pairKey)) expandedPairs.delete(pairKey);
-        else expandedPairs.add(pairKey);
-        applyFilters();
-    }
-
-    function expandAll() {
-        allPairData.forEach(p => expandedPairs.add(p.pair));
-        applyFilters();
-    }
-
-    function collapseAll() {
-        expandedPairs.clear();
-        applyFilters();
-    }
-
-    function resetFilters() {
-        document.getElementById("search-v1").value = "";
-        document.getElementById("search-v2").value = "";
-        document.getElementById("search-scene").value = "";
-        applyFilters();
-    }
-
-    function showRanking() {
-        document.getElementById("ranking-card").style.display = "block";
-        loadRanking();
-    }
-
-    async function loadRanking() {
-        const dimension = document.getElementById("ranking-dimension").value;
-        const scene = document.getElementById("ranking-scene").value;
-        const res = await fetch(`/api/ranking?dimension=${dimension}${scene ? `&scene=${scene}` : ""}`);
-        const data = await res.json();
-        document.getElementById("ranking-body").innerHTML = data.map((item, index) => `
-            <tr>
-                <td>${index + 1}</td>
-                <td><strong>${item.model}</strong></td>
-                <td>${item.wins}</td>
-                <td>${item.total}</td>
-                <td style="color:${item.win_rate >= 50 ? "var(--good)" : "var(--bad)"}; font-weight:800;">${item.win_rate}%</td>
-            </tr>
-        `).join("");
-    }
-
-    function showExport() {
-        document.getElementById("export-card").style.display = "block";
-    }
-
-    async function exportData() {
-        const format = document.getElementById("export-format").value;
-        const res = await fetch(`/api/export?format=${format}`);
-        const data = await res.json();
-        const resultDiv = document.getElementById("export-result");
-        resultDiv.style.display = "block";
-        if (format === "csv") {
-            const blob = new Blob([data.data], { type: "text/csv;charset=utf-8" });
-            const url = URL.createObjectURL(blob);
-            resultDiv.innerHTML = `<a href="${url}" download="export.csv" class="btn btn-primary">下载 CSV</a>`;
-        } else {
-            resultDiv.innerHTML = `<textarea style="width:100%; height:180px; border-radius:12px; border:1px solid var(--line); padding:12px;">${JSON.stringify(data.data, null, 2)}</textarea>`;
         }
-    }
 
-    async function showDetail(v1, v2, scene) {
-        currentDetailContext = { v1, v2, scene };
-        document.getElementById("detail-modal").style.display = "flex";
-        document.getElementById("detail-modal-title").innerText = `明细: ${v1} vs ${v2} [${scene}]`;
-        document.getElementById("detail-filename-filter").value = "";
-        document.getElementById("detail-result-filter").value = "";
-        const res = await fetch(`/api/detail_results?v1=${v1}&v2=${v2}&scene=${scene}`);
-        const data = await res.json();
-        rawDetailData = await Promise.all(data.map(async d => {
-            let prompt = "";
-            try {
-                const promptRes = await fetch(`/api/get_prompt?scene=${scene}&filename=${d.filename}`);
-                prompt = await promptRes.text();
-            } catch (e) {
-                prompt = "获取失败";
-            }
-            return { ...d, prompt };
-        }));
-        selectedDetailWorkers = new Set([...new Set(rawDetailData.map(d => d.worker))]);
-        renderDetailWorkerCheckboxes();
-        filterDetailData();
-    }
-
-    function renderDetailWorkerCheckboxes() {
-        const workers = [...new Set(rawDetailData.map(d => d.worker))].sort();
-        const container = document.getElementById("detail-worker-checkbox-container");
-        container.innerHTML = workers.map(worker => `
-            <span class="checkbox-chip ${selectedDetailWorkers.has(worker) ? "selected" : ""}" onclick="toggleDetailWorkerSelection('${worker}')">${worker}</span>
-        `).join("");
-    }
-
-    function toggleDetailWorkerSelection(worker) {
-        if (selectedDetailWorkers.has(worker)) selectedDetailWorkers.delete(worker);
-        else selectedDetailWorkers.add(worker);
-        renderDetailWorkerCheckboxes();
-        filterDetailData();
-    }
-
-    function filterDetailData() {
-        const filenameFilter = document.getElementById("detail-filename-filter").value.toLowerCase();
-        const resultFilter = document.getElementById("detail-result-filter").value;
-        const { v1, v2, scene } = currentDetailContext;
-        const filtered = rawDetailData.filter(d => {
-            if (!selectedDetailWorkers.has(d.worker)) return false;
-            if (filenameFilter && !d.filename.toLowerCase().includes(filenameFilter)) return false;
-            if (resultFilter === "a_win" && d.overall !== v1) return false;
-            if (resultFilter === "b_win" && d.overall !== v2) return false;
-            if (resultFilter === "tie" && d.overall !== "tie") return false;
-            return true;
-        });
-        document.getElementById("detail-count-info").innerText = `共 ${filtered.length} 条`;
-        const body = document.getElementById("detail-body");
-        if (!filtered.length) {
-            body.innerHTML = '<tr><td colspan="7" class="empty-state">无匹配数据</td></tr>';
-            return;
+        function renderBadcaseSummary(pair) {
+            return `
+                <div class="summary-box">
+                    <strong>坏例占比</strong>
+                    <div class="legend">
+                        <span>${pair.v_a}: ${pair.bad_case.v_a.rate}% (${pair.bad_case.v_a.bad_count}/${pair.bad_case.v_a.total})</span>
+                        <span>${pair.v_b}: ${pair.bad_case.v_b.rate}% (${pair.bad_case.v_b.bad_count}/${pair.bad_case.v_b.total})</span>
+                    </div>
+                </div>
+            `;
         }
-        body.innerHTML = filtered.map(d => {
-            const imgA = `/images/${v1}/${scene}/${d.filename}`;
-            const imgB = `/images/${v2}/${scene}/${d.filename}`;
+
+        function renderSceneRow(pair, scene, dims) {
+            const tags = topBadTags(pair, scene.bad_case);
             return `
                 <tr>
-                    <td>${d.filename}</td>
-                    <td>
-                        <div style="display:flex; gap:6px;">
-                            <img src="${imgA}" class="preview-img" onclick="openCompare('${imgA}','${imgB}','${v1}','${v2}')">
-                            <img src="${imgB}" class="preview-img" onclick="openCompare('${imgA}','${imgB}','${v1}','${v2}')">
-                        </div>
-                    </td>
-                    <td style="max-width:320px;">${d.prompt || "-"}</td>
-                    <td>
-                        <div>整体: ${renderResultBadge(d.overall, v1, v2)}</div>
-                        <div>美学: ${renderResultBadge(d.aesthetic, v1, v2)}</div>
-                        <div>合理: ${renderResultBadge(d.logic, v1, v2)}</div>
-                        <div>一致: ${renderResultBadge(d.consistency, v1, v2)}</div>
-                    </td>
-                    <td>
-                        <div><strong>${v1}</strong>: ${renderTags(d.bad_case_tags_a)}</div>
-                        <div style="margin-top:6px;"><strong>${v2}</strong>: ${renderTags(d.bad_case_tags_b)}</div>
-                    </td>
-                    <td>${d.worker}</td>
-                    <td>${d.time}</td>
-                </tr>
-            `;
-        }).join("");
-    }
-
-    function renderResultBadge(val, v1, v2) {
-        if (val === "tie") return '<span class="pill">平局</span>';
-        return val === v1 ? `<span class="pill">${v1}</span>` : `<span class="pill">${v2}</span>`;
-    }
-
-    function renderTags(tags) {
-        return tags && tags.length ? tags.map(tag => `<span class="pill bad-pill">${tag}</span>`).join("") : '<span style="color:var(--muted);">无</span>';
-    }
-
-    async function showWorkerStats(v1, v2, scene) {
-        currentWorkerContext = { v1, v2, scene };
-        await loadAndRenderWorkerStats();
-    }
-
-    async function showWorkerStatsPair(v1, v2) {
-        currentWorkerContext = { v1, v2, scene: "" };
-        await loadAndRenderWorkerStats();
-    }
-
-    async function loadAndRenderWorkerStats() {
-        const { v1, v2, scene } = currentWorkerContext;
-        document.getElementById("worker-modal").style.display = "flex";
-        document.getElementById("worker-modal-title").innerText = scene ? `评测员统计: ${v1} vs ${v2} [${scene}]` : `评测员统计: ${v1} vs ${v2} [全部场景]`;
-        const res = await fetch(`/api/worker_stats?v1=${v1}&v2=${v2}${scene ? `&scene=${scene}` : ""}`);
-        rawWorkerStats = await res.json();
-        selectedWorkers = new Set(rawWorkerStats.map(item => item.worker));
-        renderWorkerCheckboxes();
-        renderWorkerStatsTable();
-    }
-
-    function renderWorkerCheckboxes() {
-        const container = document.getElementById("worker-checkbox-container");
-        container.innerHTML = rawWorkerStats.map(item => `
-            <span class="checkbox-chip ${selectedWorkers.has(item.worker) ? "selected" : ""}" onclick="toggleWorkerSelection('${item.worker}')">${item.worker}</span>
-        `).join("");
-    }
-
-    function toggleWorkerSelection(worker) {
-        if (selectedWorkers.has(worker)) selectedWorkers.delete(worker);
-        else selectedWorkers.add(worker);
-        renderWorkerCheckboxes();
-        renderWorkerStatsTable();
-    }
-
-    function renderWorkerStatsTable() {
-        const filtered = rawWorkerStats.filter(item => selectedWorkers.has(item.worker));
-        const summaryArea = document.getElementById("worker-summary-area");
-        const tableArea = document.getElementById("worker-stats-area");
-        if (!filtered.length) {
-            summaryArea.innerHTML = "";
-            tableArea.innerHTML = '<div class="empty-state">请选择评测员</div>';
-            return;
-        }
-
-        const summary = { total: 0, dims: {} };
-        dimKeys.forEach(key => summary.dims[key] = { a: 0, b: 0 });
-        filtered.forEach(item => {
-            summary.total += item.total;
-            dimKeys.forEach(key => {
-                summary.dims[key].a += item[key].v_a_wins || 0;
-                summary.dims[key].b += item[key].v_b_wins || 0;
-            });
-        });
-
-        summaryArea.innerHTML = `
-            <div class="card" style="margin:0;">
-                <div style="font-weight:800; margin-bottom:10px;">汇总 (${filtered.length} 位评测员, ${summary.total} 条样本)</div>
-                <div class="summary-grid">
-                    ${dimKeys.map(key => {
-                        const a = summary.dims[key].a;
-                        const b = summary.dims[key].b;
-                        const tie = Math.max(summary.total - a - b, 0);
-                        const aPct = summary.total ? (a / summary.total * 100).toFixed(1) : "0.0";
-                        const tiePct = summary.total ? (tie / summary.total * 100).toFixed(1) : "0.0";
-                        const bPct = summary.total ? (b / summary.total * 100).toFixed(1) : "0.0";
+                    <td class="scene-name">${scene.scene}</td>
+                    <td>${scene.total}</td>
+                    ${dims.map(dim => {
+                        const stat = scene.dims[dim.key];
+                        const total = scene.total || 1;
+                        const aPct = (stat.v_a_wins / total * 100).toFixed(1);
+                        const tiePct = (stat.tie_count / total * 100).toFixed(1);
+                        const bPct = (stat.v_b_wins / total * 100).toFixed(1);
                         return `
-                            <div class="summary-box" style="background:#f6f9fd; color:var(--text); border-color:var(--line);">
-                                <strong>${dimNames[key]}</strong>
-                                <div class="mini-bar">
+                            <td>
+                                <div class="bar-track">
                                     <div class="seg-a" style="width:${aPct}%"></div>
                                     <div class="seg-tie" style="width:${tiePct}%"></div>
                                     <div class="seg-b" style="width:${bPct}%"></div>
                                 </div>
-                                <div class="rate-line"><span>A ${aPct}%</span><span>平 ${tiePct}%</span><span>B ${bPct}%</span></div>
-                            </div>
+                                <div class="legend">
+                                    <span>${aPct}% (${stat.v_a_wins}) / ${tiePct}% (${stat.tie_count}) / ${bPct}% (${stat.v_b_wins})</span>
+                                </div>
+                            </td>
                         `;
                     }).join("")}
-                </div>
-            </div>
-        `;
-
-        tableArea.innerHTML = `
-            <table class="data-table">
-                <thead><tr><th>评测员</th><th>样本数</th>${dimKeys.map(key => `<th>${dimNames[key]}</th>`).join("")}</tr></thead>
-                <tbody>
-                    ${filtered.map(item => `
-                        <tr>
-                            <td>${item.worker}</td>
-                            <td>${item.total}</td>
-                            ${dimKeys.map(key => {
-                                const a = item[key].v_a_wins || 0;
-                                const b = item[key].v_b_wins || 0;
-                                const tie = Math.max(item.total - a - b, 0);
-                                const aPct = item.total ? (a / item.total * 100).toFixed(1) : "0.0";
-                                const tiePct = item.total ? (tie / item.total * 100).toFixed(1) : "0.0";
-                                const bPct = item.total ? (b / item.total * 100).toFixed(1) : "0.0";
-                                return `<td>${aPct}% / ${tiePct}% / ${bPct}%</td>`;
-                            }).join("")}
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
-        `;
-    }
-
-    function openBadCaseModal(v1, v2, scene) {
-        currentBadCaseContext = { v1, v2, scene };
-        document.getElementById("badcase-modal").style.display = "flex";
-        document.getElementById("badcase-modal-title").innerText = scene ? `坏例详情: ${v1} vs ${v2} [${scene}]` : `坏例详情: ${v1} vs ${v2} [全部场景]`;
-        document.getElementById("badcase-model-filter").innerHTML = `<option value="">全部模型</option><option value="${v1}">${v1}</option><option value="${v2}">${v2}</option>`;
-        document.getElementById("badcase-category-filter").innerHTML =
-            '<option value="">全部类别</option>' + Object.keys(badCaseOptions).map(key => `<option value="${key}">${key}</option>`).join("");
-        syncBadcaseTags();
-        loadBadCaseDetails();
-    }
-
-    function syncBadcaseTags() {
-        const category = document.getElementById("badcase-category-filter").value;
-        const options = category ? badCaseOptions[category] : Object.values(badCaseOptions).flat();
-        document.getElementById("badcase-tag-filter").innerHTML =
-            '<option value="">全部标签</option>' + options.map(tag => `<option value="${tag}">${tag}</option>`).join("");
-    }
-
-    async function loadBadCaseDetails() {
-        const { v1, v2, scene } = currentBadCaseContext;
-        const model = document.getElementById("badcase-model-filter").value;
-        const category = document.getElementById("badcase-category-filter").value;
-        const tag = document.getElementById("badcase-tag-filter").value;
-        const params = new URLSearchParams({ v1, v2 });
-        if (scene) params.set("scene", scene);
-        if (model) params.set("model", model);
-        if (category) params.set("category", category);
-        if (tag) params.set("tag", tag);
-        const res = await fetch(`/api/bad_case_details?${params.toString()}`);
-        const data = await res.json();
-        document.getElementById("badcase-count-info").innerText = `共 ${data.results.length} 条坏例记录`;
-        const body = document.getElementById("badcase-body");
-        if (!data.results.length) {
-            body.innerHTML = '<tr><td colspan="8" class="empty-state">无匹配坏例</td></tr>';
-            return;
-        }
-        body.innerHTML = data.results.map(item => {
-            const imgA = `/images/${item.model}/${item.scene}/${item.filename}`;
-            return `
-                <tr>
-                    <td>${item.scene}</td>
-                    <td>${item.filename}</td>
-                    <td><img src="${imgA}" class="preview-img" onclick="openSinglePreview('${imgA}','${item.model}')"></td>
-                    <td>${item.model}</td>
-                    <td>${item.categories.map(c => `<span class="pill">${c}</span>`).join("")}</td>
-                    <td>${item.tags.map(t => `<span class="pill bad-pill">${t}</span>`).join("")}</td>
-                    <td>${item.worker}</td>
-                    <td>${item.time}</td>
+                    <td>
+                        <div>${pair.v_a}: ${scene.bad_case.v_a.rate}% (${scene.bad_case.v_a.bad_count})</div>
+                        <div>${pair.v_b}: ${scene.bad_case.v_b.rate}% (${scene.bad_case.v_b.bad_count})</div>
+                    </td>
+                    <td>${tags.length ? tags.map(tag => `<span class="pill pill-bad">${tag.model}: ${tag.tag} (${tag.count})</span>`).join("") : '<span style="color:var(--muted);">暂无</span>'}</td>
+                    <td>
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            <button class="btn btn-sm btn-outline" onclick="openDetailModal('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">明细</button>
+                            <button class="btn btn-sm btn-primary" onclick="openWorkerModal('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">统计</button>
+                            <button class="btn btn-sm btn-accent" onclick="openBadcaseModal('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">坏例</button>
+                        </div>
+                    </td>
                 </tr>
             `;
-        }).join("");
-    }
-
-    function openCompare(imgA, imgB, labelA, labelB) {
-        document.getElementById("single-preview").style.display = "none";
-        document.getElementById("compare-preview").style.display = "grid";
-        document.getElementById("overlay-img-a").src = imgA;
-        document.getElementById("overlay-img-b").src = imgB;
-        document.getElementById("label-a").textContent = labelA;
-        document.getElementById("label-b").textContent = labelB;
-        document.getElementById("image-overlay").style.display = "flex";
-    }
-
-    function openSinglePreview(imgSrc, label) {
-        document.getElementById("compare-preview").style.display = "none";
-        document.getElementById("single-preview").style.display = "block";
-        document.getElementById("overlay-img-single").src = imgSrc;
-        document.getElementById("label-single").textContent = label;
-        document.getElementById("image-overlay").style.display = "flex";
-    }
-
-    function closeModal(id) {
-        document.getElementById(id).style.display = "none";
-    }
-
-    document.getElementById("upload-form").onsubmit = async (e) => {
-        e.preventDefault();
-        const btn = document.querySelector('#upload-form button[type="submit"]');
-        const msg = document.getElementById("up-msg");
-        const formData = new FormData();
-        formData.append("version", document.getElementById("up-version").value);
-        formData.append("scene", document.getElementById("up-scene").value);
-        formData.append("file", document.getElementById("up-file").files[0]);
-        btn.disabled = true;
-        msg.textContent = "同步中...";
-        try {
-            const res = await fetch("/api/upload", { method: "POST", body: formData });
-            msg.textContent = res.ok ? "成功" : "失败";
-            if (res.ok) loadStats();
-        } catch (e) {
-            msg.textContent = "网络错误";
-        } finally {
-            btn.disabled = false;
         }
-    };
 
-    loadStats();
-    setInterval(loadStats, 30000);
-</script>
+        function topBadTags(pair, badCaseStats) {
+            const items = [];
+            [["v_a", pair.v_a], ["v_b", pair.v_b]].forEach(([key, model]) => {
+                Object.entries(badCaseStats[key].tags || {}).forEach(([tag, count]) => items.push({ model, tag, count }));
+            });
+            return items.sort((a, b) => b.count - a.count).slice(0, 4);
+        }
+
+        function togglePair(pairKey) {
+            if (state.expanded.has(pairKey)) state.expanded.delete(pairKey);
+            else state.expanded.add(pairKey);
+            applyFilters();
+        }
+
+        function expandAll() {
+            state.pairs.forEach(pair => state.expanded.add(pair.pair));
+            applyFilters();
+        }
+
+        function collapseAll() {
+            state.expanded.clear();
+            applyFilters();
+        }
+
+        function resetFilters() {
+            document.getElementById("search-v1").value = "";
+            document.getElementById("search-v2").value = "";
+            document.getElementById("search-scene").value = "";
+            applyFilters();
+        }
+
+        function showRanking() {
+            document.getElementById("ranking-card").style.display = "block";
+            loadRanking();
+        }
+
+        async function loadRanking() {
+            const dim = document.getElementById("ranking-dimension").value;
+            const scene = document.getElementById("ranking-scene").value;
+            const rows = await api(`/api/ranking?task_type=${state.taskType}&dimension=${dim}${scene ? `&scene=${encodeURIComponent(scene)}` : ""}`).then(r => r.json());
+            document.getElementById("ranking-body").innerHTML = rows.map((row, index) => `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td>${row.model}</td>
+                    <td>${row.wins}</td>
+                    <td>${row.total}</td>
+                    <td>${row.win_rate}%</td>
+                </tr>
+            `).join("");
+        }
+
+        async function openDetailModal(v1, v2, scene) {
+            state.currentDetail = { v1, v2, scene };
+            document.getElementById("detail-title").textContent = `明细: ${v1} vs ${v2} [${scene}]`;
+            document.getElementById("detail-modal").style.display = "flex";
+            document.getElementById("detail-filename-filter").value = "";
+            document.getElementById("detail-result-filter").value = "";
+            state.detailRows = await api(`/api/detail_results?task_type=${state.taskType}&v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}&scene=${encodeURIComponent(scene)}`).then(r => r.json());
+            state.selectedDetailWorkers = new Set([...new Set(state.detailRows.map(row => row.worker))]);
+            renderDetailWorkers();
+            renderDetailTable();
+        }
+
+        function renderDetailWorkers() {
+            const workers = [...new Set(state.detailRows.map(row => row.worker))].sort();
+            document.getElementById("detail-worker-group").innerHTML = workers.map(worker => `
+                <span class="checkbox-chip ${state.selectedDetailWorkers.has(worker) ? "selected" : ""}" onclick="toggleDetailWorker('${worker}')">${worker}</span>
+            `).join("");
+        }
+
+        function toggleDetailWorker(worker) {
+            if (state.selectedDetailWorkers.has(worker)) state.selectedDetailWorkers.delete(worker);
+            else state.selectedDetailWorkers.add(worker);
+            renderDetailWorkers();
+            renderDetailTable();
+        }
+
+        function renderDetailTable() {
+            const { v1, v2, scene } = state.currentDetail;
+            const fileFilter = document.getElementById("detail-filename-filter").value.toLowerCase();
+            const resultFilter = document.getElementById("detail-result-filter").value;
+            const rows = state.detailRows.filter(row => {
+                if (!state.selectedDetailWorkers.has(row.worker)) return false;
+                if (fileFilter && !row.filename.toLowerCase().includes(fileFilter)) return false;
+                if (resultFilter === "a_win" && row.overall !== v1) return false;
+                if (resultFilter === "b_win" && row.overall !== v2) return false;
+                if (resultFilter === "tie" && row.overall !== "tie") return false;
+                return true;
+            });
+            document.getElementById("detail-count").textContent = `共 ${rows.length} 条`;
+            document.getElementById("detail-body").innerHTML = rows.length ? rows.map(row => `
+                <tr>
+                    <td>${row.filename}</td>
+                    <td>
+                        <div style="display:flex; gap:6px;">
+                            ${state.taskType === "TI2I" && row.ref_img ? `<img class="preview-img" src="${row.ref_img}" onclick='openPreview(${JSON.stringify(buildPreviewPayload(row, v1, v2))})'>` : ""}
+                            <img class="preview-img" src="${imageUrl(v1, scene, row.filename)}" onclick='openPreview(${JSON.stringify(buildPreviewPayload(row, v1, v2))})'>
+                            <img class="preview-img" src="${imageUrl(v2, scene, row.filename)}" onclick='openPreview(${JSON.stringify(buildPreviewPayload(row, v1, v2))})'>
+                        </div>
+                    </td>
+                    <td style="max-width:320px;">${row.prompt || "-"}</td>
+                    <td>
+                        ${renderResultRow("整体", row.overall, v1, v2)}
+                        ${renderResultRow("美学", row.aesthetic, v1, v2)}
+                        ${renderResultRow("合理性", row.logic, v1, v2)}
+                        ${renderResultRow("一致性", row.consistency, v1, v2)}
+                        ${state.taskType === "TI2I" ? renderResultRow("保真度", row.fidelity, v1, v2) : ""}
+                    </td>
+                    <td>
+                        <div><strong>${v1}</strong>: ${renderBadTags(row.bad_case_tags_a)}</div>
+                        <div style="margin-top:6px;"><strong>${v2}</strong>: ${renderBadTags(row.bad_case_tags_b)}</div>
+                    </td>
+                    <td>${row.worker}</td>
+                    <td>${row.time}</td>
+                </tr>
+            `).join("") : '<tr><td colspan="7" class="empty-state">无匹配数据</td></tr>';
+        }
+
+        function renderResultRow(label, result, v1, v2) {
+            if (!result) return "";
+            const cls = result === "tie" ? "badge-tie" : result === v1 ? "badge-a" : "badge-b";
+            const text = result === "tie" ? "平局" : result;
+            return `<div>${label}: <span class="result-badge ${cls}">${text}</span></div>`;
+        }
+
+        function renderBadTags(tags) {
+            return tags && tags.length ? tags.map(tag => `<span class="pill pill-bad">${tag}</span>`).join("") : '<span style="color:var(--muted);">无</span>';
+        }
+
+        async function openWorkerModal(v1, v2, scene) {
+            state.currentWorker = { v1, v2, scene };
+            document.getElementById("worker-title").textContent = scene ? `评测员统计: ${v1} vs ${v2} [${scene}]` : `评测员统计: ${v1} vs ${v2} [全部场景]`;
+            document.getElementById("worker-modal").style.display = "flex";
+            state.workerRows = await api(`/api/worker_stats?task_type=${state.taskType}&v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}${scene ? `&scene=${encodeURIComponent(scene)}` : ""}`).then(r => r.json());
+            state.selectedWorkers = new Set(state.workerRows.map(row => row.worker));
+            renderWorkerStats();
+        }
+
+        function renderWorkerStats() {
+            const dims = state.config.dashboard_dims;
+            document.getElementById("worker-group").innerHTML = state.workerRows.map(row => `
+                <span class="checkbox-chip ${state.selectedWorkers.has(row.worker) ? "selected" : ""}" onclick="toggleWorker('${row.worker}')">${row.worker}</span>
+            `).join("");
+            const rows = state.workerRows.filter(row => state.selectedWorkers.has(row.worker));
+            if (!rows.length) {
+                document.getElementById("worker-summary").innerHTML = "";
+                document.getElementById("worker-table").innerHTML = '<div class="empty-state">请选择评测员</div>';
+                return;
+            }
+            const total = rows.reduce((sum, row) => sum + row.total, 0);
+            document.getElementById("worker-summary").innerHTML = `
+                <div class="card" style="margin:0 0 14px;">
+                    <div style="font-weight:800; margin-bottom:10px;">汇总 (${rows.length} 位评测员, ${total} 条样本)</div>
+                    <div class="summary-grid">
+                        ${dims.map(dim => {
+                            const aWins = rows.reduce((sum, row) => sum + row[dim.key].v_a_wins, 0);
+                            const tie = rows.reduce((sum, row) => sum + row[dim.key].tie_count, 0);
+                            const bWins = rows.reduce((sum, row) => sum + row[dim.key].v_b_wins, 0);
+                            const stat = { v_a_wins: aWins, tie_count: tie, v_b_wins: bWins };
+                            return renderSummaryBox({ total, dims: { [dim.key]: stat } }, dim.key, dim.label);
+                        }).join("")}
+                    </div>
+                </div>
+            `;
+            document.getElementById("worker-table").innerHTML = `
+                <table class="data-table">
+                    <thead><tr><th>评测员</th><th>样本数</th>${dims.map(dim => `<th>${dim.label}</th>`).join("")}</tr></thead>
+                    <tbody>
+                        ${rows.map(row => `
+                            <tr>
+                                <td>${row.worker}</td>
+                                <td>${row.total}</td>
+                                ${dims.map(dim => `<td>A ${row[dim.key].v_a_wins} / 平 ${row[dim.key].tie_count} / B ${row[dim.key].v_b_wins}</td>`).join("")}
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function toggleWorker(worker) {
+            if (state.selectedWorkers.has(worker)) state.selectedWorkers.delete(worker);
+            else state.selectedWorkers.add(worker);
+            renderWorkerStats();
+        }
+
+        async function openBadcaseModal(v1, v2, scene) {
+            state.currentBadcase = { v1, v2, scene };
+            document.getElementById("badcase-title").textContent = scene ? `坏例详情: ${v1} vs ${v2} [${scene}]` : `坏例详情: ${v1} vs ${v2} [全部场景]`;
+            document.getElementById("badcase-modal").style.display = "flex";
+            document.getElementById("badcase-model-filter").innerHTML = `<option value="">全部模型</option><option value="${v1}">${v1}</option><option value="${v2}">${v2}</option>`;
+            document.getElementById("badcase-category-filter").innerHTML = '<option value="">全部类别</option>' + Object.keys(state.config.bad_case_options).map(category => `<option value="${category}">${category}</option>`).join("");
+            syncBadcaseTags();
+            await loadBadcaseDetails();
+        }
+
+        function syncBadcaseTags() {
+            const category = document.getElementById("badcase-category-filter").value;
+            const options = category ? state.config.bad_case_options[category] : Object.values(state.config.bad_case_options).flat();
+            document.getElementById("badcase-tag-filter").innerHTML = '<option value="">全部标签</option>' + options.map(tag => `<option value="${tag}">${tag}</option>`).join("");
+        }
+
+        async function loadBadcaseDetails() {
+            const { v1, v2, scene } = state.currentBadcase;
+            const params = new URLSearchParams({ task_type: state.taskType, v1, v2 });
+            const model = document.getElementById("badcase-model-filter").value;
+            const category = document.getElementById("badcase-category-filter").value;
+            const tag = document.getElementById("badcase-tag-filter").value;
+            if (scene) params.set("scene", scene);
+            if (model) params.set("model", model);
+            if (category) params.set("category", category);
+            if (tag) params.set("tag", tag);
+            const data = await api(`/api/bad_case_details?${params.toString()}`).then(r => r.json());
+            state.badcaseRows = data.results;
+            document.getElementById("badcase-count").textContent = `共 ${state.badcaseRows.length} 条坏例记录`;
+            document.getElementById("badcase-body").innerHTML = state.badcaseRows.length ? state.badcaseRows.map(row => `
+                <tr>
+                    <td>${row.scene}</td>
+                    <td>${row.filename}</td>
+                    <td><img class="preview-img" src="${imageUrl(row.model, row.scene, row.filename)}" onclick='openSinglePreview("${imageUrl(row.model, row.scene, row.filename)}", "${row.model}")'></td>
+                    <td style="max-width:320px;">${row.prompt || "-"}</td>
+                    <td>${row.model}</td>
+                    <td>${row.categories.map(category => `<span class="pill">${category}</span>`).join("")}</td>
+                    <td>${row.tags.map(item => `<span class="pill pill-bad">${item}</span>`).join("")}</td>
+                    <td>${row.worker}</td>
+                    <td>${row.time}</td>
+                </tr>
+            `).join("") : '<tr><td colspan="9" class="empty-state">无匹配坏例</td></tr>';
+        }
+
+        function buildPreviewPayload(row, v1, v2) {
+            return {
+                mode: state.taskType,
+                ref: row.ref_img,
+                a: imageUrl(v1, row.scene, row.filename),
+                b: imageUrl(v2, row.scene, row.filename),
+                labels: state.taskType === "TI2I" ? ["参考图", v1, v2] : [v1, v2]
+            };
+        }
+
+        function imageUrl(model, scene, filename) {
+            return `/images/${state.taskType}/${model}/${scene}/${filename}`;
+        }
+
+        function openPreview(payload) {
+            const container = document.getElementById("image-preview");
+            if (payload.mode === "TI2I" && payload.ref) {
+                container.className = "compare-preview ti2i";
+                container.innerHTML = `
+                    <div class="compare-box"><img src="${payload.ref}"><div class="compare-label">参考图</div></div>
+                    <div class="compare-box"><img src="${payload.a}"><div class="compare-label">${payload.labels[1]}</div></div>
+                    <div class="compare-box"><img src="${payload.b}"><div class="compare-label">${payload.labels[2]}</div></div>
+                `;
+            } else {
+                container.className = "compare-preview t2i";
+                container.innerHTML = `
+                    <div class="compare-box"><img src="${payload.a}"><div class="compare-label">${payload.labels[0]}</div></div>
+                    <div class="compare-box"><img src="${payload.b}"><div class="compare-label">${payload.labels[1]}</div></div>
+                `;
+            }
+            document.getElementById("image-overlay").style.display = "flex";
+        }
+
+        function openSinglePreview(src, label) {
+            const container = document.getElementById("image-preview");
+            container.className = "compare-preview t2i";
+            container.innerHTML = `<div class="compare-box"><img src="${src}"><div class="compare-label">${label}</div></div>`;
+            document.getElementById("image-overlay").style.display = "flex";
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).style.display = "none";
+        }
+
+        function bindUploadForms() {
+            document.getElementById("upload-form").onsubmit = async event => {
+                event.preventDefault();
+                const msg = document.getElementById("upload-msg");
+                const formData = new FormData();
+                formData.append("task_type", document.getElementById("up-task-type").value);
+                formData.append("version", document.getElementById("up-version").value);
+                formData.append("scene", document.getElementById("up-scene").value);
+                formData.append("file", document.getElementById("up-file").files[0]);
+                msg.textContent = "上传中...";
+                try {
+                    await api("/api/upload", { method: "POST", body: formData });
+                    msg.textContent = "结果包上传成功";
+                    await loadDashboard();
+                } catch (error) {
+                    msg.textContent = error.message;
+                }
+            };
+            document.getElementById("upload-ref-form").onsubmit = async event => {
+                event.preventDefault();
+                const fileInput = document.getElementById("ref-file");
+                if (!fileInput.files.length) return;
+                const msg = document.getElementById("upload-msg");
+                const formData = new FormData();
+                formData.append("task_type", document.getElementById("ref-task-type").value);
+                formData.append("scene", document.getElementById("ref-scene").value);
+                formData.append("file", fileInput.files[0]);
+                msg.textContent = "上传参考图中...";
+                try {
+                    await api("/api/upload_ref", { method: "POST", body: formData });
+                    msg.textContent = "参考图上传成功";
+                } catch (error) {
+                    msg.textContent = error.message;
+                }
+            };
+        }
+
+        init();
+    </script>
 </body>
 </html>
