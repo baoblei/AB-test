@@ -829,21 +829,22 @@
         function renderLightbox() {
             const panes = [];
             if (state.config.show_ref && state.currentTask.ref_img) {
-                panes.push(renderLightboxPane("reference", "参考图", state.currentTask.ref_img));
+                panes.push({ side: "reference", label: "参考图", src: state.currentTask.ref_img });
             }
-            panes.push(renderLightboxPane("left", "候选图 A", state.currentTask.left_img));
-            panes.push(renderLightboxPane("right", "候选图 B", state.currentTask.right_img));
+            panes.push({ side: "left", label: "候选图 A", src: state.currentTask.left_img });
+            panes.push({ side: "right", label: "候选图 B", src: state.currentTask.right_img });
             const grid = document.getElementById("lightbox-grid");
             grid.className = `lightbox-grid ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
-            grid.innerHTML = panes.join("");
+            grid.innerHTML = panes.map(item => renderLightboxPane(item.side, item.label, item.src)).join("");
             lightboxZoom = {};
             lightboxPan = {};
-            panes.forEach((_, index) => {
-                const side = ["reference", "left", "right"][index];
+            activeLightboxPane = "";
+            panes.forEach(item => {
+                const side = item.side;
                 if (document.getElementById(`lightbox-img-${side}`)) {
                     lightboxZoom[side] = 1;
                     lightboxPan[side] = { x: 0, y: 0 };
-                    activeLightboxPane = side;
+                    if (!activeLightboxPane) activeLightboxPane = side;
                 }
             });
             bindLightboxControls();
