@@ -1,0 +1,290 @@
+import os
+import shutil
+import struct
+import zipfile
+from datetime import datetime
+from typing import List, Optional
+
+from .config import IMAGE_EXTENSIONS, PROMPT_DIR, REF_IMAGE_DIR, RESULT_DIR, get_task_config, normalize_task_type
+
+
+def get_result_root(task_type: str) -> str:
+    task_type = normalize_task_type(task_type)
+    config = get_task_config(task_type)
+    preferred = config["result_root"]
+    if os.path.isdir(preferred):
+        return preferred
+    if task_type == "T2I":
+        return RESULT_DIR
+    return preferred
+
+
+def get_prompt_root(task_type: str) -> str:
+    config = get_task_config(normalize_task_type(task_type))
+    preferred = config["prompt_root"]
+    if os.path.isdir(preferred):
+        return preferred
+    return PROMPT_DIR
+
+
+def get_ref_root(task_type: str) -> str:
+    config = get_task_config(normalize_task_type(task_type))
+    preferred = config["ref_root"]
+    if os.path.isdir(preferred):
+        return preferred
+    return REF_IMAGE_DIR
+
+
+def get_versions_for_type(task_type: str) -> List[str]:
+    root = get_result_root(task_type)
+    if not os.path.isdir(root):
+        return []
+    return sorted([name for name in os.listdir(root) if os.path.isdir(os.path.join(root, name))])
+
+
+def get_scene_path(task_type: str, version: str, scene: str) -> str:
+    return os.path.join(get_result_root(task_type), version, scene)
+
+
+def get_common_scenes(task_type: str, v1: str, v2: str) -> List[str]:
+    p1 = os.path.join(get_result_root(task_type), v1)
+    p2 = os.path.join(get_result_root(task_type), v2)
+    if not (os.path.isdir(p1) and os.path.isdir(p2)):
+        return []
+    s1 = {d for d in os.listdir(p1) if os.path.isdir(os.path.join(p1, d))}
+    s2 = {d for d in os.listdir(p2) if os.path.isdir(os.path.join(p2, d))}
+    return sorted(list(s1 & s2))
+
+
+def list_scene_files(task_type: str, version: str, scene: str) -> List[str]:
+    scene_path = get_scene_path(task_type, version, scene)
+    if not os.path.isdir(scene_path):
+        return []
+    return sorted([f for f in os.listdir(scene_path) if f.lower().endswith(IMAGE_EXTENSIONS)])
+
+
+def get_image_dimensions(image_path: str) -> Optional[tuple[int, int]]:
+    try:
+        with open(image_path, "rb") as f:
+            header = f.read(32)
+            if header.startswith(b"\x89PNG\r\n\x1a\n") and len(header) >= 24:
+                return struct.unpack(">II", header[16:24])
+            if header[:2] == b"\xff\xd8":
+                f.seek(2)
+                return _read_jpeg_dimensions(f)
+            if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+                return _read_webp_dimensions(header, f)
+    except (OSError, struct.error):
+        return None
+    return None
+
+
+def _read_jpeg_dimensions(f) -> Optional[tuple[int, int]]:
+    while True:
+        marker_start = f.read(1)
+        if not marker_start:
+            return None
+        if marker_start != b"\xff":
+            continue
+
+        marker = f.read(1)
+        while marker == b"\xff":
+            marker = f.read(1)
+        if not marker:
+            return None
+
+        marker_value = marker[0]
+        if marker_value in (0xD8, 0xD9):
+            continue
+        if 0xD0 <= marker_value <= 0xD7:
+            continue
+
+        length_bytes = f.read(2)
+        if len(length_bytes) != 2:
+            return None
+        segment_length = struct.unpack(">H", length_bytes)[0]
+        if segment_length < 2:
+            return None
+
+        if marker_value in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+            segment = f.read(segment_length - 2)
+            if len(segment) >= 5:
+                height, width = struct.unpack(">HH", segment[1:5])
+                return width, height
+            return None
+
+        f.seek(segment_length - 2, os.SEEK_CUR)
+
+
+def _read_webp_dimensions(header: bytes, f) -> Optional[tuple[int, int]]:
+    chunk_type = header[12:16]
+    if chunk_type == b"VP8X" and len(header) >= 30:
+        width = int.from_bytes(header[24:27], "little") + 1
+        height = int.from_bytes(header[27:30], "little") + 1
+        return width, height
+    if chunk_type == b"VP8 ":
+        chunk = header + f.read(32)
+        marker_index = chunk.find(b"\x9d\x01\x2a")
+        if marker_index >= 0 and len(chunk) >= marker_index + 7:
+            width = struct.unpack("<H", chunk[marker_index + 3 : marker_index + 5])[0] & 0x3FFF
+            height = struct.unpack("<H", chunk[marker_index + 5 : marker_index + 7])[0] & 0x3FFF
+            return width, height
+    if chunk_type == b"VP8L" and len(header) >= 25 and header[20] == 0x2F:
+        bits = int.from_bytes(header[21:25], "little")
+        width = (bits & 0x3FFF) + 1
+        height = ((bits >> 14) & 0x3FFF) + 1
+        return width, height
+    return None
+
+
+def get_scene_resolution_stats(task_type: str, version: str, scene: str) -> dict:
+    files = list_scene_files(task_type, version, scene)
+    dimensions_by_file = {}
+    unreadable = []
+
+    for filename in files:
+        image_path = os.path.join(get_scene_path(task_type, version, scene), filename)
+        dimensions = get_image_dimensions(image_path)
+        if dimensions:
+            dimensions_by_file[filename] = {"width": dimensions[0], "height": dimensions[1]}
+        else:
+            unreadable.append(filename)
+
+    widths = [item["width"] for item in dimensions_by_file.values()]
+    heights = [item["height"] for item in dimensions_by_file.values()]
+    unique_dimensions = sorted({(item["width"], item["height"]) for item in dimensions_by_file.values()})
+    width_range = [min(widths), max(widths)] if widths else None
+    height_range = [min(heights), max(heights)] if heights else None
+
+    return {
+        "version": version,
+        "scene": scene,
+        "total": len(files),
+        "readable": len(dimensions_by_file),
+        "unreadable": len(unreadable),
+        "unreadable_files": unreadable[:20],
+        "dimensions_by_file": dimensions_by_file,
+        "unique_dimensions": [{"width": width, "height": height} for width, height in unique_dimensions],
+        "width_range": width_range,
+        "height_range": height_range,
+        "range_label": format_resolution_range(width_range, height_range),
+        "varied": len(unique_dimensions) > 1,
+    }
+
+
+def format_resolution_range(width_range: Optional[list[int]], height_range: Optional[list[int]]) -> str:
+    if not width_range or not height_range:
+        return "无法读取"
+    width_label = str(width_range[0]) if width_range[0] == width_range[1] else f"{width_range[0]}-{width_range[1]}"
+    height_label = str(height_range[0]) if height_range[0] == height_range[1] else f"{height_range[0]}-{height_range[1]}"
+    return f"{width_label} x {height_label}"
+
+
+def compare_scene_resolution_stats(task_type: str, v1: str, v2: str, scene: str) -> dict:
+    stats_a = get_scene_resolution_stats(task_type, v1, scene)
+    stats_b = get_scene_resolution_stats(task_type, v2, scene)
+    files_a = set(stats_a["dimensions_by_file"])
+    files_b = set(stats_b["dimensions_by_file"])
+    common_files = sorted(files_a & files_b)
+    mismatches = []
+
+    for filename in common_files:
+        dim_a = stats_a["dimensions_by_file"][filename]
+        dim_b = stats_b["dimensions_by_file"][filename]
+        if dim_a != dim_b:
+            mismatches.append({"filename": filename, "a": dim_a, "b": dim_b})
+
+    missing_a = sorted(set(list_scene_files(task_type, v2, scene)) - set(list_scene_files(task_type, v1, scene)))
+    missing_b = sorted(set(list_scene_files(task_type, v1, scene)) - set(list_scene_files(task_type, v2, scene)))
+    consistent = not mismatches and not missing_a and not missing_b and stats_a["unreadable"] == 0 and stats_b["unreadable"] == 0
+
+    return {
+        "task_type": normalize_task_type(task_type),
+        "scene": scene,
+        "models": {v1: compact_resolution_stats(stats_a), v2: compact_resolution_stats(stats_b)},
+        "comparison": {
+            "consistent": consistent,
+            "common_count": len(common_files),
+            "mismatch_count": len(mismatches),
+            "mismatches": mismatches[:20],
+            "missing_in_a": missing_a[:20],
+            "missing_in_b": missing_b[:20],
+            "missing_in_a_count": len(missing_a),
+            "missing_in_b_count": len(missing_b),
+        },
+    }
+
+
+def compact_resolution_stats(stats: dict) -> dict:
+    return {
+        "version": stats["version"],
+        "scene": stats["scene"],
+        "total": stats["total"],
+        "readable": stats["readable"],
+        "unreadable": stats["unreadable"],
+        "unreadable_files": stats["unreadable_files"],
+        "unique_dimensions": stats["unique_dimensions"],
+        "width_range": stats["width_range"],
+        "height_range": stats["height_range"],
+        "range_label": stats["range_label"],
+        "varied": stats["varied"],
+    }
+
+
+def get_prompt_text(task_type: str, scene: str, filename: str) -> str:
+    prompt_root = get_prompt_root(task_type)
+    candidates = [os.path.join(prompt_root, f"{scene}.txt"), os.path.join(PROMPT_DIR, f"{scene}.txt")]
+    image_id = os.path.splitext(filename)[0]
+    for prompt_file in candidates:
+        if not os.path.exists(prompt_file):
+            continue
+        with open(prompt_file, "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) >= 2 and parts[0] == image_id:
+                    return parts[1]
+    return "Prompt content not found."
+
+
+def get_ref_image_url(task_type: str, scene: str, filename: str) -> Optional[str]:
+    ref_root = get_ref_root(task_type)
+    direct_path = os.path.join(ref_root, scene, filename)
+    if os.path.exists(direct_path):
+        rel = os.path.relpath(direct_path, REF_IMAGE_DIR).replace(os.sep, "/")
+        return f"/ref-images/{rel}"
+
+    fallback = os.path.join(REF_IMAGE_DIR, scene, filename)
+    if os.path.exists(fallback):
+        rel = os.path.relpath(fallback, REF_IMAGE_DIR).replace(os.sep, "/")
+        return f"/ref-images/{rel}"
+    return None
+
+
+def get_result_image_url(task_type: str, version: str, scene: str, filename: str) -> str:
+    task_type = normalize_task_type(task_type)
+    if os.path.isdir(os.path.join(RESULT_DIR, task_type)):
+        return f"/images/{task_type}/{version}/{scene}/{filename}"
+    return f"/images/{version}/{scene}/{filename}"
+
+
+def save_uploaded_zip(target_path: str, upload_file):
+    if os.path.exists(target_path):
+        shutil.rmtree(target_path)
+    os.makedirs(target_path, exist_ok=True)
+
+    temp_zip = f"temp_{datetime.utcnow().timestamp():.0f}_{upload_file.filename}"
+    with open(temp_zip, "wb") as f:
+        shutil.copyfileobj(upload_file.file, f)
+
+    try:
+        with zipfile.ZipFile(temp_zip, "r") as zf:
+            zf.extractall(target_path)
+        items = [item for item in os.listdir(target_path) if not item.startswith(".") and item != "__MACOSX"]
+        if len(items) == 1 and os.path.isdir(os.path.join(target_path, items[0])):
+            inner = os.path.join(target_path, items[0])
+            for name in os.listdir(inner):
+                shutil.move(os.path.join(inner, name), target_path)
+            os.rmdir(inner)
+    finally:
+        if os.path.exists(temp_zip):
+            os.remove(temp_zip)

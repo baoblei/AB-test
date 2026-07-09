@@ -79,6 +79,57 @@
         .setup-card p { margin: 0 0 18px; color: var(--muted); }
         .stack { display: grid; gap: 12px; }
         .label { font-size: 0.84rem; color: var(--muted); font-weight: 700; }
+        .label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 6px;
+        }
+        .resolution-hint {
+            color: var(--muted);
+            font-size: 0.78rem;
+            line-height: 1.35;
+            text-align: right;
+        }
+        .resolution-hint.danger, .resolution-warning {
+            color: #b91c1c;
+            font-weight: 800;
+        }
+        .resolution-warning {
+            display: none;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(185, 28, 28, 0.08);
+            border: 1px solid rgba(185, 28, 28, 0.18);
+            font-size: 0.84rem;
+        }
+        .resolution-warning.show { display: block; }
+        .quick-mode {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(12, 123, 108, 0.08);
+            border: 1px solid rgba(12, 123, 108, 0.14);
+            color: var(--text);
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+        .quick-mode input {
+            width: 18px;
+            height: 18px;
+            margin-top: 2px;
+            accent-color: var(--accent);
+            flex: 0 0 auto;
+        }
+        .quick-mode span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.78rem;
+            margin-top: 2px;
+        }
         .main {
             max-width: 1560px;
             margin: 0 auto;
@@ -343,7 +394,7 @@
             font-size: 0.78rem;
             padding: 0 0 20px;
         }
-        select {
+        .setup-card input[list], select {
             width: 100%;
             padding: 12px 14px;
             border-radius: 14px;
@@ -449,17 +500,32 @@
                     <select id="task-type-select" onchange="handleTaskTypeChange()"></select>
                 </div>
                 <div>
-                    <div class="label">模型 A</div>
-                    <select id="v1-select" onchange="updateScenes()"></select>
+                    <div class="label-row">
+                        <div class="label">模型 A</div>
+                        <div class="resolution-hint" id="v1-resolution"></div>
+                    </div>
+                    <input id="v1-input" list="version-options" placeholder="输入模型名搜索..." autocomplete="off" oninput="handleVersionInput()">
                 </div>
                 <div>
-                    <div class="label">模型 B</div>
-                    <select id="v2-select" onchange="updateScenes()"></select>
+                    <div class="label-row">
+                        <div class="label">模型 B</div>
+                        <div class="resolution-hint" id="v2-resolution"></div>
+                    </div>
+                    <input id="v2-input" list="version-options" placeholder="输入模型名搜索..." autocomplete="off" oninput="handleVersionInput()">
+                    <datalist id="version-options"></datalist>
                 </div>
                 <div>
                     <div class="label">评测场景</div>
-                    <select id="scene-select"></select>
+                    <select id="scene-select" onchange="handleSceneChange()"></select>
                 </div>
+                <label class="quick-mode">
+                    <input type="checkbox" id="overall-only-checkbox" onchange="handleEvalModeChange()">
+                    <div>
+                        <strong>只进行整体评价</strong>
+                        <span>勾选后每张图只评“整体”一项，用于快速完成评测。</span>
+                    </div>
+                </label>
+                <div class="resolution-warning" id="resolution-warning"></div>
                 <button class="submit-btn" onclick="startTest()">进入评测</button>
             </div>
         </div>
@@ -539,7 +605,9 @@
             v1: "",
             v2: "",
             currentTask: null,
-            config: null
+            config: null,
+            availableVersions: [],
+            overallOnly: false
         };
         let currentVotes = {};
         let currentDimIndex = 0;
@@ -552,6 +620,9 @@
         let lightboxPan = {};
         let activeLightboxPane = "";
         let lightboxBound = false;
+        let sceneUpdateTimer = null;
+        let sceneRequestId = 0;
+        let resolutionRequestId = 0;
 
         async function api(url, options) {
             const res = await fetch(url, options);
@@ -579,14 +650,62 @@
             bindLightboxControls();
         }
 
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, char => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;"
+            }[char]));
+        }
+
+        function getSelectedVersion(inputId) {
+            return document.getElementById(inputId).value.trim();
+        }
+
+        function isKnownVersion(version) {
+            return state.availableVersions.includes(version);
+        }
+
+        function clearResolutionHints() {
+            ["v1-resolution", "v2-resolution"].forEach(id => {
+                const node = document.getElementById(id);
+                node.textContent = "";
+                node.classList.remove("danger");
+            });
+            const warning = document.getElementById("resolution-warning");
+            warning.textContent = "";
+            warning.classList.remove("show");
+        }
+
+        function getEvalMode() {
+            return state.overallOnly ? "overall" : "full";
+        }
+
+        function getActiveEvalDims() {
+            return state.overallOnly ? [{ key: "overall", label: "整体" }] : state.config.eval_dims;
+        }
+
+        function handleEvalModeChange() {
+            state.overallOnly = document.getElementById("overall-only-checkbox").checked;
+            document.getElementById("eval-desc").textContent = state.overallOnly
+                ? "当前为整体快速评测模式，每张图只需要完成整体判断。"
+                : (state.taskType === "TI2I" ? "TI2I 增加保真度维度，同时支持参考图对照。" : "T2I 使用美学、合理性、一致性三个维度。");
+        }
+
         async function handleTaskTypeChange() {
             state.taskType = document.getElementById("task-type-select").value;
             state.config = await api(`/api/task_config?task_type=${state.taskType}`).then(r => r.json());
             const versions = await api(`/api/versions?task_type=${state.taskType}`).then(r => r.json());
-            const options = '<option value="">选择模型版本...</option>' + versions.map(v => `<option value="${v}">${v}</option>`).join("");
-            document.getElementById("v1-select").innerHTML = options;
-            document.getElementById("v2-select").innerHTML = options;
+            state.availableVersions = versions;
+            document.getElementById("version-options").innerHTML = versions.map(v => `<option value="${escapeHtml(v)}"></option>`).join("");
+            document.getElementById("v1-input").value = "";
+            document.getElementById("v2-input").value = "";
             document.getElementById("scene-select").innerHTML = '<option value="">选择场景...</option>';
+            document.getElementById("overall-only-checkbox").checked = false;
+            state.overallOnly = false;
+            clearResolutionHints();
             document.getElementById("task-hint").textContent = state.taskType === "TI2I"
                 ? "参考图 + A/B 编辑结果会同步展示，点击图片可打开高清三图预览。"
                 : "点击图片可打开高清对比预览。";
@@ -595,25 +714,99 @@
                 : "T2I 使用美学、合理性、一致性三个维度。";
         }
 
+        function handleVersionInput() {
+            clearTimeout(sceneUpdateTimer);
+            clearResolutionHints();
+            document.getElementById("scene-select").innerHTML = '<option value="">选择场景...</option>';
+            sceneUpdateTimer = setTimeout(updateScenes, 180);
+        }
+
         async function updateScenes() {
-            const v1 = document.getElementById("v1-select").value;
-            const v2 = document.getElementById("v2-select").value;
-            if (!v1 || !v2 || v1 === v2) {
+            const requestId = ++sceneRequestId;
+            const v1 = getSelectedVersion("v1-input");
+            const v2 = getSelectedVersion("v2-input");
+            if (!v1 || !v2 || v1 === v2 || !isKnownVersion(v1) || !isKnownVersion(v2)) {
                 document.getElementById("scene-select").innerHTML = '<option value="">选择场景...</option>';
                 return;
             }
             const scenes = await api(`/api/scenes?task_type=${state.taskType}&v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}`).then(r => r.json());
-            document.getElementById("scene-select").innerHTML = '<option value="">选择场景...</option>' + scenes.map(s => `<option value="${s}">${s}</option>`).join("");
+            if (requestId !== sceneRequestId) return;
+            document.getElementById("scene-select").innerHTML = '<option value="">选择场景...</option>' + scenes.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+            clearResolutionHints();
+        }
+
+        async function handleSceneChange() {
+            clearResolutionHints();
+            const scene = document.getElementById("scene-select").value;
+            const v1 = getSelectedVersion("v1-input");
+            const v2 = getSelectedVersion("v2-input");
+            if (!scene || !v1 || !v2 || !isKnownVersion(v1) || !isKnownVersion(v2)) return;
+            await updateResolutionStats(v1, v2, scene);
+        }
+
+        async function updateResolutionStats(v1, v2, scene) {
+            const requestId = ++resolutionRequestId;
+            document.getElementById("v1-resolution").textContent = "检查中...";
+            document.getElementById("v2-resolution").textContent = "检查中...";
+            try {
+                const params = new URLSearchParams({ task_type: state.taskType, v1, v2, scene });
+                const data = await api(`/api/scene_resolution_stats?${params.toString()}`).then(r => r.json());
+                if (requestId !== resolutionRequestId) return;
+                renderResolutionStats(data, v1, v2);
+            } catch (err) {
+                if (requestId !== resolutionRequestId) return;
+                const warning = document.getElementById("resolution-warning");
+                warning.textContent = `分辨率检查失败：${err.message}`;
+                warning.classList.add("show");
+            }
+        }
+
+        function renderResolutionStats(data, v1, v2) {
+            const comparison = data.comparison || {};
+            const hasMismatch = !comparison.consistent;
+            renderModelResolution("v1-resolution", data.models[v1], hasMismatch);
+            renderModelResolution("v2-resolution", data.models[v2], hasMismatch);
+
+            const warning = document.getElementById("resolution-warning");
+            const messages = [];
+            if (comparison.mismatch_count) messages.push(`${comparison.mismatch_count} 张对应图片分辨率不一致`);
+            if (comparison.missing_in_a_count) messages.push(`${v1} 缺少 ${comparison.missing_in_a_count} 张对应图片`);
+            if (comparison.missing_in_b_count) messages.push(`${v2} 缺少 ${comparison.missing_in_b_count} 张对应图片`);
+            [v1, v2].forEach(version => {
+                const stat = data.models[version];
+                if (stat && stat.unreadable) messages.push(`${version} 有 ${stat.unreadable} 张图片无法读取尺寸`);
+            });
+            warning.textContent = messages.join("；");
+            warning.classList.toggle("show", Boolean(messages.length));
+        }
+
+        function renderModelResolution(nodeId, stat, hasMismatch) {
+            const node = document.getElementById(nodeId);
+            if (!stat) {
+                node.textContent = "无法读取";
+                node.classList.add("danger");
+                return;
+            }
+            const countLabel = stat.total ? `${stat.readable}/${stat.total}` : "0/0";
+            node.textContent = `${stat.range_label} (${countLabel})`;
+            node.classList.toggle("danger", hasMismatch || stat.unreadable > 0);
         }
 
         async function startTest() {
-            state.v1 = document.getElementById("v1-select").value;
-            state.v2 = document.getElementById("v2-select").value;
+            state.v1 = getSelectedVersion("v1-input");
+            state.v2 = getSelectedVersion("v2-input");
             state.scene = document.getElementById("scene-select").value;
+            state.overallOnly = document.getElementById("overall-only-checkbox").checked;
             if (!state.v1 || !state.v2 || !state.scene || state.v1 === state.v2) {
                 alert("请完成任务类型、模型和场景选择");
                 return;
             }
+            if (!isKnownVersion(state.v1) || !isKnownVersion(state.v2)) {
+                alert("请输入并选择已有的模型版本");
+                return;
+            }
+            const canStart = await prepareEvalSession(false);
+            if (!canStart) return;
             document.getElementById("setup-overlay").classList.add("hidden");
             document.getElementById("test-ui").classList.remove("hidden");
             renderEvalTable();
@@ -622,8 +815,31 @@
             await loadNextTask();
         }
 
+        async function prepareEvalSession(overwriteOverall) {
+            const params = new URLSearchParams({
+                task_type: state.taskType,
+                worker: state.worker,
+                v1: state.v1,
+                v2: state.v2,
+                scene: state.scene,
+                eval_mode: getEvalMode(),
+                overwrite_overall: overwriteOverall ? "true" : "false"
+            });
+            try {
+                const result = await api(`/api/start_eval_session?${params.toString()}`, { method: "POST" }).then(r => r.json());
+                if (result.status === "requires_confirmation") {
+                    if (!confirm(result.message || "继续会覆盖之前的整体评测结果，是否继续？")) return false;
+                    return prepareEvalSession(true);
+                }
+                return true;
+            } catch (err) {
+                alert(err.message);
+                return false;
+            }
+        }
+
         function renderEvalTable() {
-            const dims = state.config.eval_dims;
+            const dims = getActiveEvalDims();
             currentVotes = {};
             currentDimIndex = 0;
             const body = document.getElementById("eval-body");
@@ -736,7 +952,7 @@
         }
 
         async function updateProgress() {
-            const data = await api(`/api/progress?task_type=${state.taskType}&worker=${encodeURIComponent(state.worker)}&v1=${encodeURIComponent(state.v1)}&v2=${encodeURIComponent(state.v2)}&scene=${encodeURIComponent(state.scene)}`).then(r => r.json());
+            const data = await api(`/api/progress?task_type=${state.taskType}&worker=${encodeURIComponent(state.worker)}&v1=${encodeURIComponent(state.v1)}&v2=${encodeURIComponent(state.v2)}&scene=${encodeURIComponent(state.scene)}&eval_mode=${getEvalMode()}`).then(r => r.json());
             document.getElementById("progress-label").textContent = `${data.completed} / ${data.total} (${data.percent}%)`;
             document.getElementById("progress-fill").style.width = `${data.percent}%`;
         }
@@ -788,7 +1004,8 @@
         }
 
         async function submitVote() {
-            const missing = state.config.eval_dims.filter(dim => !currentVotes[dim.key]);
+            const dims = getActiveEvalDims();
+            const missing = dims.filter(dim => !currentVotes[dim.key]);
             if (missing.length) {
                 alert("请完成所有评分维度");
                 return;
@@ -798,15 +1015,17 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     task_type: state.taskType,
+                    eval_mode: getEvalMode(),
                     task_id: state.currentTask.task_id,
                     v_left: state.currentTask.v_left,
                     v_right: state.currentTask.v_right,
                     scene: state.currentTask.scene,
                     filename: state.currentTask.filename,
                     worker: state.worker,
-                    aesthetic: currentVotes.aesthetic,
-                    logic: currentVotes.logic,
-                    consistency: currentVotes.consistency,
+                    overall: currentVotes.overall || null,
+                    aesthetic: currentVotes.aesthetic || null,
+                    logic: currentVotes.logic || null,
+                    consistency: currentVotes.consistency || null,
                     fidelity: currentVotes.fidelity || null,
                     bad_case_left: [...badCaseSelections.left],
                     bad_case_right: [...badCaseSelections.right],
@@ -820,7 +1039,7 @@
         async function skipTask() {
             if (!state.currentTask) return;
             if (!confirm("确定跳过当前任务？")) return;
-            const params = new URLSearchParams({ task_id: state.currentTask.task_id, task_type: state.taskType });
+            const params = new URLSearchParams({ task_id: state.currentTask.task_id, task_type: state.taskType, eval_mode: getEvalMode() });
             await api(`/api/skip_task?${params.toString()}`, { method: "POST" });
             await updateProgress();
             await loadNextTask();
@@ -978,7 +1197,7 @@
 
         document.addEventListener("keydown", event => {
             if (document.getElementById("test-ui").classList.contains("hidden")) return;
-            const dims = state.config ? state.config.eval_dims : [];
+            const dims = state.config ? getActiveEvalDims() : [];
             if (!dims.length) return;
             const current = dims[currentDimIndex];
             if (!current) return;

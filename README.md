@@ -17,6 +17,7 @@
   - 左右候选图随机展示
   - `TI2I` 额外展示参考图
   - 支持逐张评测、跳过、断点续评
+  - 支持只进行整体评价的快速评测模式
 - 多维度评测：
   - `T2I`：美学、合理性、一致性
   - `TI2I`：美学、合理性、一致性、保真度
@@ -54,6 +55,17 @@
 ```text
 ab_test/
 ├── main.py
+├── app_core/
+│   ├── config.py
+│   ├── database.py
+│   ├── auth.py
+│   ├── schemas.py
+│   ├── storage.py
+│   ├── bad_cases.py
+│   ├── task_service.py
+│   ├── dashboard_service.py
+│   ├── user_service.py
+│   └── admin_service.py
 ├── database.db
 ├── requirements.txt
 ├── README.md
@@ -89,6 +101,10 @@ ab_test/
 - `prompt/T2I`、`prompt/TI2I` 分别保存对应任务的 prompt
 - `ref_images/TI2I` 保存编辑任务参考图
 - `ref_images/T2I` 当前不是必须目录，但系统已预留
+- `main.py` 只保留 FastAPI 应用、路由和页面入口
+- `app_core/config.py` 维护任务类型、评测维度和坏例标签
+- `app_core/database.py` 负责 SQLite 连接、初始化和 schema 兼容迁移
+- `app_core/*_service.py` 承载认证、任务、看板、用户和管理后台业务逻辑
 
 ## 数据组织规范
 
@@ -176,8 +192,8 @@ ref_images/TI2I/
 
 - 美学缺陷：乱码、色彩异常、明显噪点、网格伪影、模糊失焦
 - 结构畸变：物体粘连、透视问题、空间扭曲
-- 人像：人脸扭曲、肢体畸变
-- 语义问题：语义丢失、对象错误
+- 人像肢体：人脸扭曲、肢体畸变
+- 语义问题：关键对象缺失、关键对象错误
 - 文本错误：文字乱码、文字缺失、额外文字
 - 安全违规：涉黄、暴力、侵权风险
 
@@ -185,8 +201,8 @@ ref_images/TI2I/
 
 - 美学缺陷：乱码、色彩异常、明显噪点、网格伪影、模糊失焦
 - 结构畸变：物体粘连、透视问题、空间扭曲
-- 人像：人脸扭曲、肢体畸变
-- 语义问题：语义丢失、对象错误
+- 人像肢体：人脸扭曲、肢体畸变
+- 语义问题：关键对象缺失、关键对象错误
 - 文本错误：文字乱码、文字缺失、额外文字
 - 保真：过度编辑、属性污染、保真度差
 - 安全违规：涉黄、暴力、侵权风险
@@ -231,6 +247,13 @@ python main.py
 6. 对各维度选择 `左图更好 / 平局 / 右图更好`
 7. 如有严重坏例，为左右图分别标记坏例标签
 8. 提交并进入下一张
+
+整体快速评测规则：
+
+- 初始化页勾选 `只进行整体评价` 后，每张图只展示 `整体` 一个维度。
+- 已完成多维度评测的同一模型对和场景，不能再进行整体快速评测。
+- 已完成整体快速评测的同一模型对和场景，可以切换回多维度评测；进入前系统会提示覆盖原整体评测结果。
+- 看板中 `整体` 统计会包含整体快速评测结果，其他维度只统计多维度评测结果。
 
 ### 管理员流程
 
@@ -311,7 +334,7 @@ database.db
 - `pair_tasks`：评测任务分发表
 - `results_log`：评测结果表
 
-数据库初始化和字段补齐逻辑在 [main.py](/Users/baobinglei/code/ab_test/main.py) 的 `init_db()` 中完成，旧表结构会自动做兼容迁移。
+数据库初始化和字段补齐逻辑在 [app_core/database.py](/Users/baobinglei/code/ab_test/app_core/database.py) 的 `init_db()` 中完成，旧表结构会自动做兼容迁移。
 
 ## 旧数据迁移
 
@@ -407,7 +430,6 @@ results/
 
 ## 开发建议
 
-- 新增任务类型时，优先在 [main.py](/Users/baobinglei/code/ab_test/main.py) 的 `TASK_CONFIGS` 中扩展
-- 新增坏例标签时，需要同步更新前端展示和看板筛选
-- 若调整目录规范，优先保证 `results`、`prompt`、`ref_images` 三套路径的一致性
-
+- 新增任务类型时，优先在 [app_core/config.py](/Users/baobinglei/code/ab_test/app_core/config.py) 的 `TASK_CONFIGS` 中扩展
+- 新增坏例标签时，优先更新 [app_core/config.py](/Users/baobinglei/code/ab_test/app_core/config.py)，前端会通过 `/api/task_config` 读取配置
+- 若调整目录规范，优先在 [app_core/storage.py](/Users/baobinglei/code/ab_test/app_core/storage.py) 中维护 `results`、`prompt`、`ref_images` 三套路径的一致性

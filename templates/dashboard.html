@@ -674,7 +674,15 @@
 
         function renderSummaryBox(pair, dimKey, label) {
             const stat = pair.dims[dimKey];
-            const total = pair.total || 1;
+            const total = stat.total || 0;
+            if (!total) {
+                return `
+                    <div class="summary-box">
+                        <strong>${label}</strong>
+                        <div class="legend"><span>暂无多维度样本</span></div>
+                    </div>
+                `;
+            }
             const aPct = (stat.v_a_wins / total * 100).toFixed(1);
             const tiePct = (stat.tie_count / total * 100).toFixed(1);
             const bPct = (stat.v_b_wins / total * 100).toFixed(1);
@@ -715,7 +723,8 @@
                     <td>${scene.total}</td>
                     ${dims.map(dim => {
                         const stat = scene.dims[dim.key];
-                        const total = scene.total || 1;
+                        const total = stat.total || 0;
+                        if (!total) return '<td><span style="color:var(--muted);">暂无多维度样本</span></td>';
                         const aPct = (stat.v_a_wins / total * 100).toFixed(1);
                         const tiePct = (stat.tie_count / total * 100).toFixed(1);
                         const bPct = (stat.v_b_wins / total * 100).toFixed(1);
@@ -897,8 +906,8 @@
                 document.getElementById("worker-table").innerHTML = '<div class="empty-state">请选择评测员</div>';
                 return;
             }
-            const total = rows.reduce((sum, row) => sum + row.total, 0);
-            document.getElementById("worker-summary").innerHTML = `
+                const total = rows.reduce((sum, row) => sum + row.total, 0);
+                document.getElementById("worker-summary").innerHTML = `
                 <div class="card" style="margin:0 0 14px;">
                     <div style="font-weight:800; margin-bottom:10px;">汇总 (${rows.length} 位评测员, ${total} 条样本)</div>
                     <div class="summary-grid">
@@ -906,8 +915,9 @@
                             const aWins = rows.reduce((sum, row) => sum + row[dim.key].v_a_wins, 0);
                             const tie = rows.reduce((sum, row) => sum + row[dim.key].tie_count, 0);
                             const bWins = rows.reduce((sum, row) => sum + row[dim.key].v_b_wins, 0);
-                            const stat = { v_a_wins: aWins, tie_count: tie, v_b_wins: bWins };
-                            return renderSummaryBox({ total, dims: { [dim.key]: stat } }, dim.key, dim.label);
+                            const dimTotal = rows.reduce((sum, row) => sum + (row[dim.key].total || 0), 0);
+                            const stat = { total: dimTotal, v_a_wins: aWins, tie_count: tie, v_b_wins: bWins };
+                            return renderSummaryBox({ dims: { [dim.key]: stat } }, dim.key, dim.label);
                         }).join("")}
                     </div>
                 </div>
