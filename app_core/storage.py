@@ -1,3 +1,4 @@
+import io
 import os
 import shutil
 import struct
@@ -6,6 +7,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from .config import IMAGE_EXTENSIONS, PROMPT_DIR, REF_IMAGE_DIR, RESULT_DIR, get_task_config, normalize_task_type
+from .errors import AppError
 
 
 def get_result_root(task_type: str) -> str:
@@ -54,6 +56,23 @@ def get_common_scenes(task_type: str, v1: str, v2: str) -> List[str]:
     s1 = {d for d in os.listdir(p1) if os.path.isdir(os.path.join(p1, d))}
     s2 = {d for d in os.listdir(p2) if os.path.isdir(os.path.join(p2, d))}
     return sorted(list(s1 & s2))
+
+
+def get_dataset_scenes(task_type: str) -> List[str]:
+    prompt_root = get_prompt_root(task_type)
+    candidates = [prompt_root]
+    if prompt_root != PROMPT_DIR:
+        candidates.append(PROMPT_DIR)
+
+    scenes = set()
+    for root in candidates:
+        if not os.path.isdir(root):
+            continue
+        for filename in os.listdir(root):
+            path = os.path.join(root, filename)
+            if filename.lower().endswith(".txt") and os.path.isfile(path):
+                scenes.add(os.path.splitext(filename)[0])
+    return sorted(scenes)
 
 
 def list_scene_files(task_type: str, version: str, scene: str) -> List[str]:
@@ -246,6 +265,92 @@ def get_prompt_text(task_type: str, scene: str, filename: str) -> str:
     return "Prompt content not found."
 
 
+def get_prompt_file_path(task_type: str, scene: str) -> str:
+    return os.path.join(get_prompt_root(task_type), f"{scene}.txt")
+
+
+def parse_prompt_text(content: str) -> dict:
+    ids = []
+    prompts = {}
+    errors = []
+
+    for line_no, raw_line in enumerate(content.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            errors.append(f"第 {line_no} 行缺少 tab 分隔符")
+            continue
+        image_id, prompt = parts[0].strip(), parts[1].strip()
+        if not image_id:
+            errors.append(f"第 {line_no} 行图片名为空")
+            continue
+        if os.path.basename(image_id) != image_id or os.path.splitext(image_id)[1]:
+            errors.append(f"第 {line_no} 行图片名应为不带路径和扩展名的前缀")
+            continue
+        if not prompt:
+            errors.append(f"第 {line_no} 行 prompt 为空")
+            continue
+        if image_id in prompts:
+            errors.append(f"第 {line_no} 行图片名重复: {image_id}")
+            continue
+        ids.append(image_id)
+        prompts[image_id] = prompt
+
+    if not ids:
+        errors.append("prompt 文件没有有效内容")
+    if errors:
+        raise AppError("Prompt 格式检查失败：" + "；".join(errors[:8]))
+    return {"ids": ids, "prompts": prompts, "count": len(ids)}
+
+
+def parse_prompt_file_bytes(file_bytes: bytes) -> dict:
+    try:
+        content = file_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise AppError("Prompt 文件必须是 UTF-8 文本") from exc
+    return parse_prompt_text(content)
+
+
+def get_prompt_ids(task_type: str, scene: str) -> list[str]:
+    prompt_file = get_prompt_file_path(task_type, scene)
+    fallback = os.path.join(PROMPT_DIR, f"{scene}.txt")
+    for path in (prompt_file, fallback):
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                return parse_prompt_file_bytes(f.read())["ids"]
+    raise AppError(f"未找到场景 {scene} 的 prompt 文件")
+
+
+def save_prompt_file(task_type: str, scene: str, file_bytes: bytes):
+    parse_prompt_file_bytes(file_bytes)
+    prompt_root = get_task_config(normalize_task_type(task_type))["prompt_root"]
+    os.makedirs(prompt_root, exist_ok=True)
+    with open(os.path.join(prompt_root, f"{scene}.txt"), "wb") as f:
+        f.write(file_bytes)
+
+
+def upload_dataset(task_type: str, scene: str, prompt_file, ref_file=None) -> dict:
+    task_type = normalize_task_type(task_type)
+    if not scene.strip():
+        raise AppError("场景名不能为空")
+    scene = scene.strip()
+    prompt_bytes = read_upload_bytes(prompt_file)
+    prompt_info = parse_prompt_file_bytes(prompt_bytes)
+
+    if task_type == "TI2I":
+        if not ref_file:
+            raise AppError("TI2I 测评集需要上传参考图 zip")
+        ref_bytes = read_upload_bytes(ref_file)
+        validate_image_zip_against_ids(ref_bytes, prompt_info["ids"], "参考图")
+        ref_root = get_task_config(task_type)["ref_root"]
+        save_zip_images(os.path.join(ref_root, scene), ref_bytes)
+
+    save_prompt_file(task_type, scene, prompt_bytes)
+    return {"message": "Success", "scene": scene, "prompt_count": prompt_info["count"]}
+
+
 def get_ref_image_url(task_type: str, scene: str, filename: str) -> Optional[str]:
     ref_root = get_ref_root(task_type)
     direct_path = os.path.join(ref_root, scene, filename)
@@ -265,6 +370,160 @@ def get_result_image_url(task_type: str, version: str, scene: str, filename: str
     if os.path.isdir(os.path.join(RESULT_DIR, task_type)):
         return f"/images/{task_type}/{version}/{scene}/{filename}"
     return f"/images/{version}/{scene}/{filename}"
+
+
+def read_upload_bytes(upload_file) -> bytes:
+    upload_file.file.seek(0)
+    data = upload_file.file.read()
+    upload_file.file.seek(0)
+    if not data:
+        raise AppError("上传文件为空")
+    return data
+
+
+def clean_zip_basename(name: str) -> str:
+    return name.replace("\\", "/").split("/")[-1]
+
+
+def zip_image_infos(zip_bytes: bytes) -> list[dict]:
+    infos = []
+    seen_basenames = set()
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                basename = clean_zip_basename(info.filename)
+                if not basename or basename.startswith(".") or "__MACOSX" in info.filename:
+                    continue
+                stem, ext = os.path.splitext(basename)
+                if ext.lower() not in IMAGE_EXTENSIONS:
+                    continue
+                if basename in seen_basenames:
+                    raise AppError(f"zip 中存在重复图片文件名: {basename}")
+                seen_basenames.add(basename)
+                infos.append({"entry": info.filename, "basename": basename, "stem": stem, "ext": ext.lower()})
+    except zipfile.BadZipFile as exc:
+        raise AppError("上传文件不是有效 zip") from exc
+    if not infos:
+        raise AppError("zip 中没有可用图片文件")
+    return infos
+
+
+def build_exact_name_map(image_infos: list[dict], expected_ids: list[str]) -> Optional[dict]:
+    stems = {item["stem"] for item in image_infos}
+    expected = set(expected_ids)
+    if stems == expected:
+        return {item["entry"]: item["basename"] for item in image_infos}
+    return None
+
+
+def build_prefix_name_map(image_infos: list[dict], expected_ids: list[str]) -> Optional[dict]:
+    expected = set(expected_ids)
+    assignments = {}
+    used_entries = set()
+    sorted_ids = sorted(expected_ids, key=len, reverse=True)
+
+    for item in image_infos:
+        matches = [image_id for image_id in sorted_ids if item["stem"].startswith(image_id)]
+        if not matches:
+            return None
+        image_id = matches[0]
+        if image_id in assignments:
+            return None
+        assignments[image_id] = item
+        used_entries.add(item["entry"])
+
+    if set(assignments) != expected or len(used_entries) != len(image_infos):
+        return None
+    return {item["entry"]: f"{image_id}{item['ext']}" for image_id, item in assignments.items()}
+
+
+def image_name_diff(image_infos: list[dict], expected_ids: list[str]) -> dict:
+    stems = {item["stem"] for item in image_infos}
+    expected = set(expected_ids)
+    return {
+        "missing": sorted(expected - stems)[:20],
+        "extra": sorted(stems - expected)[:20],
+        "missing_count": len(expected - stems),
+        "extra_count": len(stems - expected),
+    }
+
+
+def validate_image_zip_against_ids(zip_bytes: bytes, expected_ids: list[str], label: str) -> dict:
+    infos = zip_image_infos(zip_bytes)
+    exact_map = build_exact_name_map(infos, expected_ids)
+    if exact_map:
+        return {"status": "exact", "rename_map": exact_map}
+    diff = image_name_diff(infos, expected_ids)
+    raise AppError(
+        f"{label} 图片名和 prompt 不匹配：缺少 {diff['missing_count']} 个，多出 {diff['extra_count']} 个"
+        + (f"；缺少示例: {', '.join(diff['missing'])}" if diff["missing"] else "")
+        + (f"；多出示例: {', '.join(diff['extra'])}" if diff["extra"] else "")
+    )
+
+
+def validate_result_zip(task_type: str, scene: str, zip_bytes: bytes, auto_rename: bool = False) -> dict:
+    expected_ids = get_prompt_ids(task_type, scene)
+    infos = zip_image_infos(zip_bytes)
+    exact_map = build_exact_name_map(infos, expected_ids)
+    if exact_map:
+        return {"status": "exact", "rename_map": exact_map, "image_count": len(infos)}
+
+    prefix_map = build_prefix_name_map(infos, expected_ids)
+    if prefix_map:
+        if not auto_rename:
+            examples = [f"{clean_zip_basename(src)} -> {dst}" for src, dst in list(prefix_map.items())[:5]]
+            return {
+                "status": "requires_rename_confirmation",
+                "message": "当前图片名称前缀匹配 prompt 文件中的图片名，可以自动格式化名称后上传。是否继续？"
+                + (f"\n示例：{'; '.join(examples)}" if examples else ""),
+                "image_count": len(infos),
+            }
+        return {"status": "renamed", "rename_map": prefix_map, "image_count": len(infos)}
+
+    diff = image_name_diff(infos, expected_ids)
+    raise AppError(
+        f"结果图图片名和 prompt 不匹配：缺少 {diff['missing_count']} 个，多出 {diff['extra_count']} 个"
+        + (f"；缺少示例: {', '.join(diff['missing'])}" if diff["missing"] else "")
+        + (f"；多出示例: {', '.join(diff['extra'])}" if diff["extra"] else "")
+    )
+
+
+def save_zip_images(target_path: str, zip_bytes: bytes, rename_map: Optional[dict] = None):
+    if os.path.exists(target_path):
+        shutil.rmtree(target_path)
+    os.makedirs(target_path, exist_ok=True)
+
+    rename_map = rename_map or {}
+    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            basename = clean_zip_basename(info.filename)
+            if not basename or basename.startswith(".") or "__MACOSX" in info.filename:
+                continue
+            stem, ext = os.path.splitext(basename)
+            if ext.lower() not in IMAGE_EXTENSIONS:
+                continue
+            output_name = rename_map.get(info.filename, basename)
+            with zf.open(info, "r") as src, open(os.path.join(target_path, output_name), "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+
+def upload_result_zip(task_type: str, version: str, scene: str, upload_file, auto_rename: bool = False) -> dict:
+    task_type = normalize_task_type(task_type)
+    if not version.strip():
+        raise AppError("模型版本不能为空")
+    if not scene.strip():
+        raise AppError("场景不能为空")
+    zip_bytes = read_upload_bytes(upload_file)
+    validation = validate_result_zip(task_type, scene, zip_bytes, auto_rename=auto_rename)
+    if validation["status"] == "requires_rename_confirmation":
+        return validation
+    result_root = get_task_config(task_type)["result_root"]
+    save_zip_images(os.path.join(result_root, version.strip(), scene.strip()), zip_bytes, validation.get("rename_map"))
+    return {"message": "Success", "status": validation["status"], "image_count": validation["image_count"]}
 
 
 def save_uploaded_zip(target_path: str, upload_file):
