@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UserRegister(BaseModel):
@@ -36,3 +36,20 @@ class VoteSubmit(BaseModel):
     bad_case_left: Optional[List[str]] = None
     bad_case_right: Optional[List[str]] = None
     duration_seconds: Optional[int] = None
+
+
+class ExportRequest(BaseModel):
+    task_type: str
+    v1: str
+    v2: str
+    scenes: List[str] = Field(default_factory=list)
+    dimensions: List[str] = Field(default_factory=list)
+    workers: List[str] = Field(default_factory=list)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    eval_modes: List[str] = Field(default_factory=lambda: ["full", "overall"])
+    result_filter: str = "all"
+    bad_case_filter: str = "all"
+    include_images: bool = False
+    include_bad_cases: bool = True
+    include_duration: bool = True
