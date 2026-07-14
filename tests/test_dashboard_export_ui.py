@@ -85,9 +85,42 @@ class DashboardExportUiTests(unittest.TestCase):
         self.assertIn("previewTimer", self.html)
         self.assertIn("previewController", self.html)
         self.assertIn("exportPreviewRequestId", self.html)
-        self.assertIn("if (requestId !== state.exportPreviewRequestId) return;", self.html)
+        self.assertIn("requestId !== state.exportPreviewRequestId", self.html)
         self.assertIn("exportButton.disabled = preview.overall === 0;", self.html)
         self.assertIn("setTimeout", self.function_source("scheduleExportPreview"))
+
+    def test_empty_required_export_choices_are_blocked_before_preview_or_download(self):
+        valid_request = {"scenes": ["portrait"], "workers": ["alice"], "eval_modes": ["full"]}
+        for field, message in (
+            ("scenes", "请至少选择一个场景"),
+            ("workers", "请至少选择一位评测人"),
+            ("eval_modes", "请至少选择一种评测模式"),
+        ):
+            request = dict(valid_request)
+            request[field] = []
+            with self.subTest(field=field):
+                self.assertEqual(self.run_function("exportSelectionError", [request]), message)
+
+        preview = self.function_source("previewExport")
+        download = self.function_source("downloadExport")
+        self.assertLess(preview.index("if (selectionError)"), preview.index('api("/api/export/preview"'))
+        self.assertLess(download.index("if (selectionError)"), download.index('fetch("/api/export"'))
+        invalid_render = self.function_source("renderInvalidExportSelection")
+        self.assertIn("previewOverall = 0", invalid_render)
+        self.assertIn("exportButton.disabled = true", invalid_render)
+
+    def test_download_session_tokens_prevent_old_download_from_mutating_new_modal(self):
+        self.assertIn("modalSessionId", self.html)
+        self.assertIn("downloadRequestId", self.html)
+        self.assertIn("function isCurrentExportDownload", self.html)
+        self.assertIn("state.modalSessionId += 1", self.function_source("closeExportModal"))
+        self.assertIn('button.textContent = "下载导出"', self.function_source("openExportModal"))
+        download = self.function_source("downloadExport")
+        self.assertIn("const sessionId = state.modalSessionId", download)
+        self.assertIn("const requestId = ++state.downloadRequestId", download)
+        self.assertIn("if (!isCurrentExportDownload(sessionId, requestId)) return;", download)
+        preview = self.function_source("previewExport")
+        self.assertIn("if (!state.exportPair.downloading)", preview)
 
     def test_rfc5987_filename_parser_prefers_extended_filename(self):
         self.assertEqual(
@@ -100,6 +133,10 @@ class DashboardExportUiTests(unittest.TestCase):
         self.assertEqual(
             self.run_function("extractDownloadFilename", ["attachment; filename=plain.xlsx", False]),
             "plain.xlsx",
+        )
+        self.assertEqual(
+            self.run_function("extractDownloadFilename", [r'attachment; filename="a\"b.xlsx"', False]),
+            'a"b.xlsx',
         )
         self.assertEqual(self.run_function("extractDownloadFilename", ["", True]), "评测导出.zip")
 

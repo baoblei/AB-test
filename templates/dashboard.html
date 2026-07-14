@@ -703,6 +703,8 @@
             exportPair: { v1: "", v2: "", options: null, previewTimer: null, previewController: null },
             exportPreviewRequestId: 0,
             exportOpenRequestId: 0,
+            modalSessionId: 0,
+            downloadRequestId: 0,
             exportPairs: []
         };
 
@@ -1295,14 +1297,27 @@
         async function openExportModal(v1, v2) {
             cancelExportPreview();
             const requestId = ++state.exportOpenRequestId;
-            state.exportPair = { v1, v2, options: null, previewTimer: null, previewController: null, previewOverall: null };
+            const sessionId = ++state.modalSessionId;
+            state.exportPair = {
+                v1,
+                v2,
+                options: null,
+                previewTimer: null,
+                previewController: null,
+                previewOverall: null,
+                sessionId,
+                downloading: false,
+                downloadRequestId: null
+            };
             resetExportForm();
             document.getElementById("export-task-type").textContent = state.taskType;
             document.getElementById("export-v1").textContent = v1;
             document.getElementById("export-v2").textContent = v2;
             document.getElementById("export-preview-count").textContent = "正在加载导出选项...";
             document.getElementById("export-message").textContent = "";
-            document.getElementById("export-download").disabled = true;
+            const button = document.getElementById("export-download");
+            button.textContent = "下载导出";
+            button.disabled = true;
             document.getElementById("export-modal").style.display = "flex";
 
             try {
@@ -1352,6 +1367,32 @@
             };
         }
 
+        function exportSelectionError(request) {
+            if (!request.scenes.length) return "请至少选择一个场景";
+            if (!request.workers.length) return "请至少选择一位评测人";
+            if (!request.eval_modes.length) return "请至少选择一种评测模式";
+            return "";
+        }
+
+        function renderInvalidExportSelection(message) {
+            state.exportPair.previewOverall = 0;
+            if (state.exportPair.downloading) return;
+            document.getElementById("export-preview-count").textContent = "Overall 0 条 · 去重图片 0 张";
+            const exportButton = document.getElementById("export-download");
+            exportButton.disabled = true;
+            document.getElementById("export-message").textContent = message;
+        }
+
+        function isCurrentExportSession(sessionId) {
+            return state.modalSessionId === sessionId && state.exportPair.sessionId === sessionId;
+        }
+
+        function isCurrentExportDownload(sessionId, requestId) {
+            return isCurrentExportSession(sessionId)
+                && state.exportPair.downloading
+                && state.exportPair.downloadRequestId === requestId;
+        }
+
         function scheduleExportPreview() {
             if (!state.exportPair.options) return;
             if (state.exportPair.previewTimer) clearTimeout(state.exportPair.previewTimer);
@@ -1376,29 +1417,40 @@
             }
             if (state.exportPair.previewController) state.exportPair.previewController.abort();
             const requestId = ++state.exportPreviewRequestId;
+            const sessionId = state.modalSessionId;
+            const request = collectExportRequest();
+            const selectionError = exportSelectionError(request);
+            if (selectionError) {
+                renderInvalidExportSelection(selectionError);
+                return;
+            }
             const controller = new AbortController();
             state.exportPair.previewController = controller;
-            document.getElementById("export-message").textContent = "正在更新预计数量...";
+            if (!state.exportPair.downloading) document.getElementById("export-message").textContent = "正在更新预计数量...";
             try {
                 const preview = await api("/api/export/preview", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(collectExportRequest()),
+                    body: JSON.stringify(request),
                     signal: controller.signal
                 }).then(response => response.json());
-                if (requestId !== state.exportPreviewRequestId) return;
+                if (requestId !== state.exportPreviewRequestId || !isCurrentExportSession(sessionId)) return;
                 state.exportPair.previewOverall = preview.overall;
                 renderExportPreview(preview);
-                const exportButton = document.getElementById("export-download");
-                exportButton.disabled = preview.overall === 0;
-                document.getElementById("export-message").textContent = preview.overall === 0 ? "当前筛选没有可导出的评测记录" : "";
+                if (!state.exportPair.downloading) {
+                    const exportButton = document.getElementById("export-download");
+                    exportButton.disabled = preview.overall === 0;
+                    document.getElementById("export-message").textContent = preview.overall === 0 ? "当前筛选没有可导出的评测记录" : "";
+                }
             } catch (error) {
-                if (error.name === "AbortError" || requestId !== state.exportPreviewRequestId) return;
+                if (error.name === "AbortError" || requestId !== state.exportPreviewRequestId || !isCurrentExportSession(sessionId)) return;
                 state.exportPair.previewOverall = 0;
-                document.getElementById("export-download").disabled = true;
-                document.getElementById("export-message").textContent = error.message;
+                if (!state.exportPair.downloading) {
+                    document.getElementById("export-download").disabled = true;
+                    document.getElementById("export-message").textContent = error.message;
+                }
             } finally {
-                if (requestId === state.exportPreviewRequestId) state.exportPair.previewController = null;
+                if (requestId === state.exportPreviewRequestId && isCurrentExportSession(sessionId)) state.exportPair.previewController = null;
             }
         }
 
@@ -1411,15 +1463,27 @@
                     return decodeURIComponent(extended[1].trim().replace(/^"|"$/g, ""));
                 } catch (_) {}
             }
-            const filename = contentDisposition.match(/(?:^|;)\s*filename\s*=\s*(?:"([^"]+)"|([^;]+))/i);
-            return filename ? (filename[1] || filename[2]).trim() : fallback;
+            const quotedFilename = contentDisposition.match(/(?:^|;)\s*filename\s*=\s*"((?:\\.|[^"\\])*)"/i);
+            if (quotedFilename) return quotedFilename[1].replace(/\\(.)/g, "$1");
+            const filename = contentDisposition.match(/(?:^|;)\s*filename\s*=\s*([^;]+)/i);
+            return filename ? filename[1].trim() : fallback;
         }
 
         async function downloadExport() {
             const button = document.getElementById("export-download");
-            if (button.disabled || !state.exportPair.options) return;
+            if (!state.exportPair.options) return;
+            const sessionId = state.modalSessionId;
+            if (!isCurrentExportSession(sessionId)) return;
             const request = collectExportRequest();
-            const originalText = button.textContent;
+            const selectionError = exportSelectionError(request);
+            if (selectionError) {
+                renderInvalidExportSelection(selectionError);
+                return;
+            }
+            if (button.disabled || state.exportPair.downloading) return;
+            const requestId = ++state.downloadRequestId;
+            state.exportPair.downloading = true;
+            state.exportPair.downloadRequestId = requestId;
             button.disabled = true;
             button.textContent = "正在生成...";
             document.getElementById("export-message").textContent = "正在生成下载文件...";
@@ -1437,7 +1501,10 @@
                     } catch (_) {}
                     throw new Error(message);
                 }
-                const url = URL.createObjectURL(await response.blob());
+                if (!isCurrentExportDownload(sessionId, requestId)) return;
+                const blob = await response.blob();
+                if (!isCurrentExportDownload(sessionId, requestId)) return;
+                const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.href = url;
                 link.download = extractDownloadFilename(response.headers.get("Content-Disposition"), request.include_images);
@@ -1445,11 +1512,14 @@
                 link.click();
                 link.remove();
                 URL.revokeObjectURL(url);
-                document.getElementById("export-message").textContent = "下载已开始";
+                if (isCurrentExportDownload(sessionId, requestId)) document.getElementById("export-message").textContent = "下载已开始";
             } catch (error) {
-                document.getElementById("export-message").textContent = error.message;
+                if (isCurrentExportDownload(sessionId, requestId)) document.getElementById("export-message").textContent = error.message;
             } finally {
-                button.textContent = originalText;
+                if (!isCurrentExportDownload(sessionId, requestId)) return;
+                state.exportPair.downloading = false;
+                state.exportPair.downloadRequestId = null;
+                button.textContent = "下载导出";
                 button.disabled = state.exportPair.previewOverall === 0;
             }
         }
@@ -1465,6 +1535,9 @@
         function closeExportModal() {
             cancelExportPreview();
             state.exportOpenRequestId += 1;
+            state.modalSessionId += 1;
+            state.exportPair.downloading = false;
+            state.exportPair.downloadRequestId = null;
             document.getElementById("export-modal").style.display = "none";
         }
 
