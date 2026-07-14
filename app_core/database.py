@@ -1,6 +1,15 @@
 import sqlite3
 
 from .config import DB_PATH
+from .time_utils import legacy_utc_to_beijing_iso, now_beijing_iso
+
+
+TIME_MIGRATION_KEY = "beijing_time_v1"
+BUSINESS_TIME_COLUMNS = {
+    "users": ("created_at", "last_login"),
+    "operation_logs": ("timestamp",),
+    "results_log": ("timestamp",),
+}
 
 
 def connect(row_factory: bool = False) -> sqlite3.Connection:
@@ -15,6 +24,38 @@ def ensure_column(cursor: sqlite3.Cursor, table_name: str, column_name: str, def
     existing = {row[1] for row in cursor.fetchall()}
     if column_name not in existing:
         cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+
+def migrate_business_times(conn: sqlite3.Connection) -> dict:
+    conn.execute("CREATE TABLE IF NOT EXISTS app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    if conn.execute("SELECT 1 FROM app_metadata WHERE key=?", (TIME_MIGRATION_KEY,)).fetchone():
+        return {"updated": 0, "invalid": 0}
+
+    updated = 0
+    invalid = 0
+    for table, columns in BUSINESS_TIME_COLUMNS.items():
+        table_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+        if not table_exists:
+            continue
+        for column in columns:
+            for row_id, value in conn.execute(
+                f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL"
+            ):
+                converted = legacy_utc_to_beijing_iso(value)
+                if converted == value:
+                    if "T" not in value:
+                        invalid += 1
+                    continue
+                conn.execute(f"UPDATE {table} SET {column}=? WHERE id=?", (converted, row_id))
+                updated += 1
+    conn.execute(
+        "INSERT INTO app_metadata (key, value) VALUES (?, ?)",
+        (TIME_MIGRATION_KEY, now_beijing_iso()),
+    )
+    conn.commit()
+    return {"updated": updated, "invalid": invalid}
 
 
 def init_db():
@@ -138,6 +179,10 @@ def init_db():
             "INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)",
             ("admin", hash_password("admin123"), "admin", "admin@example.com"),
         )
+
+    migration_result = migrate_business_times(conn)
+    if migration_result["invalid"]:
+        print(f"Beijing time migration left {migration_result['invalid']} invalid values unchanged.")
 
     conn.commit()
     conn.close()
