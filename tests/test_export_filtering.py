@@ -64,6 +64,18 @@ class ExportFilteringTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in filter_rows(self.rows, request, "overall")], [2])
         self.assertEqual([row["id"] for row in filter_rows(self.rows, request, "aesthetic")], [1])
 
+    def test_filter_rows_enforces_base_row_invariants_for_mixed_input(self):
+        rows = [
+            make_row(1),
+            make_row(2, task_type="TI2I"),
+            make_row(3, v_a="A", v_b="C"),
+            make_row(4, v_a="B", v_b="A"),
+            make_row(5, skipped=1),
+        ]
+        request = ExportRequest(task_type="t2i", v1="B", v2="A")
+
+        self.assertEqual([row["id"] for row in filter_rows(rows, request, "overall")], [1])
+
     def test_worker_time_mode_and_bad_case_filters_combine(self):
         rows = [
             make_row(

@@ -25,12 +25,12 @@ def canonical_model_pair(v1: str, v2: str) -> tuple[str, str]:
     return tuple(sorted((v1, v2)))
 
 
-def validate_export_request(request: ExportRequest) -> str:
+def validate_export_request(request: ExportRequest) -> tuple[str, str, str]:
     task_type = normalize_task_type(request.task_type)
     if task_type not in TASK_CONFIGS:
         raise AppError("无效任务类型")
 
-    canonical_models(request)
+    v_a, v_b = canonical_models(request)
     valid_dimensions = set(TASK_CONFIGS[task_type]["eval_dims"])
     if any(dimension not in valid_dimensions for dimension in request.dimensions):
         raise AppError("无效导出维度")
@@ -46,11 +46,12 @@ def validate_export_request(request: ExportRequest) -> str:
         raise AppError("导出时间必须为北京时间 ISO 格式")
     if request.start_time and request.end_time and request.start_time > request.end_time:
         raise AppError("开始时间不能晚于结束时间")
-    return task_type
+    return task_type, v_a, v_b
 
 
-def expected_result(request: ExportRequest) -> Optional[str]:
-    v_a, v_b = canonical_models(request)
+def expected_result(request: ExportRequest, v_a: Optional[str] = None, v_b: Optional[str] = None) -> Optional[str]:
+    if v_a is None or v_b is None:
+        v_a, v_b = canonical_models(request)
     return {"all": None, "a": v_a, "tie": "tie", "b": v_b}[request.result_filter]
 
 
@@ -59,13 +60,20 @@ def row_has_bad_case(row) -> bool:
 
 
 def filter_rows(rows: Iterable, request: ExportRequest, dimension: str) -> list:
-    task_type = validate_export_request(request)
+    task_type, v_a, v_b = validate_export_request(request)
     if dimension != "overall" and dimension not in TASK_CONFIGS[task_type]["eval_dims"]:
         raise AppError("无效导出维度")
 
-    wanted_result = expected_result(request)
+    wanted_result = expected_result(request, v_a, v_b)
     result = []
     for row in rows:
+        if (
+            row["task_type"] != task_type
+            or row["v_a"] != v_a
+            or row["v_b"] != v_b
+            or row["skipped"]
+        ):
+            continue
         mode = row["eval_mode"] or "full"
         if request.scenes and row["scene"] not in request.scenes:
             continue
@@ -127,8 +135,7 @@ def get_export_options(task_type: str, v1: str, v2: str) -> dict:
 
 
 def preview_export(request: ExportRequest) -> dict:
-    task_type = validate_export_request(request)
-    v_a, v_b = canonical_models(request)
+    task_type, v_a, v_b = validate_export_request(request)
     rows = fetch_base_rows(task_type, v_a, v_b)
     overall_rows = filter_rows(rows, request, "overall")
     dimension_rows = {
