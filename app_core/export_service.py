@@ -71,7 +71,7 @@ def filter_rows(rows: Iterable, request: ExportRequest, dimension: str) -> list:
             row["task_type"] != task_type
             or row["v_a"] != v_a
             or row["v_b"] != v_b
-            or row["skipped"]
+            or row["skipped"] != 0
         ):
             continue
         mode = row["eval_mode"] or "full"

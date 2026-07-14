@@ -71,6 +71,7 @@ class ExportFilteringTests(unittest.TestCase):
             make_row(3, v_a="A", v_b="C"),
             make_row(4, v_a="B", v_b="A"),
             make_row(5, skipped=1),
+            make_row(6, skipped=None),
         ]
         request = ExportRequest(task_type="t2i", v1="B", v2="A")
 
