@@ -1,7 +1,7 @@
 import sqlite3
 
 from .config import DB_PATH
-from .time_utils import legacy_utc_to_beijing_iso, now_beijing_iso
+from .time_utils import is_canonical_beijing_iso, legacy_utc_to_beijing_iso, now_beijing_iso
 
 
 TIME_MIGRATION_KEY = "beijing_time_v1"
@@ -45,7 +45,7 @@ def migrate_business_times(conn: sqlite3.Connection) -> dict:
             ):
                 converted = legacy_utc_to_beijing_iso(value)
                 if converted == value:
-                    if "T" not in value:
+                    if not is_canonical_beijing_iso(value):
                         invalid += 1
                     continue
                 conn.execute(f"UPDATE {table} SET {column}=? WHERE id=?", (converted, row_id))
