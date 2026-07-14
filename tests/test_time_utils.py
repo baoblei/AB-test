@@ -47,4 +47,3 @@ class BeijingTimeTests(unittest.TestCase):
             conn.execute("SELECT timestamp FROM results_log WHERE id=1").fetchone()[0],
             "2026-07-15T00:20:00+08:00",
         )
-
