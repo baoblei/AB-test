@@ -392,6 +392,27 @@ def get_result_image_url(task_type: str, version: str, scene: str, filename: str
     return f"/images/{rel}"
 
 
+def get_result_image_path(task_type: str, version: str, scene: str, filename: str) -> Optional[str]:
+    task_type = validate_storage_component(normalize_task_type(task_type), "任务类型")
+    version = validate_storage_component(version, "模型")
+    scene = validate_storage_component(scene, "场景")
+    filename = validate_storage_component(filename, "图片名")
+    path = os.path.join(get_scene_path(task_type, version, scene), filename)
+    return path if os.path.isfile(path) else None
+
+
+def get_ref_image_path(task_type: str, scene: str, filename: str) -> Optional[str]:
+    task_type = validate_storage_component(normalize_task_type(task_type), "任务类型")
+    scene = validate_storage_component(scene, "场景")
+    filename = validate_storage_component(filename, "图片名")
+    roots = [get_ref_root(task_type), REF_IMAGE_DIR]
+    for root in roots:
+        path = os.path.join(root, scene, filename)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def validate_storage_component(value: str, label: str) -> str:
     component = value.strip() if isinstance(value, str) else ""
     if (

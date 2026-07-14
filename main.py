@@ -1,9 +1,11 @@
+import shutil
 from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 from app_core.admin_service import admin_logs as admin_logs_service
 from app_core.admin_service import admin_stats as admin_stats_service
@@ -19,7 +21,8 @@ from app_core.dashboard_service import ranking as ranking_service
 from app_core.dashboard_service import worker_stats as worker_stats_service
 from app_core.database import init_db, reset_working_tasks
 from app_core.errors import AppError
-from app_core.schemas import PasswordChange, UserLogin, UserRegister, VoteSubmit
+from app_core.export_service import create_export_artifact, get_export_options, preview_export
+from app_core.schemas import ExportRequest, PasswordChange, UserLogin, UserRegister, VoteSubmit
 from app_core.storage import compare_scene_resolution_stats, get_common_scenes, get_dataset_scenes, get_prompt_text, get_versions_for_type, upload_dataset, upload_ref_zip, upload_result_zip
 from app_core.task_service import get_eval_mode_status as get_eval_mode_status_service
 from app_core.task_service import get_next_task, get_progress as get_progress_service
@@ -216,6 +219,27 @@ def bad_case_details(
 @app.get("/api/export")
 def export_data(format: str = "json", task_type: str = "T2I", v1: Optional[str] = None, v2: Optional[str] = None, scene: Optional[str] = None):
     return export_results(format, task_type, v1, v2, scene)
+
+
+@app.get("/api/export_options")
+def export_options(task_type: str, v1: str, v2: str):
+    return get_export_options(task_type, v1, v2)
+
+
+@app.post("/api/export/preview")
+def export_preview(payload: ExportRequest):
+    return preview_export(payload)
+
+
+@app.post("/api/export")
+def export_file(payload: ExportRequest):
+    artifact = create_export_artifact(payload)
+    return FileResponse(
+        artifact.path,
+        media_type=artifact.media_type,
+        filename=artifact.filename,
+        background=BackgroundTask(shutil.rmtree, artifact.cleanup_dir, ignore_errors=True),
+    )
 
 
 @app.get("/api/ranking")

@@ -1,3 +1,8 @@
+import os
+import shutil
+import tempfile
+import zipfile
+from dataclasses import dataclass
 from io import BytesIO
 from typing import Iterable, Optional
 
@@ -10,7 +15,7 @@ from .config import DIM_LABELS, TASK_CONFIGS, dim_payload, normalize_task_type
 from .database import connect
 from .errors import AppError
 from .schemas import ExportRequest
-from .storage import get_prompt_text
+from .storage import get_prompt_text, get_ref_image_path, get_result_image_path, validate_storage_component
 from .time_utils import is_canonical_beijing_iso, now_beijing_iso
 
 
@@ -28,6 +33,16 @@ HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 WRAPPED_ALIGNMENT = Alignment(vertical="top", wrap_text=True)
 EXCEL_FORMULA_PREFIXES = ("=", "+", "-", "@")
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+ZIP_MEDIA_TYPE = "application/zip"
+
+
+@dataclass
+class ExportArtifact:
+    path: str
+    filename: str
+    media_type: str
+    cleanup_dir: str
 
 
 def canonical_models(request: ExportRequest) -> tuple[str, str]:
@@ -329,17 +344,22 @@ def _detail_values(
     v_a: str,
     v_b: str,
     prompt_cache: dict[tuple[str, str, str], str],
+    image_manifest: Optional[dict],
 ) -> list:
     prompt_key = (task_type, row["scene"], row["filename"])
     if prompt_key not in prompt_cache:
         prompt_cache[prompt_key] = get_prompt_text(*prompt_key)
+    image_info = (image_manifest or {}).get((row["scene"], row["filename"]), {})
+    a_image = image_info.get(v_a, {})
+    b_image = image_info.get(v_b, {})
     values = [
         task_type, v_a, v_b, row["scene"], row["filename"], prompt_cache[prompt_key],
         result_label(row[dimension], v_a, v_b), row["worker"], row["eval_mode"] or "full", row["timestamp"],
-        "", "未导出", "", "未导出",
+        a_image.get("path", ""), a_image.get("status", "未导出"), b_image.get("path", ""), b_image.get("status", "未导出"),
     ]
     if task_type == "TI2I":
-        values.extend(["", "未导出"])
+        ref_image = image_info.get("ref", {})
+        values.extend([ref_image.get("path", ""), ref_image.get("status", "未导出")])
     if request.include_duration:
         values.append(row["duration_seconds"])
     if request.include_bad_cases:
@@ -363,11 +383,12 @@ def _write_detail_sheet(
     v_a: str,
     v_b: str,
     prompt_cache: dict[tuple[str, str, str], str],
+    image_manifest: Optional[dict],
 ) -> None:
     headers = _detail_headers(dimension, request, task_type, v_a, v_b)
     sheet.append([excel_safe_text(header) for header in headers])
     for row in rows:
-        values = _detail_values(row, dimension, request, task_type, v_a, v_b, prompt_cache)
+        values = _detail_values(row, dimension, request, task_type, v_a, v_b, prompt_cache, image_manifest)
         sheet.append([excel_safe_text(value) for value in values])
     _style_header(sheet, 1, len(headers))
     sheet.auto_filter.ref = sheet.dimensions
@@ -378,7 +399,12 @@ def _write_detail_sheet(
     )
 
 
-def build_workbook(request: ExportRequest, rows: Iterable, generated_at: Optional[str] = None) -> Workbook:
+def build_workbook(
+    request: ExportRequest,
+    rows: Iterable,
+    generated_at: Optional[str] = None,
+    image_manifest: Optional[dict] = None,
+) -> Workbook:
     task_type, v_a, v_b = validate_export_request(request)
     base_rows = list(rows)
     workbook = Workbook()
@@ -402,6 +428,7 @@ def build_workbook(request: ExportRequest, rows: Iterable, generated_at: Optiona
             v_a,
             v_b,
             prompt_cache,
+            image_manifest,
         )
     return workbook
 
@@ -410,3 +437,97 @@ def workbook_bytes(workbook: Workbook) -> bytes:
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()
+
+
+def _archive_path(scene: str, model: str, filename: str) -> str:
+    return "/".join(("images", scene, model, filename))
+
+
+def build_image_manifest(
+    request: ExportRequest,
+    selected_rows: Iterable,
+    result_path_resolver=get_result_image_path,
+    ref_path_resolver=get_ref_image_path,
+) -> dict:
+    task_type, v_a, v_b = validate_export_request(request)
+    manifest = {}
+    for row in selected_rows:
+        scene = validate_storage_component(row["scene"], "场景")
+        filename = validate_storage_component(row["filename"], "图片名")
+        key = (scene, filename)
+        if key in manifest:
+            continue
+        entry = {}
+        for model in (v_a, v_b):
+            model = validate_storage_component(model, "模型")
+            source_path = result_path_resolver(task_type, model, scene, filename)
+            entry[model] = {
+                "path": _archive_path(scene, model, filename),
+                "status": "已导出" if source_path else "文件不存在",
+                "source_path": source_path,
+            }
+        if task_type == "TI2I":
+            source_path = ref_path_resolver(task_type, scene, filename)
+            entry["ref"] = {
+                "path": "/".join(("images", scene, "ref", filename)),
+                "status": "已导出" if source_path else "文件不存在",
+                "source_path": source_path,
+            }
+        manifest[key] = entry
+    return manifest
+
+
+def build_archive(
+    request: ExportRequest,
+    workbook_data: bytes,
+    selected_rows: Iterable,
+    result_path_resolver=get_result_image_path,
+    ref_path_resolver=get_ref_image_path,
+    archive_path: Optional[str] = None,
+    image_manifest: Optional[dict] = None,
+) -> str:
+    task_type, v_a, v_b = validate_export_request(request)
+    manifest = image_manifest or build_image_manifest(request, selected_rows, result_path_resolver, ref_path_resolver)
+    if archive_path is None:
+        descriptor, archive_path = tempfile.mkstemp(prefix="ab-test-export-", suffix=".zip")
+        os.close(descriptor)
+    with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("评测结果.xlsx", workbook_data)
+        for entry in manifest.values():
+            for model in (v_a, v_b):
+                image = entry[model]
+                if image["source_path"]:
+                    archive.write(image["source_path"], image["path"])
+            if task_type == "TI2I" and entry["ref"]["source_path"]:
+                archive.write(entry["ref"]["source_path"], entry["ref"]["path"])
+    return archive_path
+
+
+def create_export_artifact(request: ExportRequest) -> ExportArtifact:
+    task_type, v_a, v_b = validate_export_request(request)
+    rows = fetch_base_rows(task_type, v_a, v_b)
+    overall_rows = filter_rows(rows, request, "overall")
+    if not overall_rows:
+        raise AppError("当前筛选条件下没有符合条件的评测记录，无法生成导出文件")
+    dimension_rows = [filter_rows(rows, request, dimension) for dimension in request.dimensions]
+    selected_rows = overall_rows + [row for items in dimension_rows for row in items]
+    cleanup_dir = tempfile.mkdtemp(prefix="ab-test-export-")
+    try:
+        manifest = build_image_manifest(request, selected_rows) if request.include_images else None
+        workbook_data = workbook_bytes(build_workbook(request, rows, image_manifest=manifest))
+        generated_at = now_beijing_iso().replace(":", "-").replace("+", "_")
+        task_label = validate_storage_component(task_type, "任务类型")
+        a_label = validate_storage_component(v_a, "模型")
+        b_label = validate_storage_component(v_b, "模型")
+        stem = f"评测导出_{task_label}_{a_label}_vs_{b_label}_{generated_at}"
+        if not request.include_images:
+            path = os.path.join(cleanup_dir, f"{stem}.xlsx")
+            with open(path, "wb") as output:
+                output.write(workbook_data)
+            return ExportArtifact(path, os.path.basename(path), XLSX_MEDIA_TYPE, cleanup_dir)
+        path = os.path.join(cleanup_dir, f"{stem}.zip")
+        build_archive(request, workbook_data, selected_rows, archive_path=path, image_manifest=manifest)
+        return ExportArtifact(path, os.path.basename(path), ZIP_MEDIA_TYPE, cleanup_dir)
+    except Exception:
+        shutil.rmtree(cleanup_dir, ignore_errors=True)
+        raise
