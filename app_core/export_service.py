@@ -27,6 +27,7 @@ DETAIL_SHEET_NAMES = {
 HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 WRAPPED_ALIGNMENT = Alignment(vertical="top", wrap_text=True)
+EXCEL_FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 
 def canonical_models(request: ExportRequest) -> tuple[str, str]:
@@ -206,6 +207,12 @@ def result_label(value: str, v_a: str, v_b: str) -> str:
     return value or ""
 
 
+def excel_safe_text(value):
+    if isinstance(value, str) and value.startswith(EXCEL_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
 def _selected_values(values: list[str], labels: Optional[dict] = None) -> str:
     if not values:
         return "全部"
@@ -225,7 +232,7 @@ def _style_header(sheet, row: int, columns: int) -> None:
 
 
 def _fit_columns(sheet, wrapped_headers: Optional[set[str]] = None) -> None:
-    wrapped_headers = wrapped_headers or set()
+    wrapped_headers = {excel_safe_text(header) for header in wrapped_headers or set()}
     for column in range(1, sheet.max_column + 1):
         header = sheet.cell(1, column).value
         max_length = max(len(str(sheet.cell(row, column).value or "")) for row in range(1, sheet.max_row + 1))
@@ -250,7 +257,7 @@ def _write_overall_metadata(sheet, request: ExportRequest, task_type: str, v_a: 
     ]
     for row_number, values in enumerate(metadata, start=2):
         for column, value in enumerate(values, start=1):
-            sheet.cell(row_number, column, value)
+            sheet.cell(row_number, column, excel_safe_text(value))
         for column in range(1, len(values) + 1, 2):
             sheet.cell(row_number, column).font = Font(bold=True)
 
@@ -282,13 +289,13 @@ def _write_overall_sheet(sheet, request: ExportRequest, rows: list, task_type: s
         f"{v_a} 抑制比", f"{v_b} 抑制比", f"{v_a} 坏例数", f"{v_a} 坏例率", f"{v_b} 坏例数", f"{v_b} 坏例率",
     ]
     for column, header in enumerate(headers, start=1):
-        sheet.cell(11, column, header)
+        sheet.cell(11, column, excel_safe_text(header))
     for column, value in enumerate(_summary_values("全部场景", rows, v_a, v_b), start=1):
-        sheet.cell(12, column, value)
+        sheet.cell(12, column, excel_safe_text(value) if column == 1 else value)
     for row_number, scene in enumerate(sorted({row["scene"] for row in rows}), start=13):
         scene_rows = [row for row in rows if row["scene"] == scene]
         for column, value in enumerate(_summary_values(scene, scene_rows, v_a, v_b), start=1):
-            sheet.cell(row_number, column, value)
+            sheet.cell(row_number, column, excel_safe_text(value) if column == 1 else value)
     _style_header(sheet, 11, len(headers))
     for row in range(12, sheet.max_row + 1):
         for column in (4, 6, 8, 12, 14):
@@ -314,9 +321,20 @@ def _detail_headers(dimension: str, request: ExportRequest, task_type: str, v_a:
     return headers
 
 
-def _detail_values(row, dimension: str, request: ExportRequest, task_type: str, v_a: str, v_b: str) -> list:
+def _detail_values(
+    row,
+    dimension: str,
+    request: ExportRequest,
+    task_type: str,
+    v_a: str,
+    v_b: str,
+    prompt_cache: dict[tuple[str, str, str], str],
+) -> list:
+    prompt_key = (task_type, row["scene"], row["filename"])
+    if prompt_key not in prompt_cache:
+        prompt_cache[prompt_key] = get_prompt_text(*prompt_key)
     values = [
-        task_type, v_a, v_b, row["scene"], row["filename"], get_prompt_text(task_type, row["scene"], row["filename"]),
+        task_type, v_a, v_b, row["scene"], row["filename"], prompt_cache[prompt_key],
         result_label(row[dimension], v_a, v_b), row["worker"], row["eval_mode"] or "full", row["timestamp"],
         "", "未导出", "", "未导出",
     ]
@@ -336,15 +354,28 @@ def _detail_values(row, dimension: str, request: ExportRequest, task_type: str, 
     return values
 
 
-def _write_detail_sheet(sheet, dimension: str, request: ExportRequest, rows: list, task_type: str, v_a: str, v_b: str) -> None:
+def _write_detail_sheet(
+    sheet,
+    dimension: str,
+    request: ExportRequest,
+    rows: list,
+    task_type: str,
+    v_a: str,
+    v_b: str,
+    prompt_cache: dict[tuple[str, str, str], str],
+) -> None:
     headers = _detail_headers(dimension, request, task_type, v_a, v_b)
-    sheet.append(headers)
+    sheet.append([excel_safe_text(header) for header in headers])
     for row in rows:
-        sheet.append(_detail_values(row, dimension, request, task_type, v_a, v_b))
+        values = _detail_values(row, dimension, request, task_type, v_a, v_b, prompt_cache)
+        sheet.append([excel_safe_text(value) for value in values])
     _style_header(sheet, 1, len(headers))
     sheet.auto_filter.ref = sheet.dimensions
     sheet.freeze_panes = "A2"
-    _fit_columns(sheet, {"Prompt", f"{v_a} 坏例标签", f"{v_a} 坏例类别", f"{v_b} 坏例标签", f"{v_b} 坏例类别"})
+    _fit_columns(
+        sheet,
+        {"Prompt", f"{v_a} 坏例标签", f"{v_a} 坏例类别", f"{v_b} 坏例标签", f"{v_b} 坏例类别"},
+    )
 
 
 def build_workbook(request: ExportRequest, rows: Iterable, generated_at: Optional[str] = None) -> Workbook:
@@ -357,11 +388,21 @@ def build_workbook(request: ExportRequest, rows: Iterable, generated_at: Optiona
     _write_overall_sheet(overall, request, overall_rows, task_type, v_a, v_b, generated_at or now_beijing_iso())
 
     requested_dimensions = set(request.dimensions)
+    prompt_cache = {}
     for dimension in TASK_CONFIGS[task_type]["eval_dims"]:
         if dimension not in requested_dimensions:
             continue
         sheet = workbook.create_sheet(DETAIL_SHEET_NAMES[dimension])
-        _write_detail_sheet(sheet, dimension, request, filter_rows(base_rows, request, dimension), task_type, v_a, v_b)
+        _write_detail_sheet(
+            sheet,
+            dimension,
+            request,
+            filter_rows(base_rows, request, dimension),
+            task_type,
+            v_a,
+            v_b,
+            prompt_cache,
+        )
     return workbook
 
 

@@ -127,6 +127,92 @@ class ExportWorkbookTests(unittest.TestCase):
         loaded = load_workbook(BytesIO(workbook_bytes(workbook)))
         self.assertEqual(loaded.sheetnames, ["Overall", "保真度明细"])
 
+    @patch("app_core.export_service.get_prompt_text", return_value="=SUM(1, 1)")
+    def test_external_text_is_not_written_as_excel_formula(self, _prompt):
+        request = ExportRequest(
+            task_type="T2I",
+            v1="=model-b",
+            v2="+model-a",
+            scenes=["-scene"],
+            workers=["@worker"],
+            dimensions=["aesthetic"],
+        )
+        rows = [
+            make_row(
+                1,
+                v_a="+model-a",
+                v_b="=model-b",
+                overall="+model-a",
+                aesthetic="=model-b",
+                scene="-scene",
+                filename="@image.png",
+                worker="@worker",
+            )
+        ]
+
+        loaded = load_workbook(BytesIO(workbook_bytes(build_workbook(request, rows))), data_only=False)
+
+        for sheet in loaded.worksheets:
+            for row in sheet.iter_rows():
+                for cell in row:
+                    self.assertNotEqual(cell.data_type, "f", f"{sheet.title}!{cell.coordinate}")
+        self.assertEqual(loaded["Overall"]["B4"].value, "'+model-a vs =model-b")
+        self.assertEqual(loaded["Overall"]["B5"].value, "'-scene")
+        detail = loaded["美学明细"]
+        headers = [cell.value for cell in detail[1]]
+        self.assertEqual(detail.cell(2, headers.index("模型 A") + 1).value, "'+model-a")
+        self.assertEqual(detail.cell(2, headers.index("模型 B") + 1).value, "'=model-b")
+        self.assertEqual(detail.cell(2, headers.index("场景") + 1).value, "'-scene")
+        self.assertEqual(detail.cell(2, headers.index("图片名") + 1).value, "'@image.png")
+        self.assertEqual(detail.cell(2, headers.index("评测人") + 1).value, "'@worker")
+        self.assertEqual(detail.cell(2, headers.index("Prompt") + 1).value, "'=SUM(1, 1)")
+
+    @patch("app_core.export_service.get_prompt_text", return_value="cached prompt")
+    def test_build_workbook_caches_prompt_by_task_scene_and_filename(self, prompt_lookup):
+        request = ExportRequest(task_type="T2I", v1="A", v2="B", dimensions=["aesthetic", "logic"])
+        rows = [
+            make_row(1, filename="shared.png", aesthetic="A"),
+            make_row(2, filename="shared.png", aesthetic="B", worker="bob"),
+        ]
+
+        build_workbook(request, rows)
+
+        prompt_lookup.assert_called_once_with("T2I", "city", "shared.png")
+
+    def test_overall_statistics_cover_empty_winners_ties_and_single_side_bad_cases(self):
+        request = ExportRequest(task_type="T2I", v1="A", v2="B")
+        cases = [
+            ("empty", [], [0, 0, 0, 0, 0, 0, 0, "-", "-", 0, 0, 0, 0]),
+            ("a_wins", [make_row(1, overall="A")], [1, 1, 1, 0, 0, 0, 0, "∞", 0, 0, 0, 0, 0]),
+            ("b_wins", [make_row(1, overall="B")], [1, 0, 0, 0, 0, 1, 1, 0, "∞", 0, 0, 0, 0]),
+            (
+                "ties",
+                [make_row(1, overall="tie"), make_row(2, overall="tie")],
+                [2, 0, 0, 2, 1, 0, 0, 1, 1, 0, 0, 0, 0],
+            ),
+            (
+                "a_bad_only",
+                [make_row(1, overall="tie", bad_case_tags_a='["模糊失焦"]')],
+                [1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0],
+            ),
+        ]
+
+        for name, rows, expected in cases:
+            with self.subTest(name=name):
+                workbook = build_workbook(request, rows)
+                overall = workbook["Overall"]
+                values = [overall.cell(12, column).value for column in range(2, 15)]
+                self.assertEqual(values, expected)
+                for column in (4, 6, 8, 12, 14):
+                    self.assertEqual(overall.cell(12, column).number_format, "0.0%")
+
+                loaded = load_workbook(BytesIO(workbook_bytes(workbook)), data_only=False)["Overall"]
+                for column in (2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14):
+                    self.assertEqual(loaded.cell(12, column).data_type, "n")
+                for column in (9, 10):
+                    expected_type = "s" if isinstance(overall.cell(12, column).value, str) else "n"
+                    self.assertEqual(loaded.cell(12, column).data_type, expected_type)
+
 
 if __name__ == "__main__":
     unittest.main()
