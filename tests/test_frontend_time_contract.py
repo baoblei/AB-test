@@ -260,6 +260,104 @@ return { load, error, timeout: { calls: timeoutImage.calls, listeners: timeoutIm
             "timeout": {"calls": 0, "listeners": 0, "timeouts": 0},
         })
 
+    def test_runtime_ti2i_waits_for_all_incomplete_images_before_starting_timer(self):
+        result = self.run_runtime_scenario(r'''
+const reference = makeImage();
+const left = makeImage();
+const right = makeImage();
+const loading = loadNextTask();
+requests[0].resolve({ task_id: "ti2i", prompt: "prompt", images: [reference, left, right] });
+await flush();
+const before = {
+    starts: intervalStarts,
+    timer: nodes.timer.textContent,
+    startTime,
+    listeners: [reference, left, right].map(image => image.listenerCount()),
+    timeouts: timeouts.size
+};
+reference.fire("load");
+await flush();
+const afterFirst = {
+    starts: intervalStarts,
+    timer: nodes.timer.textContent,
+    listeners: [reference, left, right].map(image => image.listenerCount()),
+    timeouts: timeouts.size
+};
+left.fire("error");
+await flush();
+const afterSecond = {
+    starts: intervalStarts,
+    timer: nodes.timer.textContent,
+    listeners: [reference, left, right].map(image => image.listenerCount()),
+    timeouts: timeouts.size
+};
+fireTimeouts();
+await loading;
+return {
+    before,
+    afterFirst,
+    afterSecond,
+    afterAll: {
+        starts: intervalStarts,
+        timer: nodes.timer.textContent,
+        startTime,
+        listeners: [reference, left, right].map(image => image.listenerCount()),
+        timeouts: timeouts.size
+    }
+};
+''')
+        self.assertEqual(result["before"], {
+            "starts": 0,
+            "timer": "00:00",
+            "startTime": None,
+            "listeners": [2, 2, 2],
+            "timeouts": 3,
+        })
+        self.assertEqual(result["afterFirst"], {
+            "starts": 0,
+            "timer": "00:00",
+            "listeners": [0, 2, 2],
+            "timeouts": 2,
+        })
+        self.assertEqual(result["afterSecond"], {
+            "starts": 0,
+            "timer": "00:00",
+            "listeners": [0, 0, 2],
+            "timeouts": 1,
+        })
+        self.assertEqual(result["afterAll"], {
+            "starts": 1,
+            "timer": "00:00",
+            "startTime": 1000,
+            "listeners": [0, 0, 0],
+            "timeouts": 0,
+        })
+
+    def test_runtime_load_next_task_clears_running_timer_for_pending_finished_and_error(self):
+        result = self.run_runtime_scenario(r'''
+function startRunningTimer() {
+    timerInterval = setInterval(() => {}, 1000);
+    startTime = 500;
+    nodes.timer.textContent = "01:23";
+}
+startRunningTimer();
+const pending = loadNextTask();
+const afterPending = { timer: nodes.timer.textContent, startTime, activeIntervals: intervals.size };
+requests[0].resolve({ status: "finished" });
+await pending;
+const afterFinished = { timer: nodes.timer.textContent, startTime, activeIntervals: intervals.size, reloads: events.filter(event => event === "reload").length };
+startRunningTimer();
+const failed = loadNextTask();
+const afterErrorPending = { timer: nodes.timer.textContent, startTime, activeIntervals: intervals.size };
+requests[1].reject(new Error("network"));
+await failed;
+return { afterPending, afterFinished, afterErrorPending, afterError: { timer: nodes.timer.textContent, startTime, activeIntervals: intervals.size, errors: events.filter(event => event === "error").length } };
+''')
+        self.assertEqual(result["afterPending"], {"timer": "00:00", "startTime": None, "activeIntervals": 0})
+        self.assertEqual(result["afterFinished"], {"timer": "00:00", "startTime": None, "activeIntervals": 0, "reloads": 1})
+        self.assertEqual(result["afterErrorPending"], {"timer": "00:00", "startTime": None, "activeIntervals": 0})
+        self.assertEqual(result["afterError"], {"timer": "00:00", "startTime": None, "activeIntervals": 0, "errors": 1})
+
     def test_runtime_finished_and_fetch_error_leave_timer_reset(self):
         result = self.run_runtime_scenario(r'''
 const finished = loadNextTask();
