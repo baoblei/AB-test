@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -21,7 +20,7 @@ from app_core.dashboard_service import worker_stats as worker_stats_service
 from app_core.database import init_db, reset_working_tasks
 from app_core.errors import AppError
 from app_core.schemas import PasswordChange, UserLogin, UserRegister, VoteSubmit
-from app_core.storage import compare_scene_resolution_stats, get_common_scenes, get_dataset_scenes, get_prompt_text, get_ref_root, get_versions_for_type, save_uploaded_zip, upload_dataset, upload_result_zip, validate_storage_component
+from app_core.storage import compare_scene_resolution_stats, get_common_scenes, get_dataset_scenes, get_prompt_text, get_versions_for_type, upload_dataset, upload_ref_zip, upload_result_zip
 from app_core.task_service import get_eval_mode_status as get_eval_mode_status_service
 from app_core.task_service import get_next_task, get_progress as get_progress_service
 from app_core.task_service import skip_task as skip_task_service
@@ -274,10 +273,7 @@ async def upload_ref(
     file: UploadFile = File(...),
     admin: dict = Depends(require_admin),
 ):
-    task_type = normalize_task_type(task_type)
-    scene = validate_storage_component(scene, "场景")
-    save_uploaded_zip(os.path.join(get_ref_root(task_type), scene), file)
-    return {"message": "Success"}
+    return upload_ref_zip(task_type, scene, file)
 
 
 @app.get("/", response_class=HTMLResponse)

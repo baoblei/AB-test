@@ -1,3 +1,4 @@
+import asyncio
 import io
 import os
 import tempfile
@@ -142,6 +143,39 @@ class ZipValidationTests(unittest.TestCase):
                 ["img_001"],
                 "结果图",
             )
+
+
+class ReferenceUploadValidationTests(unittest.TestCase):
+    def test_upload_ref_rejects_duplicate_stems_against_scene_prompt_ids(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            prompt_root = os.path.join(temp_dir, "prompt", "T2I")
+            ref_root = os.path.join(temp_dir, "ref_images", "T2I")
+            os.makedirs(prompt_root)
+            os.makedirs(ref_root)
+            existing_scene = os.path.join(ref_root, "scene")
+            os.makedirs(existing_scene)
+            with open(os.path.join(existing_scene, "existing.png"), "wb") as existing_file:
+                existing_file.write(b"existing")
+            with open(os.path.join(prompt_root, "scene.txt"), "w", encoding="utf-8") as prompt_file:
+                prompt_file.write("img_001\tprompt\n")
+
+            task_configs = {
+                **config.TASK_CONFIGS,
+                "T2I": {
+                    **config.TASK_CONFIGS["T2I"],
+                    "prompt_root": prompt_root,
+                    "ref_root": ref_root,
+                },
+            }
+            upload = SimpleNamespace(
+                file=io.BytesIO(image_zip("img_001.png", "img_001.jpg")),
+                filename="reference.zip",
+            )
+            with patch.object(config, "TASK_CONFIGS", task_configs):
+                with self.assertRaises(AppError):
+                    asyncio.run(main.upload_ref("T2I", "scene", upload, admin={}))
+
+            self.assertTrue(os.path.exists(os.path.join(existing_scene, "existing.png")))
 
 
 class UploadRouteAuthorizationTests(unittest.TestCase):

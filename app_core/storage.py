@@ -524,6 +524,15 @@ def validate_result_zip(task_type: str, scene: str, zip_bytes: bytes, auto_renam
     )
 
 
+def upload_ref_zip(task_type: str, scene: str, upload_file) -> dict:
+    task_type = normalize_task_type(task_type)
+    scene = validate_storage_component(scene, "场景")
+    zip_bytes = read_upload_bytes(upload_file)
+    validation = validate_image_zip_against_ids(zip_bytes, get_prompt_ids(task_type, scene), "参考图")
+    save_zip_images(os.path.join(get_ref_root(task_type), scene), zip_bytes, validation.get("rename_map"))
+    return {"message": "Success"}
+
+
 def save_zip_images(target_path: str, zip_bytes: bytes, rename_map: Optional[dict] = None):
     if os.path.exists(target_path):
         shutil.rmtree(target_path)
