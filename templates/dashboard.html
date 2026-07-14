@@ -1376,11 +1376,11 @@
 
         function renderInvalidExportSelection(message) {
             state.exportPair.previewOverall = 0;
+            renderExportPreview({ overall: 0, dimensions: {}, unique_images: 0 });
+            document.getElementById("export-message").textContent = message;
             if (state.exportPair.downloading) return;
-            document.getElementById("export-preview-count").textContent = "Overall 0 条 · 去重图片 0 张";
             const exportButton = document.getElementById("export-download");
             exportButton.disabled = true;
-            document.getElementById("export-message").textContent = message;
         }
 
         function isCurrentExportSession(sessionId) {

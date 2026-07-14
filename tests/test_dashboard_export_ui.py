@@ -28,6 +28,32 @@ class DashboardExportUiTests(unittest.TestCase):
         script = f"{source}\nconsole.log(JSON.stringify({name}(...{json.dumps(arguments)})));"
         return json.loads(subprocess.check_output(["node", "-e", script], text=True))
 
+    def run_invalid_export_render(self, downloading):
+        script = f"""
+            const elements = {{
+                "export-preview-count": {{ textContent: "Overall 9 条" }},
+                "export-message": {{ textContent: "正在生成下载文件..." }},
+                "export-download": {{ disabled: true, textContent: "正在生成..." }}
+            }};
+            const document = {{ getElementById: id => elements[id] }};
+            const state = {{ exportPair: {{
+                previewOverall: 9,
+                downloading: {str(downloading).lower()},
+                options: {{ dimensions: [{{ key: "aesthetic", label: "美学" }}, {{ key: "fidelity", label: "保真度" }}] }}
+            }} }};
+            {self.function_source("renderExportPreview")}
+            {self.function_source("renderInvalidExportSelection")}
+            renderInvalidExportSelection("请至少选择一个场景");
+            console.log(JSON.stringify({{
+                previewOverall: state.exportPair.previewOverall,
+                preview: elements["export-preview-count"].textContent,
+                message: elements["export-message"].textContent,
+                disabled: elements["export-download"].disabled,
+                buttonText: elements["export-download"].textContent
+            }}));
+        """
+        return json.loads(subprocess.check_output(["node", "-e", script], text=True))
+
     def test_export_button_and_modal_exist_without_inline_model_calls(self):
         for marker in (
             'id="export-modal"',
@@ -108,6 +134,15 @@ class DashboardExportUiTests(unittest.TestCase):
         invalid_render = self.function_source("renderInvalidExportSelection")
         self.assertIn("previewOverall = 0", invalid_render)
         self.assertIn("exportButton.disabled = true", invalid_render)
+
+    def test_invalid_selection_updates_counts_and_message_while_download_is_running(self):
+        rendered = self.run_invalid_export_render(downloading=True)
+
+        self.assertEqual(rendered["previewOverall"], 0)
+        self.assertEqual(rendered["preview"], "Overall 0 条 · 美学 0 · 保真度 0 · 去重图片 0 张")
+        self.assertEqual(rendered["message"], "请至少选择一个场景")
+        self.assertTrue(rendered["disabled"])
+        self.assertEqual(rendered["buttonText"], "正在生成...")
 
     def test_download_session_tokens_prevent_old_download_from_mutating_new_modal(self):
         self.assertIn("modalSessionId", self.html)
