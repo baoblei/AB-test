@@ -36,6 +36,14 @@ def make_row(row_id, **overrides):
     return row
 
 
+def overall_metadata(sheet, label):
+    for row in sheet.iter_rows(min_row=1, max_row=9):
+        for index, cell in enumerate(row[:-1]):
+            if cell.value == label:
+                return row[index + 1]
+    raise AssertionError(f"Overall 元数据缺少 {label}")
+
+
 class ExportWorkbookTests(unittest.TestCase):
     def setUp(self):
         self.t2i_request = ExportRequest(
@@ -94,6 +102,57 @@ class ExportWorkbookTests(unittest.TestCase):
         headers = [cell.value for cell in detail[1]]
         self.assertEqual(detail.cell(2, headers.index("图片名") + 1).value, "image-1.png")
         self.assertEqual(detail.cell(2, headers.index("美学判定") + 1).value, "A 胜")
+
+    def test_overall_metadata_without_image_manifest_marks_images_unchecked_after_round_trip(self):
+        overall = load_workbook(BytesIO(workbook_bytes(build_workbook(self.t2i_request, self.t2i_rows))))["Overall"]
+
+        self.assertEqual(overall_metadata(overall, "最终评测记录数").value, 1)
+        self.assertEqual(overall_metadata(overall, "最终评测记录数").data_type, "n")
+        self.assertEqual(overall_metadata(overall, "缺失图片数量").value, "未检查")
+        self.assertEqual(overall_metadata(overall, "缺失图片数量").data_type, "s")
+        self.assertEqual(overall_metadata(overall, "图片状态").value, "未导出")
+        self.assertEqual(overall["A11"].value, "场景")
+
+    def test_overall_metadata_with_complete_manifest_marks_images_exported_after_round_trip(self):
+        request = ExportRequest(task_type="TI2I", v1="D", v2="E", include_images=True)
+        manifest = {
+            ("portrait", "image-1.png"): {
+                "D": {"status": "已导出"},
+                "E": {"status": "已导出"},
+                "ref": {"status": "已导出"},
+            }
+        }
+
+        overall = load_workbook(
+            BytesIO(workbook_bytes(build_workbook(request, self.ti2i_rows, image_manifest=manifest)))
+        )["Overall"]
+
+        self.assertEqual(overall_metadata(overall, "最终评测记录数").value, 1)
+        self.assertEqual(overall_metadata(overall, "最终评测记录数").data_type, "n")
+        self.assertEqual(overall_metadata(overall, "缺失图片数量").value, 0)
+        self.assertEqual(overall_metadata(overall, "缺失图片数量").data_type, "n")
+        self.assertEqual(overall_metadata(overall, "图片状态").value, "已导出")
+        self.assertEqual(overall["A11"].value, "场景")
+
+    def test_overall_metadata_counts_partial_missing_files_from_unique_manifest_after_round_trip(self):
+        request = ExportRequest(task_type="TI2I", v1="D", v2="E", include_images=True)
+        rows = self.ti2i_rows + [make_row(2, task_type="TI2I", v_a="D", v_b="E", scene="portrait", filename="image-1.png", fidelity="E", worker="bob")]
+        manifest = {
+            ("portrait", "image-1.png"): {
+                "D": {"status": "文件不存在"},
+                "E": {"status": "已导出"},
+                "ref": {"status": "文件不存在"},
+            }
+        }
+
+        overall = load_workbook(BytesIO(workbook_bytes(build_workbook(request, rows, image_manifest=manifest))))["Overall"]
+
+        self.assertEqual(overall_metadata(overall, "最终评测记录数").value, 2)
+        self.assertEqual(overall_metadata(overall, "最终评测记录数").data_type, "n")
+        self.assertEqual(overall_metadata(overall, "缺失图片数量").value, 2)
+        self.assertEqual(overall_metadata(overall, "缺失图片数量").data_type, "n")
+        self.assertEqual(overall_metadata(overall, "图片状态").value, "部分缺失")
+        self.assertEqual(overall["A11"].value, "场景")
 
     @patch("app_core.export_service.get_prompt_text", return_value="a red car")
     def test_dimension_detail_contains_required_fields_and_unexported_image_values(self, _prompt):

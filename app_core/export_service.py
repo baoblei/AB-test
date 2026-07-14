@@ -238,6 +238,17 @@ def _flag_value(value: bool) -> str:
     return "是" if value else "否"
 
 
+def _image_manifest_summary(image_manifest: Optional[dict]) -> tuple[str, object]:
+    if image_manifest is None:
+        return "未导出", "未检查"
+    missing_count = sum(
+        image["status"] == "文件不存在"
+        for images in image_manifest.values()
+        for image in images.values()
+    )
+    return ("部分缺失" if missing_count else "已导出"), missing_count
+
+
 def _style_header(sheet, row: int, columns: int) -> None:
     for column in range(1, columns + 1):
         cell = sheet.cell(row, column)
@@ -258,9 +269,19 @@ def _fit_columns(sheet, wrapped_headers: Optional[set[str]] = None) -> None:
                 sheet.cell(row, column).alignment = WRAPPED_ALIGNMENT
 
 
-def _write_overall_metadata(sheet, request: ExportRequest, task_type: str, v_a: str, v_b: str, generated_at: str) -> None:
+def _write_overall_metadata(
+    sheet,
+    request: ExportRequest,
+    task_type: str,
+    v_a: str,
+    v_b: str,
+    generated_at: str,
+    final_record_count: int,
+    image_manifest: Optional[dict],
+) -> None:
     sheet["A1"] = "评测结果导出"
     sheet["A1"].font = Font(bold=True, size=14)
+    image_status, missing_image_count = _image_manifest_summary(image_manifest)
     metadata = [
         ("生成时间", generated_at),
         ("任务类型", task_type),
@@ -268,7 +289,8 @@ def _write_overall_metadata(sheet, request: ExportRequest, task_type: str, v_a: 
         ("场景", _selected_values(request.scenes), "维度", _selected_values(request.dimensions, DIM_LABELS), "评测人", _selected_values(request.workers)),
         ("开始时间", request.start_time or "不限", "结束时间", request.end_time or "不限", "评测模式", _selected_values(request.eval_modes)),
         ("结果筛选", request.result_filter, "坏例筛选", request.bad_case_filter, "导出图片", _flag_value(request.include_images)),
-        ("包含坏例", _flag_value(request.include_bad_cases), "包含耗时", _flag_value(request.include_duration), "图片状态", "未导出"),
+        ("包含坏例", _flag_value(request.include_bad_cases), "包含耗时", _flag_value(request.include_duration), "图片状态", image_status),
+        ("最终评测记录数", final_record_count, "缺失图片数量", missing_image_count),
     ]
     for row_number, values in enumerate(metadata, start=2):
         for column, value in enumerate(values, start=1):
@@ -297,8 +319,26 @@ def _summary_values(scene: str, rows: list, v_a: str, v_b: str) -> list:
     ]
 
 
-def _write_overall_sheet(sheet, request: ExportRequest, rows: list, task_type: str, v_a: str, v_b: str, generated_at: str) -> None:
-    _write_overall_metadata(sheet, request, task_type, v_a, v_b, generated_at)
+def _write_overall_sheet(
+    sheet,
+    request: ExportRequest,
+    rows: list,
+    task_type: str,
+    v_a: str,
+    v_b: str,
+    generated_at: str,
+    image_manifest: Optional[dict],
+) -> None:
+    _write_overall_metadata(
+        sheet,
+        request,
+        task_type,
+        v_a,
+        v_b,
+        generated_at,
+        len(rows),
+        image_manifest,
+    )
     headers = [
         "场景", "总数", f"{v_a} 胜数", f"{v_a} 胜率", "平局数", "平局率", f"{v_b} 胜数", f"{v_b} 胜率",
         f"{v_a} 抑制比", f"{v_b} 抑制比", f"{v_a} 坏例数", f"{v_a} 坏例率", f"{v_b} 坏例数", f"{v_b} 坏例率",
@@ -411,7 +451,16 @@ def build_workbook(
     overall = workbook.active
     overall.title = "Overall"
     overall_rows = filter_rows(base_rows, request, "overall")
-    _write_overall_sheet(overall, request, overall_rows, task_type, v_a, v_b, generated_at or now_beijing_iso())
+    _write_overall_sheet(
+        overall,
+        request,
+        overall_rows,
+        task_type,
+        v_a,
+        v_b,
+        generated_at or now_beijing_iso(),
+        image_manifest,
+    )
 
     requested_dimensions = set(request.dimensions)
     prompt_cache = {}
