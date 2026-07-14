@@ -723,7 +723,8 @@
 
         function formatBusinessTime(value) {
             if (!value) return "-";
-            return value.replace("T", " ").replace("+08:00", "");
+            const text = String(value);
+            return text.replace("T", " ").replace("+08:00", "");
         }
 
         function formatBeijingNow() {
