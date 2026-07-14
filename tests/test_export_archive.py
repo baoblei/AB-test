@@ -62,17 +62,47 @@ class ExportArchiveTests(unittest.TestCase):
     def test_archive_uses_scene_model_ref_layout_and_deduplicates_rows(self):
         from app_core.export_service import build_archive
 
+        archive_path = Path(self.temp_dir.name) / "archive.zip"
         artifact = build_archive(
             self.request,
             workbook_data=b"xlsx",
             selected_rows=[make_row(), make_row(2, worker="bob")],
             result_path_resolver=self.result_resolver,
             ref_path_resolver=self.ref_resolver,
+            archive_path=str(archive_path),
         )
         with zipfile.ZipFile(artifact, "r") as archive:
             self.assertEqual(
                 sorted(archive.namelist()),
                 ["images/portrait/D/scene1.jpg", "images/portrait/E/scene1.jpg", "images/portrait/ref/scene1.jpg", "评测结果.xlsx"],
+            )
+
+    def test_result_image_path_and_archive_fall_back_to_legacy_file_after_configured_scene(self):
+        from app_core.export_service import build_archive, build_image_manifest
+
+        configured_root = Path(self.temp_dir.name) / "configured"
+        legacy_root = Path(self.temp_dir.name) / "legacy"
+        for root in (configured_root, legacy_root):
+            for model in ("D", "E"):
+                (root / model / "portrait").mkdir(parents=True)
+        for model in ("D", "E"):
+            (legacy_root / model / "portrait" / "scene1.jpg").write_bytes(model.encode())
+        request = ExportRequest(task_type="T2I", v1="D", v2="E", include_images=True)
+        rows = [make_row(task_type="T2I")]
+
+        with patch("app_core.storage.get_result_roots", return_value=[str(configured_root), str(legacy_root)]):
+            self.assertEqual(
+                get_result_image_path("T2I", "D", "portrait", "scene1.jpg"),
+                str(legacy_root / "D" / "portrait" / "scene1.jpg"),
+            )
+            manifest = build_image_manifest(request, rows, result_path_resolver=get_result_image_path)
+
+        archive_path = Path(self.temp_dir.name) / "legacy-fallback.zip"
+        build_archive(request, b"xlsx", rows, archive_path=str(archive_path), image_manifest=manifest)
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            self.assertEqual(
+                sorted(archive.namelist()),
+                ["images/portrait/D/scene1.jpg", "images/portrait/E/scene1.jpg", "评测结果.xlsx"],
             )
 
     def test_missing_image_is_not_written_and_workbook_marks_manifest_status(self):

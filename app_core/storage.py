@@ -397,8 +397,11 @@ def get_result_image_path(task_type: str, version: str, scene: str, filename: st
     version = validate_storage_component(version, "模型")
     scene = validate_storage_component(scene, "场景")
     filename = validate_storage_component(filename, "图片名")
-    path = os.path.join(get_scene_path(task_type, version, scene), filename)
-    return path if os.path.isfile(path) else None
+    for root in get_result_roots(task_type):
+        path = os.path.join(root, version, scene, filename)
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 def get_ref_image_path(task_type: str, scene: str, filename: str) -> Optional[str]:
