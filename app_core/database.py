@@ -70,7 +70,7 @@ def init_db():
             password_hash TEXT NOT NULL,
             email TEXT UNIQUE,
             role TEXT DEFAULT 'evaluator',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', '+8 hours') || '+08:00'),
             last_login DATETIME,
             is_active INTEGER DEFAULT 1
         )
@@ -84,7 +84,7 @@ def init_db():
             action TEXT,
             details TEXT,
             ip_address TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            timestamp DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', '+8 hours') || '+08:00')
         )
         """
     )
@@ -104,7 +104,7 @@ def init_db():
             consistency TEXT,
             fidelity TEXT,
             worker TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            timestamp DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', '+8 hours') || '+08:00'),
             duration_seconds INTEGER,
             skipped INTEGER DEFAULT 0,
             user_id INTEGER,
@@ -176,8 +176,8 @@ def init_db():
         from .passwords import hash_password
 
         cursor.execute(
-            "INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)",
-            ("admin", hash_password("admin123"), "admin", "admin@example.com"),
+            "INSERT INTO users (username, password_hash, role, email, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("admin", hash_password("admin123"), "admin", "admin@example.com", now_beijing_iso()),
         )
 
     migration_result = migrate_business_times(conn)
@@ -198,9 +198,10 @@ def reset_working_tasks():
 def log_operation(user_id: int, action: str, details: str, ip_address: str = ""):
     conn = connect()
     cursor = conn.cursor()
+    timestamp = now_beijing_iso()
     cursor.execute(
-        "INSERT INTO operation_logs (user_id, action, details, ip_address) VALUES (?, ?, ?, ?)",
-        (user_id, action, details, ip_address),
+        "INSERT INTO operation_logs (user_id, action, details, ip_address, timestamp) VALUES (?, ?, ?, ?, ?)",
+        (user_id, action, details, ip_address, timestamp),
     )
     conn.commit()
     conn.close()

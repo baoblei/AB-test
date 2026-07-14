@@ -3,6 +3,7 @@ from .database import connect, log_operation
 from .errors import AppError, UnauthorizedError
 from .passwords import hash_password, verify_password
 from .schemas import PasswordChange, UserLogin, UserRegister
+from .time_utils import now_beijing_iso
 
 
 def register_user(user: UserRegister, ip_address: str = "") -> dict:
@@ -20,8 +21,8 @@ def register_user(user: UserRegister, ip_address: str = "") -> dict:
             raise AppError("邮箱已被注册")
 
     cursor.execute(
-        "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
-        (user.username, hash_password(user.password), user.email),
+        "INSERT INTO users (username, password_hash, email, created_at) VALUES (?, ?, ?, ?)",
+        (user.username, hash_password(user.password), user.email, now_beijing_iso()),
     )
     conn.commit()
     user_id = cursor.lastrowid
@@ -39,7 +40,7 @@ def login_user(user: UserLogin, ip_address: str = "") -> dict:
         conn.close()
         raise UnauthorizedError("用户名或密码错误")
 
-    cursor.execute("UPDATE users SET last_login=CURRENT_TIMESTAMP WHERE id=?", (row[0],))
+    cursor.execute("UPDATE users SET last_login=? WHERE id=?", (now_beijing_iso(), row[0]))
     conn.commit()
     conn.close()
 

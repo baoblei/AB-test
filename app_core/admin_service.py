@@ -1,4 +1,5 @@
 from .database import connect, log_operation
+from .time_utils import beijing_today
 
 
 def get_users() -> list[dict]:
@@ -37,7 +38,10 @@ def admin_stats() -> dict:
     user_count = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM results_log WHERE skipped=0")
     eval_count = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM results_log WHERE skipped=0 AND DATE(timestamp)=DATE('now')")
+    cursor.execute(
+        "SELECT COUNT(*) FROM results_log WHERE skipped=0 AND substr(timestamp, 1, 10)=?",
+        (beijing_today(),),
+    )
     today_eval = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(DISTINCT v_a) + COUNT(DISTINCT v_b) FROM results_log")
     model_count = cursor.fetchone()[0]

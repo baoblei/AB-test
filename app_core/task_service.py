@@ -8,6 +8,7 @@ from .config import get_task_config, normalize_task_type
 from .database import connect
 from .errors import AppError, NotFoundError
 from .storage import get_prompt_text, get_ref_image_url, get_result_image_url, get_scene_path, list_scene_files
+from .time_utils import now_beijing_iso
 
 
 def normalize_eval_mode(eval_mode: Optional[str]) -> str:
@@ -287,10 +288,10 @@ def submit_vote(vote: Any, user_id: int) -> dict:
         """
         INSERT INTO results_log (
             eval_mode, task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity,
-            worker, duration_seconds, user_id,
+            worker, timestamp, duration_seconds, user_id,
             bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             eval_mode,
@@ -305,6 +306,7 @@ def submit_vote(vote: Any, user_id: int) -> dict:
             dim_values["consistency"],
             dim_values["fidelity"],
             vote.worker,
+            now_beijing_iso(),
             vote.duration_seconds,
             user_id,
             json.dumps(tags_a, ensure_ascii=False),
@@ -337,12 +339,12 @@ def skip_task(task_id: int, task_type: str, user_id: int, eval_mode: str = "full
         """
         INSERT INTO results_log (
             eval_mode, task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity,
-            worker, skipped, user_id,
+            worker, timestamp, skipped, user_id,
             bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', ?, 1, ?, '[]', '[]', '[]', '[]')
+        VALUES (?, ?, ?, ?, ?, ?, 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', ?, ?, 1, ?, '[]', '[]', '[]', '[]')
         """,
-        (eval_mode, task_type, task[0], task[1], task[2], task[3], task[4], user_id),
+        (eval_mode, task_type, task[0], task[1], task[2], task[3], task[4], now_beijing_iso(), user_id),
     )
     cursor.execute("UPDATE pair_tasks SET status='completed' WHERE id=?", (task_id,))
     conn.commit()
