@@ -21,7 +21,7 @@ from app_core.dashboard_service import worker_stats as worker_stats_service
 from app_core.database import init_db, reset_working_tasks
 from app_core.errors import AppError
 from app_core.schemas import PasswordChange, UserLogin, UserRegister, VoteSubmit
-from app_core.storage import compare_scene_resolution_stats, get_common_scenes, get_dataset_scenes, get_prompt_text, get_ref_root, get_versions_for_type, save_uploaded_zip, upload_dataset, upload_result_zip
+from app_core.storage import compare_scene_resolution_stats, get_common_scenes, get_dataset_scenes, get_prompt_text, get_ref_root, get_versions_for_type, save_uploaded_zip, upload_dataset, upload_result_zip, validate_storage_component
 from app_core.task_service import get_eval_mode_status as get_eval_mode_status_service
 from app_core.task_service import get_next_task, get_progress as get_progress_service
 from app_core.task_service import skip_task as skip_task_service
@@ -250,6 +250,7 @@ async def upload_dataset_data(
     scene: str = Form(...),
     prompt_file: UploadFile = File(...),
     ref_file: Optional[UploadFile] = File(None),
+    admin: dict = Depends(require_admin),
 ):
     return upload_dataset(task_type, scene, prompt_file, ref_file)
 
@@ -261,13 +262,20 @@ async def upload_data(
     scene: str = Form(...),
     file: UploadFile = File(...),
     auto_rename: bool = Form(False),
+    admin: dict = Depends(require_admin),
 ):
     return upload_result_zip(task_type, version, scene, file, auto_rename=auto_rename)
 
 
 @app.post("/api/upload_ref")
-async def upload_ref(task_type: str = Form(...), scene: str = Form(...), file: UploadFile = File(...)):
+async def upload_ref(
+    task_type: str = Form(...),
+    scene: str = Form(...),
+    file: UploadFile = File(...),
+    admin: dict = Depends(require_admin),
+):
     task_type = normalize_task_type(task_type)
+    scene = validate_storage_component(scene, "场景")
     save_uploaded_zip(os.path.join(get_ref_root(task_type), scene), file)
     return {"message": "Success"}
 

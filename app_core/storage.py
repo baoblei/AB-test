@@ -12,13 +12,15 @@ from .errors import AppError
 
 def get_result_root(task_type: str) -> str:
     task_type = normalize_task_type(task_type)
-    config = get_task_config(task_type)
-    preferred = config["result_root"]
-    if os.path.isdir(preferred):
-        return preferred
-    if task_type == "T2I":
-        return RESULT_DIR
-    return preferred
+    return get_task_config(task_type)["result_root"]
+
+
+def get_result_roots(task_type: str) -> list[str]:
+    task_type = normalize_task_type(task_type)
+    preferred = get_result_root(task_type)
+    if task_type == "T2I" and os.path.normpath(preferred) != os.path.normpath(RESULT_DIR):
+        return [preferred, RESULT_DIR]
+    return [preferred]
 
 
 def get_prompt_root(task_type: str) -> str:
@@ -38,23 +40,39 @@ def get_ref_root(task_type: str) -> str:
 
 
 def get_versions_for_type(task_type: str) -> List[str]:
-    root = get_result_root(task_type)
-    if not os.path.isdir(root):
-        return []
-    return sorted([name for name in os.listdir(root) if os.path.isdir(os.path.join(root, name))])
+    preferred = get_result_root(task_type)
+    versions = set()
+    for root in get_result_roots(task_type):
+        if not os.path.isdir(root):
+            continue
+        versions.update(
+            name
+            for name in os.listdir(root)
+            if os.path.isdir(os.path.join(root, name))
+            and os.path.normpath(os.path.join(root, name)) != os.path.normpath(preferred)
+        )
+    return sorted(versions)
 
 
 def get_scene_path(task_type: str, version: str, scene: str) -> str:
+    for root in get_result_roots(task_type):
+        scene_path = os.path.join(root, version, scene)
+        if os.path.isdir(scene_path):
+            return scene_path
     return os.path.join(get_result_root(task_type), version, scene)
 
 
 def get_common_scenes(task_type: str, v1: str, v2: str) -> List[str]:
-    p1 = os.path.join(get_result_root(task_type), v1)
-    p2 = os.path.join(get_result_root(task_type), v2)
-    if not (os.path.isdir(p1) and os.path.isdir(p2)):
-        return []
-    s1 = {d for d in os.listdir(p1) if os.path.isdir(os.path.join(p1, d))}
-    s2 = {d for d in os.listdir(p2) if os.path.isdir(os.path.join(p2, d))}
+    def scenes_for_version(version: str) -> set[str]:
+        scenes = set()
+        for root in get_result_roots(task_type):
+            version_path = os.path.join(root, version)
+            if os.path.isdir(version_path):
+                scenes.update(name for name in os.listdir(version_path) if os.path.isdir(os.path.join(version_path, name)))
+        return scenes
+
+    s1 = scenes_for_version(v1)
+    s2 = scenes_for_version(v2)
     return sorted(list(s1 & s2))
 
 
@@ -325,6 +343,7 @@ def get_prompt_ids(task_type: str, scene: str) -> list[str]:
 
 def save_prompt_file(task_type: str, scene: str, file_bytes: bytes):
     parse_prompt_file_bytes(file_bytes)
+    scene = validate_storage_component(scene, "场景")
     prompt_root = get_task_config(normalize_task_type(task_type))["prompt_root"]
     os.makedirs(prompt_root, exist_ok=True)
     with open(os.path.join(prompt_root, f"{scene}.txt"), "wb") as f:
@@ -333,9 +352,7 @@ def save_prompt_file(task_type: str, scene: str, file_bytes: bytes):
 
 def upload_dataset(task_type: str, scene: str, prompt_file, ref_file=None) -> dict:
     task_type = normalize_task_type(task_type)
-    if not scene.strip():
-        raise AppError("场景名不能为空")
-    scene = scene.strip()
+    scene = validate_storage_component(scene, "场景")
     prompt_bytes = read_upload_bytes(prompt_file)
     prompt_info = parse_prompt_file_bytes(prompt_bytes)
 
@@ -366,10 +383,27 @@ def get_ref_image_url(task_type: str, scene: str, filename: str) -> Optional[str
 
 
 def get_result_image_url(task_type: str, version: str, scene: str, filename: str) -> str:
-    task_type = normalize_task_type(task_type)
-    if os.path.isdir(os.path.join(RESULT_DIR, task_type)):
-        return f"/images/{task_type}/{version}/{scene}/{filename}"
-    return f"/images/{version}/{scene}/{filename}"
+    for root in get_result_roots(task_type):
+        image_path = os.path.join(root, version, scene, filename)
+        if os.path.isfile(image_path):
+            rel = os.path.relpath(image_path, RESULT_DIR).replace(os.sep, "/")
+            return f"/images/{rel}"
+    rel = os.path.relpath(os.path.join(get_scene_path(task_type, version, scene), filename), RESULT_DIR).replace(os.sep, "/")
+    return f"/images/{rel}"
+
+
+def validate_storage_component(value: str, label: str) -> str:
+    component = value.strip() if isinstance(value, str) else ""
+    if (
+        not component
+        or component in {".", ".."}
+        or os.path.isabs(component)
+        or "/" in component
+        or "\\" in component
+        or os.path.basename(component) != component
+    ):
+        raise AppError(f"{label}必须是有效的目录名")
+    return component
 
 
 def read_upload_bytes(upload_file) -> bytes:
@@ -413,7 +447,7 @@ def zip_image_infos(zip_bytes: bytes) -> list[dict]:
 def build_exact_name_map(image_infos: list[dict], expected_ids: list[str]) -> Optional[dict]:
     stems = {item["stem"] for item in image_infos}
     expected = set(expected_ids)
-    if stems == expected:
+    if len(stems) == len(image_infos) and stems == expected:
         return {item["entry"]: item["basename"] for item in image_infos}
     return None
 
@@ -513,16 +547,14 @@ def save_zip_images(target_path: str, zip_bytes: bytes, rename_map: Optional[dic
 
 def upload_result_zip(task_type: str, version: str, scene: str, upload_file, auto_rename: bool = False) -> dict:
     task_type = normalize_task_type(task_type)
-    if not version.strip():
-        raise AppError("模型版本不能为空")
-    if not scene.strip():
-        raise AppError("场景不能为空")
+    version = validate_storage_component(version, "模型版本")
+    scene = validate_storage_component(scene, "场景")
     zip_bytes = read_upload_bytes(upload_file)
     validation = validate_result_zip(task_type, scene, zip_bytes, auto_rename=auto_rename)
     if validation["status"] == "requires_rename_confirmation":
         return validation
     result_root = get_task_config(task_type)["result_root"]
-    save_zip_images(os.path.join(result_root, version.strip(), scene.strip()), zip_bytes, validation.get("rename_map"))
+    save_zip_images(os.path.join(result_root, version, scene), zip_bytes, validation.get("rename_map"))
     return {"message": "Success", "status": validation["status"], "image_count": validation["image_count"]}
 
 
