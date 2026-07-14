@@ -1,16 +1,32 @@
+from io import BytesIO
 from typing import Iterable, Optional
 
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+
 from .bad_cases import safe_load_json_list
-from .config import TASK_CONFIGS, dim_payload, normalize_task_type
+from .config import DIM_LABELS, TASK_CONFIGS, dim_payload, normalize_task_type
 from .database import connect
 from .errors import AppError
 from .schemas import ExportRequest
-from .time_utils import is_canonical_beijing_iso
+from .storage import get_prompt_text
+from .time_utils import is_canonical_beijing_iso, now_beijing_iso
 
 
 VALID_RESULT_FILTERS = {"all", "a", "tie", "b"}
 VALID_BAD_CASE_FILTERS = {"all", "with", "without"}
 VALID_EVAL_MODES = {"full", "overall"}
+
+DETAIL_SHEET_NAMES = {
+    "aesthetic": "美学明细",
+    "logic": "合理性明细",
+    "consistency": "一致性明细",
+    "fidelity": "保真度明细",
+}
+HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
+HEADER_FONT = Font(color="FFFFFF", bold=True)
+WRAPPED_ALIGNMENT = Alignment(vertical="top", wrap_text=True)
 
 
 def canonical_models(request: ExportRequest) -> tuple[str, str]:
@@ -148,3 +164,208 @@ def preview_export(request: ExportRequest) -> dict:
         "dimensions": {dimension: len(items) for dimension, items in dimension_rows.items()},
         "unique_images": len(unique_images),
     }
+
+
+def suppression_ratio(numerator: int, denominator: int):
+    if denominator == 0:
+        return "∞" if numerator else "-"
+    return round(numerator / denominator, 2)
+
+
+def summarize_overall(rows, v_a: str, v_b: str) -> dict:
+    total = len(rows)
+    a_wins = sum(row["overall"] == v_a for row in rows)
+    ties = sum(row["overall"] == "tie" for row in rows)
+    b_wins = sum(row["overall"] == v_b for row in rows)
+    bad_a = sum(bool(safe_load_json_list(row["bad_case_tags_a"])) for row in rows)
+    bad_b = sum(bool(safe_load_json_list(row["bad_case_tags_b"])) for row in rows)
+    return {
+        "total": total,
+        "a_wins": a_wins,
+        "ties": ties,
+        "b_wins": b_wins,
+        "a_rate": a_wins / total if total else 0,
+        "tie_rate": ties / total if total else 0,
+        "b_rate": b_wins / total if total else 0,
+        "a_suppression": suppression_ratio(a_wins + ties, b_wins + ties),
+        "b_suppression": suppression_ratio(b_wins + ties, a_wins + ties),
+        "bad_a": bad_a,
+        "bad_b": bad_b,
+        "bad_a_rate": bad_a / total if total else 0,
+        "bad_b_rate": bad_b / total if total else 0,
+    }
+
+
+def result_label(value: str, v_a: str, v_b: str) -> str:
+    if value == "tie":
+        return "平局"
+    if value == v_a:
+        return f"{v_a} 胜"
+    if value == v_b:
+        return f"{v_b} 胜"
+    return value or ""
+
+
+def _selected_values(values: list[str], labels: Optional[dict] = None) -> str:
+    if not values:
+        return "全部"
+    return ", ".join(labels.get(value, value) if labels else value for value in values)
+
+
+def _flag_value(value: bool) -> str:
+    return "是" if value else "否"
+
+
+def _style_header(sheet, row: int, columns: int) -> None:
+    for column in range(1, columns + 1):
+        cell = sheet.cell(row, column)
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+
+def _fit_columns(sheet, wrapped_headers: Optional[set[str]] = None) -> None:
+    wrapped_headers = wrapped_headers or set()
+    for column in range(1, sheet.max_column + 1):
+        header = sheet.cell(1, column).value
+        max_length = max(len(str(sheet.cell(row, column).value or "")) for row in range(1, sheet.max_row + 1))
+        width = min(max(max_length + 2, 10), 60)
+        sheet.column_dimensions[get_column_letter(column)].width = width
+        if header in wrapped_headers:
+            for row in range(2, sheet.max_row + 1):
+                sheet.cell(row, column).alignment = WRAPPED_ALIGNMENT
+
+
+def _write_overall_metadata(sheet, request: ExportRequest, task_type: str, v_a: str, v_b: str, generated_at: str) -> None:
+    sheet["A1"] = "评测结果导出"
+    sheet["A1"].font = Font(bold=True, size=14)
+    metadata = [
+        ("生成时间", generated_at),
+        ("任务类型", task_type),
+        ("模型对", f"{v_a} vs {v_b}"),
+        ("场景", _selected_values(request.scenes), "维度", _selected_values(request.dimensions, DIM_LABELS), "评测人", _selected_values(request.workers)),
+        ("开始时间", request.start_time or "不限", "结束时间", request.end_time or "不限", "评测模式", _selected_values(request.eval_modes)),
+        ("结果筛选", request.result_filter, "坏例筛选", request.bad_case_filter, "导出图片", _flag_value(request.include_images)),
+        ("包含坏例", _flag_value(request.include_bad_cases), "包含耗时", _flag_value(request.include_duration), "图片状态", "未导出"),
+    ]
+    for row_number, values in enumerate(metadata, start=2):
+        for column, value in enumerate(values, start=1):
+            sheet.cell(row_number, column, value)
+        for column in range(1, len(values) + 1, 2):
+            sheet.cell(row_number, column).font = Font(bold=True)
+
+
+def _summary_values(scene: str, rows: list, v_a: str, v_b: str) -> list:
+    stats = summarize_overall(rows, v_a, v_b)
+    return [
+        scene,
+        stats["total"],
+        stats["a_wins"],
+        stats["a_rate"],
+        stats["ties"],
+        stats["tie_rate"],
+        stats["b_wins"],
+        stats["b_rate"],
+        stats["a_suppression"],
+        stats["b_suppression"],
+        stats["bad_a"],
+        stats["bad_a_rate"],
+        stats["bad_b"],
+        stats["bad_b_rate"],
+    ]
+
+
+def _write_overall_sheet(sheet, request: ExportRequest, rows: list, task_type: str, v_a: str, v_b: str, generated_at: str) -> None:
+    _write_overall_metadata(sheet, request, task_type, v_a, v_b, generated_at)
+    headers = [
+        "场景", "总数", f"{v_a} 胜数", f"{v_a} 胜率", "平局数", "平局率", f"{v_b} 胜数", f"{v_b} 胜率",
+        f"{v_a} 抑制比", f"{v_b} 抑制比", f"{v_a} 坏例数", f"{v_a} 坏例率", f"{v_b} 坏例数", f"{v_b} 坏例率",
+    ]
+    for column, header in enumerate(headers, start=1):
+        sheet.cell(11, column, header)
+    for column, value in enumerate(_summary_values("全部场景", rows, v_a, v_b), start=1):
+        sheet.cell(12, column, value)
+    for row_number, scene in enumerate(sorted({row["scene"] for row in rows}), start=13):
+        scene_rows = [row for row in rows if row["scene"] == scene]
+        for column, value in enumerate(_summary_values(scene, scene_rows, v_a, v_b), start=1):
+            sheet.cell(row_number, column, value)
+    _style_header(sheet, 11, len(headers))
+    for row in range(12, sheet.max_row + 1):
+        for column in (4, 6, 8, 12, 14):
+            sheet.cell(row, column).number_format = "0.0%"
+    sheet.auto_filter.ref = f"A11:{get_column_letter(len(headers))}{sheet.max_row}"
+    sheet.freeze_panes = "A12"
+    for column in range(1, sheet.max_column + 1):
+        max_length = max(len(str(sheet.cell(row, column).value or "")) for row in range(1, sheet.max_row + 1))
+        sheet.column_dimensions[get_column_letter(column)].width = min(max(max_length + 2, 10), 30)
+
+
+def _detail_headers(dimension: str, request: ExportRequest, task_type: str, v_a: str, v_b: str) -> list[str]:
+    headers = [
+        "任务类型", "模型 A", "模型 B", "场景", "图片名", "Prompt", f"{DIM_LABELS[dimension]}判定", "评测人", "评测模式", "评测时间（北京时间）",
+        f"{v_a} 图片路径", f"{v_a} 图片状态", f"{v_b} 图片路径", f"{v_b} 图片状态",
+    ]
+    if task_type == "TI2I":
+        headers.extend(["参考图路径", "参考图状态"])
+    if request.include_duration:
+        headers.append("评测耗时（秒）")
+    if request.include_bad_cases:
+        headers.extend([f"{v_a} 坏例标签", f"{v_a} 坏例类别", f"{v_b} 坏例标签", f"{v_b} 坏例类别"])
+    return headers
+
+
+def _detail_values(row, dimension: str, request: ExportRequest, task_type: str, v_a: str, v_b: str) -> list:
+    values = [
+        task_type, v_a, v_b, row["scene"], row["filename"], get_prompt_text(task_type, row["scene"], row["filename"]),
+        result_label(row[dimension], v_a, v_b), row["worker"], row["eval_mode"] or "full", row["timestamp"],
+        "", "未导出", "", "未导出",
+    ]
+    if task_type == "TI2I":
+        values.extend(["", "未导出"])
+    if request.include_duration:
+        values.append(row["duration_seconds"])
+    if request.include_bad_cases:
+        values.extend(
+            [
+                ", ".join(safe_load_json_list(row["bad_case_tags_a"])),
+                ", ".join(safe_load_json_list(row["bad_case_categories_a"])),
+                ", ".join(safe_load_json_list(row["bad_case_tags_b"])),
+                ", ".join(safe_load_json_list(row["bad_case_categories_b"])),
+            ]
+        )
+    return values
+
+
+def _write_detail_sheet(sheet, dimension: str, request: ExportRequest, rows: list, task_type: str, v_a: str, v_b: str) -> None:
+    headers = _detail_headers(dimension, request, task_type, v_a, v_b)
+    sheet.append(headers)
+    for row in rows:
+        sheet.append(_detail_values(row, dimension, request, task_type, v_a, v_b))
+    _style_header(sheet, 1, len(headers))
+    sheet.auto_filter.ref = sheet.dimensions
+    sheet.freeze_panes = "A2"
+    _fit_columns(sheet, {"Prompt", f"{v_a} 坏例标签", f"{v_a} 坏例类别", f"{v_b} 坏例标签", f"{v_b} 坏例类别"})
+
+
+def build_workbook(request: ExportRequest, rows: Iterable, generated_at: Optional[str] = None) -> Workbook:
+    task_type, v_a, v_b = validate_export_request(request)
+    base_rows = list(rows)
+    workbook = Workbook()
+    overall = workbook.active
+    overall.title = "Overall"
+    overall_rows = filter_rows(base_rows, request, "overall")
+    _write_overall_sheet(overall, request, overall_rows, task_type, v_a, v_b, generated_at or now_beijing_iso())
+
+    requested_dimensions = set(request.dimensions)
+    for dimension in TASK_CONFIGS[task_type]["eval_dims"]:
+        if dimension not in requested_dimensions:
+            continue
+        sheet = workbook.create_sheet(DETAIL_SHEET_NAMES[dimension])
+        _write_detail_sheet(sheet, dimension, request, filter_rows(base_rows, request, dimension), task_type, v_a, v_b)
+    return workbook
+
+
+def workbook_bytes(workbook: Workbook) -> bytes:
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
