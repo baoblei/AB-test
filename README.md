@@ -37,7 +37,8 @@
 - 数据管理：
   - 上传模型结果 zip
   - 上传编辑任务参考图 zip
-  - 导出 JSON / CSV
+  - 看板按筛选导出 Excel 或图片归档 ZIP
+  - 保留 JSON / CSV 旧版导出接口
   - 旧版 `results/<version>/<scene>` 数据迁移到 `results/T2I/<version>/<scene>`
 
 ## 页面说明
@@ -215,6 +216,8 @@ ref_images/TI2I/
 pip install -r requirements.txt
 ```
 
+该命令会安装 Excel 导出所需的 `openpyxl`；不要只安装 Web 服务依赖后再单独运行导出。
+
 ### 2. 启动服务
 
 ```bash
@@ -336,6 +339,46 @@ Prompt 格式：
 - 坏例明细：显示单图预览
 - `TI2I` 明细中可带参考图一起查看
 
+### 评测结果导出
+
+在每个模型对总览标题栏点击“导出”，模型对和任务类型会固定为当前总览。弹窗提供以下筛选与选项：
+
+- 场景、明细维度、评测人（均可多选）
+- 开始和结束时间（北京时间）
+- 评测模式：多维度评测、整体快速评测
+- 判定结果：A 胜、平局、B 胜
+- 坏例范围：全部、存在坏例、不存在坏例；“存在坏例”表示 A 或 B 至少一侧有坏例标签
+- 导出图片、包含坏例字段、包含评测耗时
+
+筛选变化会调用预览并显示 Overall、每个维度和去重图片的预计数量；没有 Overall 记录时不能下载。场景、评测人、时间、评测模式和坏例范围筛选评测记录；判定结果会按 Sheet 应用，Overall 按 `overall` 判定，维度 Sheet 按对应维度判定。整体快速评测仅进入 Overall；维度 Sheet 只包含多维度评测且对应维度有结果的记录。
+
+每次导出固定生成 `Overall` 汇总 Sheet，并为每个选中的维度生成独立明细 Sheet：`T2I` 可选美学、合理性、一致性 3 个维度，`TI2I` 还可选保真度，共 4 个维度。明细字段包括图片名、Prompt、评测人、评测时间（北京时间）、当前维度结果、评测模式、A/B 图片路径和图片状态；启用相应选项后还包括坏例标签/类别和评测耗时。`TI2I` 明细额外包含参考图路径和状态。
+
+- 不勾选“导出图片”时，下载 `.xlsx` 文件。
+- 勾选“导出图片”时，下载 ZIP，内部结构严格为：
+
+```text
+评测结果.xlsx
+images/<scene>/<model>/<filename>
+images/<scene>/ref/<filename>  # 仅 TI2I
+```
+
+同一图片被多次评测时，每条评测仍保留在明细中，但 ZIP 中图片按场景和图片名去重。图片缺失不会中断导出，明细会标记 `文件不存在`，缺失文件不会写入 ZIP。
+
+## 北京时间与升级迁移
+
+升级到包含北京时间统一的版本前，先备份 `database.db`，再首次启动服务。`init_db()` 会在首次初始化时自动执行一次历史业务时间迁移：将旧的无时区 UTC 值 `YYYY-MM-DD HH:MM:SS` 加 8 小时并写为北京时间；迁移标记保证重复启动幂等，不会再次偏移。无法解析的异常时间会保留原值，并在启动时输出诊断信息。
+
+业务时间统一使用秒级 canonical ISO 北京时间格式：
+
+```text
+YYYY-MM-DDTHH:MM:SS+08:00
+```
+
+该规则适用于评测结果、操作日志、用户创建和最后登录时间。页面和导出只格式化该业务时间显示，不进行额外时区转换。JWT 的过期时间继续使用 UTC/Unix 时间戳，不属于业务时间迁移范围。
+
+评测耗时不会包含当前任务的接口和图片加载等待：当前任务的所有所需图片加载成功、加载失败或等待超时结算后，计时器才从 `00:00` 开始。
+
 ## 数据库说明
 
 系统使用 SQLite，数据库文件默认是：
@@ -351,7 +394,7 @@ database.db
 - `pair_tasks`：评测任务分发表
 - `results_log`：评测结果表
 
-数据库初始化和字段补齐逻辑在 [app_core/database.py](/Users/baobinglei/code/ab_test/app_core/database.py) 的 `init_db()` 中完成，旧表结构会自动做兼容迁移。
+数据库初始化、字段补齐和北京时间迁移逻辑在 [app_core/database.py](app_core/database.py) 的 `init_db()` 中完成，旧表结构会自动做兼容迁移。
 
 ## 旧数据迁移
 
@@ -423,7 +466,10 @@ results/
 - `GET /api/worker_stats`
 - `GET /api/detail_results`
 - `GET /api/bad_case_details`
-- `GET /api/export`
+- `GET /api/export_options`：获取当前任务类型和模型对的场景、评测人、维度与北京时间范围
+- `POST /api/export/preview`：按完整筛选返回 Overall、各维度和去重图片的预计数量
+- `POST /api/export`：按完整筛选下载 XLSX 或包含图片的 ZIP
+- `GET /api/export`：保留的旧 JSON / CSV 导出接口
 - `GET /api/ranking`
 
 ### 管理后台
@@ -435,6 +481,7 @@ results/
 
 ### 数据上传
 
+- `POST /api/upload_dataset`
 - `POST /api/upload`
 - `POST /api/upload_ref`
 
@@ -442,11 +489,11 @@ results/
 
 - `prompt` 和 `ref_images` 的匹配依赖文件名一致
 - 评测任务按 `(task_type, v_a, v_b, scene, filename, worker)` 唯一分配
-- `overall` 为后端根据各评测维度自动推导，不需要前端单独提交
+- 多维度评测会由后端根据各维度结果推导 `overall`；整体快速评测由前端提交 `overall`，两种模式都会产生 Overall 评价
 - 当前认证依赖 `bcrypt`，部署环境需要正确安装对应依赖
 
 ## 开发建议
 
-- 新增任务类型时，优先在 [app_core/config.py](/Users/baobinglei/code/ab_test/app_core/config.py) 的 `TASK_CONFIGS` 中扩展
-- 新增坏例标签时，优先更新 [app_core/config.py](/Users/baobinglei/code/ab_test/app_core/config.py)，前端会通过 `/api/task_config` 读取配置
-- 若调整目录规范，优先在 [app_core/storage.py](/Users/baobinglei/code/ab_test/app_core/storage.py) 中维护 `results`、`prompt`、`ref_images` 三套路径的一致性
+- 新增任务类型时，优先在 [app_core/config.py](app_core/config.py) 的 `TASK_CONFIGS` 中扩展
+- 新增坏例标签时，优先更新 [app_core/config.py](app_core/config.py)，前端会通过 `/api/task_config` 读取配置
+- 若调整目录规范，优先在 [app_core/storage.py](app_core/storage.py) 中维护 `results`、`prompt`、`ref_images` 三套路径的一致性
