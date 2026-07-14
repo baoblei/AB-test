@@ -623,6 +623,7 @@
         let sceneUpdateTimer = null;
         let sceneRequestId = 0;
         let resolutionRequestId = 0;
+        let loadGeneration = 0;
 
         async function api(url, options) {
             const res = await fetch(url, options);
@@ -960,6 +961,7 @@
         function startTimer() {
             stopTimer();
             startTime = Date.now();
+            document.getElementById("timer").textContent = "00:00";
             timerInterval = setInterval(() => {
                 const elapsed = Math.floor((Date.now() - startTime) / 1000);
                 const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
@@ -977,8 +979,30 @@
             return startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
         }
 
+        function waitForTaskImages(timeoutMs = 15000) {
+            const images = [...document.querySelectorAll("#compare-grid img")];
+            return Promise.all(images.map(img => new Promise(resolve => {
+                if (img.complete) {
+                    resolve();
+                    return;
+                }
+                const finish = () => {
+                    clearTimeout(timeout);
+                    img.removeEventListener("load", finish);
+                    img.removeEventListener("error", finish);
+                    resolve();
+                };
+                const timeout = setTimeout(finish, timeoutMs);
+                img.addEventListener("load", finish, { once: true });
+                img.addEventListener("error", finish, { once: true });
+            })));
+        }
+
         async function loadNextTask() {
-            startTimer();
+            const generation = ++loadGeneration;
+            stopTimer();
+            startTime = null;
+            document.getElementById("timer").textContent = "00:00";
             const params = new URLSearchParams({
                 task_type: state.taskType,
                 worker: state.worker,
@@ -986,21 +1010,30 @@
                 v2: state.v2,
                 scene: state.scene
             });
-            const task = await api(`/api/get_task?${params.toString()}`).then(r => r.json());
-            if (task.status === "finished") {
-                alert("当前场景的评测已完成。");
-                window.location.reload();
-                return;
+            try {
+                const task = await api(`/api/get_task?${params.toString()}`).then(r => r.json());
+                if (generation !== loadGeneration) return;
+                if (task.status === "finished") {
+                    alert("当前场景的评测已完成。");
+                    window.location.reload();
+                    return;
+                }
+                state.currentTask = task;
+                renderCompareGrid();
+                renderLightbox();
+                currentVotes = {};
+                badCaseSelections = { left: new Set(), right: new Set() };
+                activeBadCaseCategory = { left: "", right: "" };
+                document.querySelectorAll('input[type="radio"]').forEach(input => { input.checked = false; });
+                document.getElementById("prompt-text").textContent = task.prompt;
+                renderBadcasePanels();
+                await waitForTaskImages();
+                if (generation !== loadGeneration) return;
+                startTimer();
+            } catch (err) {
+                if (generation !== loadGeneration) return;
+                console.error("加载任务失败", err);
             }
-            state.currentTask = task;
-            renderCompareGrid();
-            renderLightbox();
-            currentVotes = {};
-            badCaseSelections = { left: new Set(), right: new Set() };
-            activeBadCaseCategory = { left: "", right: "" };
-            document.querySelectorAll('input[type="radio"]').forEach(input => { input.checked = false; });
-            document.getElementById("prompt-text").textContent = task.prompt;
-            renderBadcasePanels();
         }
 
         async function submitVote() {

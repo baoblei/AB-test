@@ -257,6 +257,11 @@
 </div>
 
 <script>
+    function formatBusinessTime(value) {
+        if (!value) return "-";
+        return value.replace("T", " ").replace("+08:00", "");
+    }
+
     // 加载用户信息
     async function loadUserInfo() {
         try {
@@ -282,7 +287,7 @@
                 </div>
                 <div class="info-item">
                     <div class="info-label">注册时间</div>
-                    <div class="info-value">${data.created_at || '-'}</div>
+                    <div class="info-value">${formatBusinessTime(data.created_at)}</div>
                 </div>
             `;
         } catch (e) {
@@ -337,7 +342,7 @@
 
                 return `
                     <tr>
-                        <td>${r.timestamp || '-'}</td>
+                        <td>${formatBusinessTime(r.timestamp)}</td>
                         <td>${r.v_a} vs ${r.v_b}</td>
                         <td>${r.scene}</td>
                         <td style="font-size:11px; color:#666;">${r.filename}</td>

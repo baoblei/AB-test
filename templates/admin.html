@@ -249,6 +249,11 @@
 </div>
 
 <script>
+    function formatBusinessTime(value) {
+        if (!value) return "-";
+        return value.replace("T", " ").replace("+08:00", "");
+    }
+
     // 检查管理员权限
     async function checkAdmin() {
         try {
@@ -321,8 +326,8 @@
                         <td>${u.username}</td>
                         <td>${u.email || '-'}</td>
                         <td>${roleBadge}</td>
-                        <td>${u.created_at || '-'}</td>
-                        <td>${u.last_login || '-'}</td>
+                        <td>${formatBusinessTime(u.created_at)}</td>
+                        <td>${formatBusinessTime(u.last_login)}</td>
                         <td>${statusBadge}</td>
                         <td>${toggleBtn}</td>
                     </tr>
@@ -359,7 +364,7 @@
             const tbody = document.getElementById('logs-body');
             tbody.innerHTML = data.map(l => `
                 <tr>
-                    <td>${l.timestamp}</td>
+                    <td>${formatBusinessTime(l.timestamp)}</td>
                     <td>${l.username}</td>
                     <td>${l.action}</td>
                     <td>${l.details}</td>

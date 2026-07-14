@@ -721,6 +721,26 @@
             return res;
         }
 
+        function formatBusinessTime(value) {
+            if (!value) return "-";
+            return value.replace("T", " ").replace("+08:00", "");
+        }
+
+        function formatBeijingNow() {
+            const parts = new Intl.DateTimeFormat("en-CA", {
+                timeZone: "Asia/Shanghai",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false
+            }).formatToParts(new Date());
+            const value = type => parts.find(part => part.type === type).value;
+            return `${value("year")}-${value("month")}-${value("day")} ${value("hour")}:${value("minute")}:${value("second")}`;
+        }
+
         async function init() {
             await handleTaskTypeChange();
             syncDatasetUploadMode();
@@ -772,7 +792,7 @@
             const scenes = [...new Set(data.pairs.flatMap(pair => pair.scenes.map(scene => scene.scene)))];
             document.getElementById("ranking-scene").innerHTML = '<option value="">全部场景</option>' + scenes.map(scene => `<option value="${scene}">${scene}</option>`).join("");
             applyFilters();
-            document.getElementById("status-tag").textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
+            document.getElementById("status-tag").textContent = `最后更新: ${formatBeijingNow()}`;
         }
 
         function applyFilters() {
@@ -1055,7 +1075,7 @@
                         <div style="margin-top:6px;"><strong>${v2}</strong>: ${renderBadTags(row.bad_case_tags_b)}</div>
                     </td>
                     <td>${row.worker}</td>
-                    <td>${row.time}</td>
+                    <td>${formatBusinessTime(row.time)}</td>
                 </tr>
             `).join("") : '<tr><td colspan="7" class="empty-state">无匹配数据</td></tr>';
         }
@@ -1168,7 +1188,7 @@
                     <td>${row.categories.map(category => `<span class="pill">${category}</span>`).join("")}</td>
                     <td>${row.tags.map(item => `<span class="pill pill-bad">${item}</span>`).join("")}</td>
                     <td>${row.worker}</td>
-                    <td>${row.time}</td>
+                    <td>${formatBusinessTime(row.time)}</td>
                 </tr>
             `).join("") : '<tr><td colspan="9" class="empty-state">无匹配坏例</td></tr>';
         }
