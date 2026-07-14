@@ -280,6 +280,46 @@
             color: white;
             border-color: var(--primary);
         }
+        .checkbox-chip input { position: absolute; opacity: 0; pointer-events: none; }
+        .btn-export { background: #f6b73c; color: #26364c; }
+        .export-modal-content { width: min(920px, 100%); }
+        .export-fixed-info {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .export-fixed-info div {
+            padding: 10px 12px;
+            background: #f5f8fc;
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+        .export-fixed-info strong { display: block; margin-top: 4px; }
+        .export-choice-head, .export-preview, .export-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .export-choice-head { margin-bottom: 8px; }
+        .export-choice-head strong { font-size: 0.86rem; }
+        .export-choice-tools { display: flex; gap: 6px; }
+        .export-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .export-preview {
+            margin-top: 14px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: #eef5ff;
+            color: #275190;
+            font-size: 0.86rem;
+        }
+        .export-actions { margin-top: 14px; justify-content: flex-end; }
         .data-table {
             width: 100%;
             border-collapse: collapse;
@@ -327,7 +367,7 @@
         }
         .compare-label { color: white; margin-top: 10px; font-weight: 800; }
         @media (max-width: 1180px) {
-            .toolbar, .filter-grid, .upload-grid, .publish-grid, .dataset-upload-grid, .result-upload-grid, .pair-head, .summary-grid, .compare-preview.t2i, .compare-preview.ti2i {
+            .toolbar, .filter-grid, .upload-grid, .publish-grid, .dataset-upload-grid, .result-upload-grid, .pair-head, .summary-grid, .compare-preview.t2i, .compare-preview.ti2i, .export-fixed-info, .export-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -583,6 +623,64 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="export-modal">
+        <div class="modal-content export-modal-content" role="dialog" aria-modal="true" aria-labelledby="export-title">
+            <div class="modal-head">
+                <h3 id="export-title">导出评测结果</h3>
+                <button class="btn btn-outline" type="button" data-export-close>关闭</button>
+            </div>
+            <div class="modal-body">
+                <form id="export-form">
+                    <div class="export-fixed-info">
+                        <div>任务类型<strong id="export-task-type">-</strong></div>
+                        <div>模型 A<strong id="export-v1">-</strong></div>
+                        <div>模型 B<strong id="export-v2">-</strong></div>
+                    </div>
+
+                    <div class="filter-row">
+                        <div class="input-group" style="width:100%;">
+                            <div class="export-choice-head">
+                                <strong>场景</strong>
+                                <span class="export-choice-tools"><button class="btn btn-outline btn-sm" type="button" data-export-toggle="export-scenes" data-export-checked="true">全选</button><button class="btn btn-outline btn-sm" type="button" data-export-toggle="export-scenes" data-export-checked="false">清空</button></span>
+                            </div>
+                            <div class="checkbox-group" id="export-scenes"></div>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <div class="input-group" style="width:100%;">
+                            <div class="export-choice-head">
+                                <strong>明细维度</strong>
+                                <span class="export-choice-tools"><button class="btn btn-outline btn-sm" type="button" data-export-toggle="export-dimensions" data-export-checked="true">全选</button><button class="btn btn-outline btn-sm" type="button" data-export-toggle="export-dimensions" data-export-checked="false">清空</button></span>
+                            </div>
+                            <div class="checkbox-group" id="export-dimensions"></div>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <div class="input-group" style="width:100%;">
+                            <div class="export-choice-head">
+                                <strong>评测人</strong>
+                                <span class="export-choice-tools"><button class="btn btn-outline btn-sm" type="button" data-export-toggle="export-workers" data-export-checked="true">全选</button><button class="btn btn-outline btn-sm" type="button" data-export-toggle="export-workers" data-export-checked="false">清空</button></span>
+                            </div>
+                            <div class="checkbox-group" id="export-workers"></div>
+                        </div>
+                    </div>
+
+                    <div class="export-grid">
+                        <div class="input-group"><label>开始时间（北京时间）</label><input id="export-start-time" type="datetime-local"></div>
+                        <div class="input-group"><label>结束时间（北京时间）</label><input id="export-end-time" type="datetime-local"></div>
+                        <div class="input-group"><label>判定结果</label><select id="export-result-filter"><option value="all">全部</option><option value="a">A 胜</option><option value="tie">平局</option><option value="b">B 胜</option></select></div>
+                        <div class="input-group"><label>坏例范围</label><select id="export-bad-case-filter"><option value="all">全部</option><option value="with">存在坏例</option><option value="without">不存在坏例</option></select></div>
+                        <div class="input-group"><label>导出选项</label><div class="checkbox-group"><label class="checkbox-chip"><input id="export-images" type="checkbox">导出图片</label><label class="checkbox-chip selected"><input id="export-bad-cases" type="checkbox" checked>坏例字段</label><label class="checkbox-chip selected"><input id="export-duration" type="checkbox" checked>耗时字段</label></div></div>
+                        <div class="input-group"><label>评测模式</label><div class="checkbox-group" id="export-eval-modes"><label class="checkbox-chip selected"><input type="checkbox" value="full" checked>多维度评测</label><label class="checkbox-chip selected"><input type="checkbox" value="overall" checked>整体快速评测</label></div></div>
+                    </div>
+
+                    <div class="export-preview"><span id="export-preview-count">正在加载导出选项...</span><span id="export-message" role="status"></span></div>
+                    <div class="export-actions"><button class="btn btn-outline" type="button" data-export-close>取消</button><button class="btn btn-primary" id="export-download" type="submit" disabled>下载导出</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="image-overlay" onclick="this.style.display='none'">
         <div class="compare-preview t2i" id="image-preview" onclick="event.stopPropagation()"></div>
     </div>
@@ -601,7 +699,11 @@
             selectedWorkers: new Set(),
             currentWorker: null,
             badcaseRows: [],
-            currentBadcase: null
+            currentBadcase: null,
+            exportPair: { v1: "", v2: "", options: null, previewTimer: null, previewController: null },
+            exportPreviewRequestId: 0,
+            exportOpenRequestId: 0,
+            exportPairs: []
         };
 
         async function api(url, options) {
@@ -622,6 +724,7 @@
             syncDatasetUploadMode();
             await syncResultScenes();
             bindUploadForms();
+            bindExportEvents();
         }
 
         async function handleTaskTypeChange() {
@@ -688,11 +791,12 @@
         function renderPairs(pairs) {
             const dims = state.config.dashboard_dims;
             const container = document.getElementById("pairs-container");
+            state.exportPairs = pairs;
             if (!pairs.length) {
                 container.innerHTML = '<div class="empty-state">暂无数据</div>';
                 return;
             }
-            container.innerHTML = pairs.map(pair => `
+            container.innerHTML = pairs.map((pair, index) => `
                 <div class="pair-card">
                     <div class="pair-head" onclick="togglePair('${pair.pair.replace(/'/g, "\\'")}')">
                         <div class="pair-title">
@@ -706,6 +810,7 @@
                         <div class="pair-actions">
                             <button class="btn btn-accent btn-sm" onclick="event.stopPropagation(); openWorkerModal('${pair.v_a}', '${pair.v_b}', '')">统计</button>
                             <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openBadcaseModal('${pair.v_a}', '${pair.v_b}', '')">坏例详情</button>
+                            <button class="btn btn-export btn-sm" type="button" data-export-pair-index="${index}">导出</button>
                             <span>${state.expanded.has(pair.pair) ? "▲" : "▼"}</span>
                         </div>
                     </div>
@@ -1104,6 +1209,263 @@
             container.className = "compare-preview t2i";
             container.innerHTML = `<div class="compare-box"><img src="${src}"><div class="compare-label">${label}</div></div>`;
             document.getElementById("image-overlay").style.display = "flex";
+        }
+
+        function bindExportEvents() {
+            document.getElementById("pairs-container").addEventListener("click", event => {
+                const button = event.target.closest(".btn-export[data-export-pair-index]");
+                if (!button) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const pair = state.exportPairs[Number(button.dataset.exportPairIndex)];
+                if (pair) openExportModal(pair.v_a, pair.v_b);
+            }, true);
+
+            const modal = document.getElementById("export-modal");
+            modal.addEventListener("click", event => {
+                if (event.target === modal || event.target.closest("[data-export-close]")) closeExportModal();
+            });
+            document.getElementById("export-form").addEventListener("submit", event => {
+                event.preventDefault();
+                downloadExport();
+            });
+            document.getElementById("export-form").addEventListener("change", event => {
+                const chip = event.target.closest(".checkbox-chip");
+                if (chip && event.target.matches('input[type="checkbox"]')) chip.classList.toggle("selected", event.target.checked);
+                scheduleExportPreview();
+            });
+            document.getElementById("export-form").addEventListener("click", event => {
+                const toggle = event.target.closest("[data-export-toggle]");
+                if (!toggle) return;
+                toggleExportChoiceGroup(toggle.dataset.exportToggle, toggle.dataset.exportChecked === "true");
+            });
+            document.addEventListener("keydown", event => {
+                if (event.key === "Escape" && modal.style.display === "flex") closeExportModal();
+            });
+        }
+
+        function renderExportChoices(groupId, options) {
+            const group = document.getElementById(groupId);
+            group.replaceChildren();
+            options.forEach(option => {
+                const value = typeof option === "string" ? option : option.key;
+                const label = typeof option === "string" ? option : option.label || option.key;
+                const chip = document.createElement("label");
+                const input = document.createElement("input");
+                input.type = "checkbox";
+                input.value = value;
+                input.checked = true;
+                chip.className = "checkbox-chip selected";
+                chip.append(input, document.createTextNode(label));
+                group.append(chip);
+            });
+        }
+
+        function toggleExportChoiceGroup(groupId, checked) {
+            document.querySelectorAll(`#${groupId} input[type="checkbox"]`).forEach(input => {
+                input.checked = checked;
+                input.closest(".checkbox-chip").classList.toggle("selected", checked);
+            });
+            scheduleExportPreview();
+        }
+
+        function selectedExportValues(groupId) {
+            return [...document.querySelectorAll(`#${groupId} input[type="checkbox"]:checked`)].map(input => input.value);
+        }
+
+        function toDatetimeLocal(value) {
+            return value ? value.slice(0, 16) : "";
+        }
+
+        function resetExportForm() {
+            document.getElementById("export-result-filter").value = "all";
+            document.getElementById("export-bad-case-filter").value = "all";
+            document.getElementById("export-images").checked = false;
+            document.getElementById("export-bad-cases").checked = true;
+            document.getElementById("export-duration").checked = true;
+            document.querySelectorAll("#export-eval-modes input").forEach(input => input.checked = true);
+            document.querySelectorAll("#export-form .checkbox-chip input").forEach(input => {
+                input.closest(".checkbox-chip").classList.toggle("selected", input.checked);
+            });
+            ["export-scenes", "export-dimensions", "export-workers"].forEach(groupId => {
+                document.getElementById(groupId).replaceChildren();
+            });
+        }
+
+        async function openExportModal(v1, v2) {
+            cancelExportPreview();
+            const requestId = ++state.exportOpenRequestId;
+            state.exportPair = { v1, v2, options: null, previewTimer: null, previewController: null, previewOverall: null };
+            resetExportForm();
+            document.getElementById("export-task-type").textContent = state.taskType;
+            document.getElementById("export-v1").textContent = v1;
+            document.getElementById("export-v2").textContent = v2;
+            document.getElementById("export-preview-count").textContent = "正在加载导出选项...";
+            document.getElementById("export-message").textContent = "";
+            document.getElementById("export-download").disabled = true;
+            document.getElementById("export-modal").style.display = "flex";
+
+            try {
+                const params = new URLSearchParams({ task_type: state.taskType, v1, v2 });
+                const options = await api(`/api/export_options?${params.toString()}`).then(response => response.json());
+                if (requestId !== state.exportOpenRequestId) return;
+                state.exportPair.v1 = options.v_a;
+                state.exportPair.v2 = options.v_b;
+                state.exportPair.options = options;
+                document.getElementById("export-v1").textContent = options.v_a;
+                document.getElementById("export-v2").textContent = options.v_b;
+                renderExportChoices("export-scenes", options.scenes);
+                renderExportChoices("export-dimensions", options.dimensions);
+                renderExportChoices("export-workers", options.workers);
+                document.getElementById("export-start-time").value = toDatetimeLocal(options.min_time);
+                document.getElementById("export-end-time").value = toDatetimeLocal(options.max_time);
+                document.getElementById("export-eval-modes").querySelectorAll("input").forEach(input => input.checked = true);
+                previewExport();
+            } catch (error) {
+                if (requestId !== state.exportOpenRequestId) return;
+                document.getElementById("export-preview-count").textContent = "无法加载导出选项";
+                document.getElementById("export-message").textContent = error.message;
+            }
+        }
+
+        function localInputToBeijingIso(value, endOfMinute = false) {
+            if (!value) return null;
+            return `${value}:${endOfMinute ? "59" : "00"}+08:00`;
+        }
+
+        function collectExportRequest() {
+            return {
+                task_type: state.taskType,
+                v1: state.exportPair.v1,
+                v2: state.exportPair.v2,
+                scenes: selectedExportValues("export-scenes"),
+                dimensions: selectedExportValues("export-dimensions"),
+                workers: selectedExportValues("export-workers"),
+                start_time: localInputToBeijingIso(document.getElementById("export-start-time").value),
+                end_time: localInputToBeijingIso(document.getElementById("export-end-time").value, true),
+                eval_modes: selectedExportValues("export-eval-modes"),
+                result_filter: document.getElementById("export-result-filter").value,
+                bad_case_filter: document.getElementById("export-bad-case-filter").value,
+                include_images: document.getElementById("export-images").checked,
+                include_bad_cases: document.getElementById("export-bad-cases").checked,
+                include_duration: document.getElementById("export-duration").checked
+            };
+        }
+
+        function scheduleExportPreview() {
+            if (!state.exportPair.options) return;
+            if (state.exportPair.previewTimer) clearTimeout(state.exportPair.previewTimer);
+            state.exportPair.previewTimer = setTimeout(() => previewExport(), 200);
+        }
+
+        function renderExportPreview(preview) {
+            const dimensions = state.exportPair.options.dimensions || [];
+            const counts = dimensions.map(option => {
+                const key = typeof option === "string" ? option : option.key;
+                const label = typeof option === "string" ? option : option.label || option.key;
+                return `${label} ${preview.dimensions[key] || 0}`;
+            });
+            document.getElementById("export-preview-count").textContent = `Overall ${preview.overall} 条 · ${counts.join(" · ") || "未选择明细维度"} · 去重图片 ${preview.unique_images} 张`;
+        }
+
+        async function previewExport() {
+            if (!state.exportPair.options) return;
+            if (state.exportPair.previewTimer) {
+                clearTimeout(state.exportPair.previewTimer);
+                state.exportPair.previewTimer = null;
+            }
+            if (state.exportPair.previewController) state.exportPair.previewController.abort();
+            const requestId = ++state.exportPreviewRequestId;
+            const controller = new AbortController();
+            state.exportPair.previewController = controller;
+            document.getElementById("export-message").textContent = "正在更新预计数量...";
+            try {
+                const preview = await api("/api/export/preview", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(collectExportRequest()),
+                    signal: controller.signal
+                }).then(response => response.json());
+                if (requestId !== state.exportPreviewRequestId) return;
+                state.exportPair.previewOverall = preview.overall;
+                renderExportPreview(preview);
+                const exportButton = document.getElementById("export-download");
+                exportButton.disabled = preview.overall === 0;
+                document.getElementById("export-message").textContent = preview.overall === 0 ? "当前筛选没有可导出的评测记录" : "";
+            } catch (error) {
+                if (error.name === "AbortError" || requestId !== state.exportPreviewRequestId) return;
+                state.exportPair.previewOverall = 0;
+                document.getElementById("export-download").disabled = true;
+                document.getElementById("export-message").textContent = error.message;
+            } finally {
+                if (requestId === state.exportPreviewRequestId) state.exportPair.previewController = null;
+            }
+        }
+
+        function extractDownloadFilename(contentDisposition, includeImages) {
+            const fallback = includeImages ? "评测导出.zip" : "评测导出.xlsx";
+            if (!contentDisposition) return fallback;
+            const extended = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+            if (extended) {
+                try {
+                    return decodeURIComponent(extended[1].trim().replace(/^"|"$/g, ""));
+                } catch (_) {}
+            }
+            const filename = contentDisposition.match(/(?:^|;)\s*filename\s*=\s*(?:"([^"]+)"|([^;]+))/i);
+            return filename ? (filename[1] || filename[2]).trim() : fallback;
+        }
+
+        async function downloadExport() {
+            const button = document.getElementById("export-download");
+            if (button.disabled || !state.exportPair.options) return;
+            const request = collectExportRequest();
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = "正在生成...";
+            document.getElementById("export-message").textContent = "正在生成下载文件...";
+            try {
+                const response = await fetch("/api/export", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(request)
+                });
+                if (!response.ok) {
+                    let message = "导出失败";
+                    try {
+                        const data = await response.json();
+                        message = data.detail || message;
+                    } catch (_) {}
+                    throw new Error(message);
+                }
+                const url = URL.createObjectURL(await response.blob());
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = extractDownloadFilename(response.headers.get("Content-Disposition"), request.include_images);
+                document.body.append(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                document.getElementById("export-message").textContent = "下载已开始";
+            } catch (error) {
+                document.getElementById("export-message").textContent = error.message;
+            } finally {
+                button.textContent = originalText;
+                button.disabled = state.exportPair.previewOverall === 0;
+            }
+        }
+
+        function cancelExportPreview() {
+            if (state.exportPair.previewTimer) clearTimeout(state.exportPair.previewTimer);
+            if (state.exportPair.previewController) state.exportPair.previewController.abort();
+            state.exportPair.previewTimer = null;
+            state.exportPair.previewController = null;
+            state.exportPreviewRequestId += 1;
+        }
+
+        function closeExportModal() {
+            cancelExportPreview();
+            state.exportOpenRequestId += 1;
+            document.getElementById("export-modal").style.display = "none";
         }
 
         function closeModal(id) {
