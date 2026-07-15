@@ -111,10 +111,10 @@ class ExportArchiveTests(unittest.TestCase):
         manifest = build_image_manifest(self.request, [make_row()], lambda *args: None, lambda *args: None)
         self.assertEqual(manifest[("portrait", "scene1.jpg")]["D"]["status"], "文件不存在")
         workbook = build_workbook(self.request, [make_row()], image_manifest=manifest)
-        sheet = load_workbook(BytesIO(workbook_bytes(workbook)))["保真度明细"]
-        headers = [cell.value for cell in sheet[1]]
-        self.assertEqual(sheet.cell(2, headers.index("D 图片路径") + 1).value, "images/portrait/D/scene1.jpg")
-        self.assertEqual(sheet.cell(2, headers.index("D 图片状态") + 1).value, "文件不存在")
+        sheet = load_workbook(BytesIO(workbook_bytes(workbook)))["portrait"]
+        headers = [cell.value for cell in sheet[2]]
+        self.assertEqual(sheet.cell(3, headers.index("D 图片路径") + 1).value, "images/portrait/D/scene1.jpg")
+        self.assertEqual(sheet.cell(3, headers.index("D 图片状态") + 1).value, "文件不存在")
 
     def test_create_artifact_rejects_empty_overall_and_cleans_failed_temp_directory(self):
         from app_core import export_service

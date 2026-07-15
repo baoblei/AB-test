@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import tempfile
 import zipfile
@@ -23,12 +24,7 @@ VALID_RESULT_FILTERS = {"all", "a", "tie", "b"}
 VALID_BAD_CASE_FILTERS = {"all", "with", "without"}
 VALID_EVAL_MODES = {"full", "overall"}
 
-DETAIL_SHEET_NAMES = {
-    "aesthetic": "美学明细",
-    "logic": "合理性明细",
-    "consistency": "一致性明细",
-    "fidelity": "保真度明细",
-}
+INVALID_SHEET_TITLE_CHARS = re.compile(r"[\[\]:*?/\\]")
 HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 WRAPPED_ALIGNMENT = Alignment(vertical="top", wrap_text=True)
@@ -220,16 +216,6 @@ def summarize_overall(rows, v_a: str, v_b: str) -> dict:
     }
 
 
-def result_label(value: str, v_a: str, v_b: str) -> str:
-    if value == "tie":
-        return "平局"
-    if value == v_a:
-        return f"{v_a} 胜"
-    if value == v_b:
-        return f"{v_b} 胜"
-    return value or ""
-
-
 def excel_safe_text(value):
     if isinstance(value, str) and value.startswith(EXCEL_FORMULA_PREFIXES):
         return f"'{value}"
@@ -265,15 +251,15 @@ def _style_header(sheet, row: int, columns: int) -> None:
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
 
-def _fit_columns(sheet, wrapped_headers: Optional[set[str]] = None) -> None:
+def _fit_columns(sheet, wrapped_headers: Optional[set[str]] = None, header_row: int = 1) -> None:
     wrapped_headers = {excel_safe_text(header) for header in wrapped_headers or set()}
     for column in range(1, sheet.max_column + 1):
-        header = sheet.cell(1, column).value
+        header = sheet.cell(header_row, column).value
         max_length = max(len(str(sheet.cell(row, column).value or "")) for row in range(1, sheet.max_row + 1))
         width = min(max(max_length + 2, 10), 60)
         sheet.column_dimensions[get_column_letter(column)].width = width
         if header in wrapped_headers:
-            for row in range(2, sheet.max_row + 1):
+            for row in range(header_row + 1, sheet.max_row + 1):
                 sheet.cell(row, column).alignment = WRAPPED_ALIGNMENT
 
 
@@ -370,23 +356,31 @@ def _write_overall_sheet(
         sheet.column_dimensions[get_column_letter(column)].width = min(max(max_length + 2, 10), 30)
 
 
-def _detail_headers(dimension: str, request: ExportRequest, task_type: str, v_a: str, v_b: str) -> list[str]:
-    headers = [
-        "任务类型", "模型 A", "模型 B", "场景", "图片名", "Prompt", f"{DIM_LABELS[dimension]}判定", "评测人", "评测模式", "评测时间（北京时间）",
-        f"{v_a} 图片路径", f"{v_a} 图片状态", f"{v_b} 图片路径", f"{v_b} 图片状态",
+def _scene_detail_groups(
+    dimensions: list[str], request: ExportRequest, task_type: str, v_a: str, v_b: str
+) -> list[tuple[str, list[str]]]:
+    sample_headers = [
+        "任务类型", "模型 A", "模型 B", "场景", "图片名", "Prompt", "评测人", "评测模式", "评测时间（北京时间）",
     ]
-    if task_type == "TI2I":
-        headers.extend(["参考图路径", "参考图状态"])
     if request.include_duration:
-        headers.append("评测耗时（秒）")
+        sample_headers.append("评测耗时（秒）")
+    groups = [("样本信息", sample_headers)]
+    groups.extend((DIM_LABELS[dimension], [f"{v_a} 胜", "平局", f"{v_b} 胜"]) for dimension in dimensions)
+    image_headers = [f"{v_a} 图片路径", f"{v_a} 图片状态", f"{v_b} 图片路径", f"{v_b} 图片状态"]
+    if task_type == "TI2I":
+        image_headers.extend(["参考图路径", "参考图状态"])
+    groups.append(("图片信息", image_headers))
     if request.include_bad_cases:
-        headers.extend([f"{v_a} 坏例标签", f"{v_a} 坏例类别", f"{v_b} 坏例标签", f"{v_b} 坏例类别"])
-    return headers
+        groups.append(
+            ("坏例信息", [f"{v_a} 坏例标签", f"{v_a} 坏例类别", f"{v_b} 坏例标签", f"{v_b} 坏例类别"])
+        )
+    return groups
 
 
-def _detail_values(
+def _scene_detail_values(
     row,
-    dimension: str,
+    dimensions: list[str],
+    matching_row_ids: dict[str, set[int]],
     request: ExportRequest,
     task_type: str,
     v_a: str,
@@ -400,16 +394,29 @@ def _detail_values(
     image_info = (image_manifest or {}).get((row["scene"], row["filename"]), {})
     a_image = image_info.get(v_a, {})
     b_image = image_info.get(v_b, {})
+    row_id = row["id"]
     values = [
         task_type, v_a, v_b, row["scene"], row["filename"], prompt_cache[prompt_key],
-        result_label(row[dimension], v_a, v_b), row["worker"], row["eval_mode"] or "full", row["timestamp"],
-        a_image.get("path", ""), a_image.get("status", "未导出"), b_image.get("path", ""), b_image.get("status", "未导出"),
+        row["worker"], row["eval_mode"] or "full", row["timestamp"],
     ]
+    if request.include_duration:
+        values.append(row["duration_seconds"])
+    for dimension in dimensions:
+        dimension_values = [None, None, None]
+        if row_id in matching_row_ids[dimension]:
+            result_index = {v_a: 0, "tie": 1, v_b: 2}.get(row[dimension])
+            if result_index is not None:
+                dimension_values[result_index] = 1
+        values.extend(dimension_values)
+    values.extend(
+        [
+            a_image.get("path", ""), a_image.get("status", "未导出"),
+            b_image.get("path", ""), b_image.get("status", "未导出"),
+        ]
+    )
     if task_type == "TI2I":
         ref_image = image_info.get("ref", {})
         values.extend([ref_image.get("path", ""), ref_image.get("status", "未导出")])
-    if request.include_duration:
-        values.append(row["duration_seconds"])
     if request.include_bad_cases:
         values.extend(
             [
@@ -422,9 +429,10 @@ def _detail_values(
     return values
 
 
-def _write_detail_sheet(
+def _write_scene_detail_sheet(
     sheet,
-    dimension: str,
+    dimensions: list[str],
+    matching_row_ids: dict[str, set[int]],
     request: ExportRequest,
     rows: list,
     task_type: str,
@@ -433,18 +441,49 @@ def _write_detail_sheet(
     prompt_cache: dict[tuple[str, str, str], str],
     image_manifest: Optional[dict],
 ) -> None:
-    headers = _detail_headers(dimension, request, task_type, v_a, v_b)
-    sheet.append([excel_safe_text(header) for header in headers])
+    groups = _scene_detail_groups(dimensions, request, task_type, v_a, v_b)
+    group_row = []
+    header_row = []
+    column = 1
+    merged_ranges = []
+    for group_name, headers in groups:
+        group_row.extend([excel_safe_text(group_name)] + [None] * (len(headers) - 1))
+        header_row.extend(excel_safe_text(header) for header in headers)
+        if len(headers) > 1:
+            merged_ranges.append((column, column + len(headers) - 1))
+        column += len(headers)
+    sheet.append(group_row)
+    sheet.append(header_row)
+    for start_column, end_column in merged_ranges:
+        sheet.merge_cells(start_row=1, start_column=start_column, end_row=1, end_column=end_column)
     for row in rows:
-        values = _detail_values(row, dimension, request, task_type, v_a, v_b, prompt_cache, image_manifest)
+        values = _scene_detail_values(
+            row, dimensions, matching_row_ids, request, task_type, v_a, v_b, prompt_cache, image_manifest
+        )
         sheet.append([excel_safe_text(value) for value in values])
-    _style_header(sheet, 1, len(headers))
-    sheet.auto_filter.ref = sheet.dimensions
-    sheet.freeze_panes = "A2"
+    _style_header(sheet, 1, len(header_row))
+    _style_header(sheet, 2, len(header_row))
+    sheet.auto_filter.ref = f"A2:{get_column_letter(len(header_row))}{max(sheet.max_row, 2)}"
+    sheet.freeze_panes = "A3"
     _fit_columns(
         sheet,
         {"Prompt", f"{v_a} 坏例标签", f"{v_a} 坏例类别", f"{v_b} 坏例标签", f"{v_b} 坏例类别"},
+        header_row=2,
     )
+
+
+def _scene_sheet_title(scene: str, existing_titles: set[str]) -> str:
+    cleaned = INVALID_SHEET_TITLE_CHARS.sub("_", str(scene))
+    cleaned = "".join(character if ord(character) >= 32 else "_" for character in cleaned).strip() or "场景"
+    cleaned = cleaned[:31]
+    candidate = cleaned
+    suffix_number = 2
+    while candidate.casefold() in existing_titles:
+        suffix = f" ({suffix_number})"
+        candidate = f"{cleaned[:31 - len(suffix)]}{suffix}"
+        suffix_number += 1
+    existing_titles.add(candidate.casefold())
+    return candidate
 
 
 def build_workbook(
@@ -471,16 +510,28 @@ def build_workbook(
     )
 
     requested_dimensions = set(request.dimensions)
+    dimensions = [
+        dimension for dimension in TASK_CONFIGS[task_type]["eval_dims"] if dimension in requested_dimensions
+    ]
+    dimension_rows = {dimension: filter_rows(base_rows, request, dimension) for dimension in dimensions}
+    matching_row_ids = {
+        dimension: {row["id"] for row in rows_for_dimension}
+        for dimension, rows_for_dimension in dimension_rows.items()
+    }
+    detail_row_ids = set().union(*matching_row_ids.values()) if matching_row_ids else set()
+    detail_scenes = {row["scene"] for row in overall_rows}
+    detail_scenes.update(row["scene"] for rows_for_dimension in dimension_rows.values() for row in rows_for_dimension)
     prompt_cache = {}
-    for dimension in TASK_CONFIGS[task_type]["eval_dims"]:
-        if dimension not in requested_dimensions:
-            continue
-        sheet = workbook.create_sheet(DETAIL_SHEET_NAMES[dimension])
-        _write_detail_sheet(
+    existing_titles = {"overall"}
+    for scene in sorted(detail_scenes):
+        sheet = workbook.create_sheet(_scene_sheet_title(scene, existing_titles))
+        scene_rows = [row for row in base_rows if row["id"] in detail_row_ids and row["scene"] == scene]
+        _write_scene_detail_sheet(
             sheet,
-            dimension,
+            dimensions,
+            matching_row_ids,
             request,
-            filter_rows(base_rows, request, dimension),
+            scene_rows,
             task_type,
             v_a,
             v_b,

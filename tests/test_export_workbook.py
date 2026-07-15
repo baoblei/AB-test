@@ -76,12 +76,12 @@ class ExportWorkbookTests(unittest.TestCase):
         ]
 
     @patch("app_core.export_service.get_prompt_text", return_value="a red car")
-    def test_t2i_workbook_has_overall_config_ordered_sheets_and_metadata(self, _prompt):
+    def test_t2i_workbook_has_overall_and_scene_ordered_sheets_with_metadata(self, _prompt):
         workbook = build_workbook(
             self.t2i_request, self.t2i_rows, generated_at="2026-07-15T10:00:00+08:00"
         )
 
-        self.assertEqual(workbook.sheetnames, ["Overall", "美学明细", "一致性明细"])
+        self.assertEqual(workbook.sheetnames, ["Overall", "city", "zoo"])
         overall = workbook["Overall"]
         self.assertEqual(overall["A1"].value, "评测结果导出")
         self.assertEqual(overall["B2"].value, "2026-07-15T10:00:00+08:00")
@@ -95,13 +95,19 @@ class ExportWorkbookTests(unittest.TestCase):
     def test_overall_and_detail_apply_result_filter_independently(self, _prompt):
         workbook = build_workbook(self.t2i_request, self.t2i_rows)
         overall = workbook["Overall"]
-        detail = workbook["美学明细"]
+        detail = workbook["zoo"]
 
         self.assertEqual(overall["B12"].value, 1)
-        self.assertEqual(detail.max_row, 2)
-        headers = [cell.value for cell in detail[1]]
-        self.assertEqual(detail.cell(2, headers.index("图片名") + 1).value, "image-1.png")
-        self.assertEqual(detail.cell(2, headers.index("美学判定") + 1).value, "A 胜")
+        self.assertEqual(detail.max_row, 3)
+        headers = [cell.value for cell in detail[2]]
+        self.assertEqual(detail.cell(3, headers.index("图片名") + 1).value, "image-1.png")
+        aesthetic_start = headers.index("A 胜") + 1
+        consistency_start = headers.index("A 胜", aesthetic_start) + 1
+        self.assertEqual(detail.cell(3, aesthetic_start).value, 1)
+        self.assertEqual(
+            [detail.cell(3, column).value for column in range(consistency_start, consistency_start + 3)],
+            [None, None, None],
+        )
 
     def test_overall_metadata_without_image_manifest_marks_images_unchecked_after_round_trip(self):
         overall = load_workbook(BytesIO(workbook_bytes(build_workbook(self.t2i_request, self.t2i_rows))))["Overall"]
@@ -155,36 +161,42 @@ class ExportWorkbookTests(unittest.TestCase):
         self.assertEqual(overall["A11"].value, "场景")
 
     @patch("app_core.export_service.get_prompt_text", return_value="a red car")
-    def test_dimension_detail_contains_required_fields_and_unexported_image_values(self, _prompt):
-        sheet = build_workbook(self.t2i_request, self.t2i_rows)["美学明细"]
-        headers = [cell.value for cell in sheet[1]]
+    def test_scene_detail_contains_grouped_dimensions_and_required_fields(self, _prompt):
+        sheet = build_workbook(self.t2i_request, self.t2i_rows)["zoo"]
+        group_headers = [cell.value for cell in sheet[1]]
+        headers = [cell.value for cell in sheet[2]]
 
         for header in ("任务类型", "模型 A", "模型 B", "场景", "图片名", "Prompt", "评测人", "评测模式", "评测时间（北京时间）"):
             self.assertIn(header, headers)
-        self.assertIn("美学判定", headers)
+        self.assertIn("美学", group_headers)
+        self.assertIn("一致性", group_headers)
         self.assertIn("评测耗时（秒）", headers)
         self.assertIn("A 坏例标签", headers)
-        self.assertEqual(sheet.cell(2, headers.index("Prompt") + 1).value, "a red car")
-        self.assertEqual(sheet.cell(2, headers.index("A 图片路径") + 1).value, "")
-        self.assertEqual(sheet.cell(2, headers.index("A 图片状态") + 1).value, "未导出")
-        self.assertEqual(sheet.freeze_panes, "A2")
-        self.assertEqual(sheet.auto_filter.ref, sheet.dimensions)
-        self.assertTrue(sheet.cell(2, headers.index("Prompt") + 1).alignment.wrap_text)
+        self.assertEqual(sheet.cell(3, headers.index("Prompt") + 1).value, "a red car")
+        self.assertEqual(sheet.cell(3, headers.index("A 图片路径") + 1).value, "")
+        self.assertEqual(sheet.cell(3, headers.index("A 图片状态") + 1).value, "未导出")
+        self.assertEqual(sheet.freeze_panes, "A3")
+        self.assertEqual(sheet.auto_filter.ref, f"A2:{sheet.cell(2, sheet.max_column).coordinate[0:-1]}{sheet.max_row}")
+        self.assertTrue(sheet.cell(3, headers.index("Prompt") + 1).alignment.wrap_text)
+        for dimension in ("美学", "一致性"):
+            cell_range = next(cell_range for cell_range in sheet.merged_cells.ranges if sheet.cell(cell_range.min_row, cell_range.min_col).value == dimension)
+            self.assertEqual(cell_range.max_col - cell_range.min_col + 1, 3)
 
     @patch("app_core.export_service.get_prompt_text", return_value="portrait prompt")
     def test_ti2i_workbook_has_fidelity_reference_columns_and_round_trips(self, _prompt):
         workbook = build_workbook(self.ti2i_request, self.ti2i_rows)
-        sheet = workbook["保真度明细"]
-        headers = [cell.value for cell in sheet[1]]
+        sheet = workbook["portrait"]
+        headers = [cell.value for cell in sheet[2]]
 
+        self.assertIn("保真度", [cell.value for cell in sheet[1]])
         self.assertIn("参考图路径", headers)
         self.assertIn("参考图状态", headers)
         self.assertNotIn("评测耗时（秒）", headers)
         self.assertNotIn("D 坏例标签", headers)
-        self.assertEqual(sheet.cell(2, headers.index("参考图路径") + 1).value, "")
-        self.assertEqual(sheet.cell(2, headers.index("参考图状态") + 1).value, "未导出")
+        self.assertEqual(sheet.cell(3, headers.index("参考图路径") + 1).value, "")
+        self.assertEqual(sheet.cell(3, headers.index("参考图状态") + 1).value, "未导出")
         loaded = load_workbook(BytesIO(workbook_bytes(workbook)))
-        self.assertEqual(loaded.sheetnames, ["Overall", "保真度明细"])
+        self.assertEqual(loaded.sheetnames, ["Overall", "portrait"])
 
     @patch("app_core.export_service.get_prompt_text", return_value="=SUM(1, 1)")
     def test_external_text_is_not_written_as_excel_formula(self, _prompt):
@@ -217,14 +229,32 @@ class ExportWorkbookTests(unittest.TestCase):
                     self.assertNotEqual(cell.data_type, "f", f"{sheet.title}!{cell.coordinate}")
         self.assertEqual(loaded["Overall"]["B4"].value, "'+model-a vs =model-b")
         self.assertEqual(loaded["Overall"]["B5"].value, "'-scene")
-        detail = loaded["美学明细"]
-        headers = [cell.value for cell in detail[1]]
-        self.assertEqual(detail.cell(2, headers.index("模型 A") + 1).value, "'+model-a")
-        self.assertEqual(detail.cell(2, headers.index("模型 B") + 1).value, "'=model-b")
-        self.assertEqual(detail.cell(2, headers.index("场景") + 1).value, "'-scene")
-        self.assertEqual(detail.cell(2, headers.index("图片名") + 1).value, "'@image.png")
-        self.assertEqual(detail.cell(2, headers.index("评测人") + 1).value, "'@worker")
-        self.assertEqual(detail.cell(2, headers.index("Prompt") + 1).value, "'=SUM(1, 1)")
+        detail = loaded["-scene"]
+        headers = [cell.value for cell in detail[2]]
+        self.assertEqual(detail.cell(3, headers.index("模型 A") + 1).value, "'+model-a")
+        self.assertEqual(detail.cell(3, headers.index("模型 B") + 1).value, "'=model-b")
+        self.assertEqual(detail.cell(3, headers.index("场景") + 1).value, "'-scene")
+        self.assertEqual(detail.cell(3, headers.index("图片名") + 1).value, "'@image.png")
+        self.assertEqual(detail.cell(3, headers.index("评测人") + 1).value, "'@worker")
+        self.assertEqual(detail.cell(3, headers.index("Prompt") + 1).value, "'=SUM(1, 1)")
+
+    @patch("app_core.export_service.get_prompt_text", return_value="prompt")
+    def test_scene_sheet_titles_are_excel_safe_unique_and_limited(self, _prompt):
+        request = ExportRequest(task_type="T2I", v1="A", v2="B", dimensions=["aesthetic"])
+        rows = [
+            make_row(1, scene="Overall", aesthetic="A"),
+            make_row(2, scene="a:b", aesthetic="A"),
+            make_row(3, scene="a/b", aesthetic="A"),
+            make_row(4, scene="x" * 40, aesthetic="A"),
+        ]
+
+        workbook = build_workbook(request, rows)
+
+        self.assertEqual(workbook.sheetnames[0], "Overall")
+        self.assertEqual(len(workbook.sheetnames), 5)
+        self.assertEqual(len({name.casefold() for name in workbook.sheetnames}), 5)
+        self.assertTrue(all(len(name) <= 31 for name in workbook.sheetnames))
+        self.assertTrue(all(not any(char in name for char in "[]:*?/\\") for name in workbook.sheetnames[1:]))
 
     @patch("app_core.export_service.get_prompt_text", return_value="cached prompt")
     def test_build_workbook_caches_prompt_by_task_scene_and_filename(self, prompt_lookup):
