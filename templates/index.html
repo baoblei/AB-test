@@ -131,9 +131,10 @@
             margin-top: 2px;
         }
         .main {
-            max-width: 1560px;
+            max-width: 1920px;
             margin: 0 auto;
             padding: 24px 20px 56px;
+            padding-inline: clamp(10px, 1.4vw, 24px);
         }
         .hidden { display: none !important; }
         .panel {
@@ -187,7 +188,118 @@
             margin-bottom: 16px;
         }
         .compare-grid.t2i { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .compare-grid.ti2i { grid-template-columns: minmax(280px, 0.8fr) repeat(2, minmax(0, 1fr)); }
+        .compare-grid.ti2i { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .preview-stage {
+            position: relative;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: start;
+        }
+        .preview-viewport { height: clamp(360px, calc(100dvh - 270px), 820px); overflow: hidden; }
+        .main-preview-viewport {
+            --main-preview-height: clamp(320px, calc(100dvh - 330px), 760px);
+            grid-column: 1;
+            grid-row: 1;
+            overflow: visible;
+        }
+        .main-preview-viewport .image-shell {
+            height: var(--main-preview-height);
+            min-height: 0;
+            overflow: hidden;
+        }
+        .preview-toolbar {
+            position: sticky;
+            top: 84px;
+            width: 44px;
+            max-height: calc(100dvh - 100px);
+            overflow-y: auto;
+            z-index: 35;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 4px;
+            border-radius: 14px;
+            background: rgba(255, 253, 248, 0.96);
+            border: 1px solid var(--line);
+            box-shadow: 0 10px 24px rgba(78, 55, 37, 0.12);
+        }
+        #main-preview-toolbar {
+            grid-column: 2;
+            grid-row: 1;
+            width: auto;
+            align-self: stretch;
+        }
+        .preview-toolbar-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        .preview-toolbar.collapsed {
+            width: 0 !important;
+            min-width: 0;
+            padding: 0;
+            border: 0;
+            box-shadow: none;
+            overflow: visible;
+        }
+        .preview-toolbar.collapsed > [data-preview-action="collapse"] {
+            position: fixed;
+            right: 0;
+            top: 50%;
+            width: 24px;
+            height: 48px;
+            z-index: 65;
+            border-radius: 12px 0 0 12px;
+            transform: translateY(-50%);
+            box-shadow: -5px 6px 18px rgba(78, 55, 37, 0.2);
+        }
+        .preview-toolbar.collapsed .preview-toolbar-content { display: none; }
+        .preview-toolbar .preview-info { display: none; }
+        .preview-toolbar.help-open { width: 220px; }
+        .preview-toolbar.help-open .preview-info { display: block; }
+        .preview-toolbar .lightbox-btn {
+            width: 34px;
+            height: 34px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+        }
+        .preview-tool-icon { width: 17px; height: 17px; pointer-events: none; }
+        .preview-toolbar [data-preview-action="magnifier"] .preview-tool-icon { width: 21px; height: 21px; }
+        .preview-toolbar [data-preview-action="magnifier"] .preview-tool-icon text { font-size: 19px; }
+        .preview-toolbar .lightbox-btn.active {
+            color: #fffdf8;
+            background: linear-gradient(145deg, var(--primary), var(--primary-strong));
+            border-color: rgba(124, 45, 24, 0.72);
+            box-shadow: 0 4px 11px rgba(169, 77, 49, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+        .collapse-arrow { font-size: 1rem; line-height: 1; }
+        .visually-hidden {
+            position: absolute !important;
+            width: 1px !important;
+            height: 1px !important;
+            padding: 0 !important;
+            margin: -1px !important;
+            overflow: hidden !important;
+            clip: rect(0, 0, 0, 0) !important;
+            white-space: nowrap !important;
+            border: 0 !important;
+        }
+        .preview-shortcut-help {
+            max-width: 220px;
+            padding: 9px 11px;
+            border-radius: 12px;
+            color: var(--muted);
+            background: rgba(255, 253, 248, 0.96);
+            font-size: 0.74rem;
+            line-height: 1.45;
+        }
         .image-card {
             padding: 18px;
             display: flex;
@@ -231,12 +343,42 @@
             object-fit: contain;
             cursor: zoom-in;
         }
+        .image-loading, .preview-loading, .image-error-message {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--muted);
+            font-weight: 700;
+            pointer-events: none;
+        }
+        .image-error-message { display: none; color: #b91c1c; }
+        [data-preview-group-pane].image-error img,
+        [data-preview-group-pane]:not(.loading) .image-loading,
+        [data-preview-group-pane]:not(.loading) .preview-loading { display: none; }
+        [data-preview-group-pane].image-error .image-error-message { display: flex; }
         .image-meta {
             display: flex;
             justify-content: space-between;
             color: var(--muted);
             font-size: 0.84rem;
         }
+        .preview-info { color: var(--muted); font-size: 0.76rem; text-align: right; }
+        .preview-dark { background: #171310 !important; }
+        .magnifier-layer {
+            position: absolute;
+            z-index: 8;
+            width: 150px;
+            height: 150px;
+            display: none;
+            pointer-events: none;
+            border: 2px solid white;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+            background-repeat: no-repeat;
+        }
+        .magnifier-layer.visible { display: block; }
         .badcase-toolbar {
             display: flex;
             justify-content: center;
@@ -440,7 +582,16 @@
             background: rgba(255, 255, 255, 0.08);
         }
         .lightbox-grid.t2i { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .lightbox-grid.ti2i { grid-template-columns: minmax(280px, 0.8fr) repeat(2, minmax(0, 1fr)); }
+        .lightbox-grid.ti2i { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .lightbox-dialog.preview-stage {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-rows: auto minmax(0, 1fr);
+            gap: 0;
+        }
+        .lightbox-dialog.preview-stage .lightbox-head { grid-column: 1 / -1; grid-row: 1; }
+        #lightbox-preview-toolbar { grid-column: 2; grid-row: 2; width: auto; }
+        #lightbox-grid { grid-column: 1; grid-row: 2; }
         .pane {
             background: rgba(15, 12, 10, 0.96);
             display: flex;
@@ -473,11 +624,71 @@
             user-select: none;
             -webkit-user-drag: none;
         }
+        @media (min-width: 761px) and (max-width: 1180px) {
+            .preview-toolbar.compact {
+                right: 10px;
+                gap: 6px;
+            }
+            .preview-toolbar.compact .preview-toolbar-content { gap: 6px; }
+            .preview-toolbar.compact .lightbox-btn {
+                padding: 6px 9px;
+                font-size: 0.72rem;
+            }
+            .preview-toolbar.compact .preview-info,
+            .preview-toolbar.compact .preview-shortcut-help { font-size: 0.68rem; }
+        }
         @media (max-width: 1100px) {
-            .top-grid, .compare-grid.t2i, .compare-grid.ti2i, .badcase-panels, .actions, .lightbox-grid.t2i, .lightbox-grid.ti2i {
+            .top-grid, .badcase-panels, .actions {
                 grid-template-columns: 1fr;
             }
             .image-shell { min-height: 320px; }
+        }
+        @media (max-width: 760px) {
+            .preview-stage, .compare-grid, .image-card, .image-shell {
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+            }
+            .compare-grid.t2i, .compare-grid.ti2i, .lightbox-grid.t2i, .lightbox-grid.ti2i {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .image-shell img {
+                min-width: 0;
+                max-width: 100%;
+            }
+            .preview-toolbar {
+                position: static;
+                top: auto;
+                transform: none;
+                max-height: none;
+                width: 100%;
+                flex-direction: row;
+                overflow-x: auto;
+                overflow-y: hidden;
+            }
+            .preview-toolbar.collapsed { width: 100% !important; }
+            .preview-toolbar.collapsed > [data-preview-action="collapse"] {
+                position: static;
+                width: 34px;
+                height: 34px;
+                transform: none;
+                border-radius: 999px;
+                box-shadow: none;
+            }
+            .preview-stage { grid-template-columns: minmax(0, 1fr); }
+            .main-preview-viewport { grid-column: 1; grid-row: 1; }
+            #main-preview-toolbar { grid-column: 1; grid-row: 2; width: 100%; }
+            .lightbox-dialog.preview-stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+            .lightbox-dialog.preview-stage .lightbox-head { grid-column: 1; grid-row: 1; }
+            #lightbox-grid { grid-column: 1; grid-row: 2; }
+            #lightbox-preview-toolbar { grid-column: 1; grid-row: 3; width: 100%; }
+            .preview-toolbar-content {
+                flex-direction: row;
+                align-items: center;
+            }
+            .preview-shortcut-help {
+                flex: 0 0 240px;
+            }
         }
     </style>
 </head>
@@ -552,7 +763,12 @@
             </div>
         </div>
 
-        <div class="compare-grid t2i" id="compare-grid"></div>
+        <div class="preview-stage">
+            <div id="main-preview-toolbar"></div>
+            <div class="main-preview-viewport">
+                <div class="compare-grid t2i" id="compare-grid"></div>
+            </div>
+        </div>
 
         <div class="badcase-toolbar">
             <button class="toggle-btn" id="badcase-toggle" onclick="toggleBadcasePanels()">收起严重坏例</button>
@@ -583,8 +799,8 @@
         </div>
     </div>
 
-    <div class="lightbox" id="lightbox" onclick="closeLightbox()">
-        <div class="lightbox-dialog" onclick="event.stopPropagation()">
+    <div class="lightbox" id="lightbox" onclick="if (event.target === this) closeLightbox()">
+        <div class="lightbox-dialog preview-stage">
             <div class="lightbox-head">
                 <div>
                     <div style="font-weight:800;">高清预览</div>
@@ -592,16 +808,164 @@
                 </div>
                 <div style="display:flex; gap:8px;">
                     <button class="lightbox-btn" onclick="adjustZoom(-0.2)">缩小</button>
-                    <button class="lightbox-btn" onclick="resetZoom()">100%</button>
+                    <button class="lightbox-btn" onclick="resetZoom()">适应/复位</button>
                     <button class="lightbox-btn" onclick="adjustZoom(0.2)">放大</button>
                     <button class="lightbox-btn" onclick="closeLightbox()">关闭</button>
                 </div>
             </div>
-            <div class="lightbox-grid t2i" id="lightbox-grid"></div>
+            <div id="lightbox-preview-toolbar"></div>
+            <div class="lightbox-grid t2i preview-viewport" id="lightbox-grid"></div>
         </div>
     </div>
 
     <script>
+        class PreviewController {
+            constructor() { this.groups = new Map(); }
+
+            createGroup(groupId) {
+                this.groups.set(groupId, {
+                    mode: "fit",
+                    sync: true,
+                    magnifier: false,
+                    darkBackground: true,
+                    activePaneId: "",
+                    zoom: 1,
+                    normalizedCenter: { x: 0.5, y: 0.5 },
+                    panes: new Map()
+                });
+                return this.groups.get(groupId);
+            }
+
+            addPane(groupId, paneId, adapter) {
+                const group = this.groups.get(groupId) || this.createGroup(groupId);
+                group.panes.set(paneId, {
+                    adapter,
+                    failed: false,
+                    zoom: group.zoom,
+                    normalizedCenter: { ...group.normalizedCenter }
+                });
+                this.applyPane(group, paneId);
+            }
+
+            fitScale(mode, adapter) {
+                const dimensions = adapter.measure ? adapter.measure() : adapter;
+                const widthScale = dimensions.viewportWidth / dimensions.naturalWidth;
+                const heightScale = dimensions.viewportHeight / dimensions.naturalHeight;
+                if (mode === "fit-width") return widthScale;
+                if (mode === "fit-height") return heightScale;
+                if (mode === "actual") return 1;
+                return Math.min(widthScale, heightScale);
+            }
+
+            applyPane(group, paneId) {
+                const pane = group.panes.get(paneId);
+                if (!pane || pane.failed) return;
+                const dimensions = pane.adapter.measure ? pane.adapter.measure() : pane.adapter;
+                if (dimensions.naturalWidth <= 0 || dimensions.naturalHeight <= 0 || dimensions.viewportWidth <= 0 || dimensions.viewportHeight <= 0) return;
+                const scale = this.fitScale(group.mode, pane.adapter) * pane.zoom;
+                pane.adapter.apply({
+                    mode: group.mode,
+                    zoom: pane.zoom,
+                    scale,
+                    normalizedCenter: { ...pane.normalizedCenter }
+                });
+            }
+
+            refreshGroup(groupId) {
+                const group = this.groups.get(groupId);
+                if (group) group.panes.forEach((_, paneId) => this.applyPane(group, paneId));
+            }
+
+            setMode(groupId, mode) {
+                const group = this.groups.get(groupId);
+                if (!group || !["fit", "fit-width", "fit-height", "actual"].includes(mode)) return;
+                group.mode = mode;
+                group.panes.forEach((_, paneId) => this.applyPane(group, paneId));
+            }
+
+            setZoom(groupId, paneId, zoom, anchor) {
+                const group = this.groups.get(groupId);
+                const pane = group && group.panes.get(paneId);
+                if (!pane || pane.failed) return;
+                const nextZoom = Math.max(0.1, Math.min(12, Number(zoom)));
+                if (anchor) {
+                    const dimensions = pane.adapter.measure ? pane.adapter.measure() : pane.adapter;
+                    const baseScale = this.fitScale(group.mode, pane.adapter);
+                    const previousWidth = dimensions.naturalWidth * baseScale * pane.zoom;
+                    const previousHeight = dimensions.naturalHeight * baseScale * pane.zoom;
+                    const nextWidth = dimensions.naturalWidth * baseScale * nextZoom;
+                    const nextHeight = dimensions.naturalHeight * baseScale * nextZoom;
+                    const contentX = (anchor.x - dimensions.viewportWidth / 2 + pane.normalizedCenter.x * previousWidth) / previousWidth;
+                    const contentY = (anchor.y - dimensions.viewportHeight / 2 + pane.normalizedCenter.y * previousHeight) / previousHeight;
+                    this.setCenter(groupId, paneId, {
+                        x: contentX + (dimensions.viewportWidth / 2 - anchor.x) / nextWidth,
+                        y: contentY + (dimensions.viewportHeight / 2 - anchor.y) / nextHeight
+                    });
+                }
+                const targets = group.sync ? group.panes : new Map([[paneId, pane]]);
+                targets.forEach((target, targetId) => {
+                    if (target.failed) return;
+                    target.zoom = nextZoom;
+                    this.applyPane(group, targetId);
+                });
+                if (group.sync) group.zoom = nextZoom;
+            }
+
+            setCenter(groupId, paneId, center) {
+                const group = this.groups.get(groupId);
+                const pane = group && group.panes.get(paneId);
+                if (!pane || pane.failed) return;
+                const normalizedCenter = {
+                    x: Math.max(0, Math.min(1, Number(center.x))),
+                    y: Math.max(0, Math.min(1, Number(center.y)))
+                };
+                const targets = group.sync ? group.panes : new Map([[paneId, pane]]);
+                targets.forEach((target, targetId) => {
+                    if (target.failed) return;
+                    target.normalizedCenter = { ...normalizedCenter };
+                    this.applyPane(group, targetId);
+                });
+                if (group.sync) group.normalizedCenter = { ...normalizedCenter };
+            }
+
+            setSync(groupId, enabled) {
+                const group = this.groups.get(groupId);
+                if (group) group.sync = Boolean(enabled);
+            }
+
+            resetGroup(groupId) {
+                const group = this.groups.get(groupId);
+                if (!group) return;
+                group.mode = "fit";
+                group.zoom = 1;
+                group.normalizedCenter = { x: 0.5, y: 0.5 };
+                group.panes.forEach((pane, paneId) => {
+                    pane.zoom = 1;
+                    pane.normalizedCenter = { ...group.normalizedCenter };
+                    this.applyPane(group, paneId);
+                });
+            }
+        }
+
+        const previewController = new PreviewController();
+        function createPreviewGroup(groupId) { return previewController.createGroup(groupId); }
+        function setPreviewMode(groupId, mode) { previewController.setMode(groupId, mode); }
+        function setPreviewZoom(groupId, paneId, zoom, anchor) {
+            let normalizedAnchor = anchor;
+            const pane = previewController.groups.get(groupId)?.panes.get(paneId);
+            if (anchor && pane?.adapter.geometry) {
+                const geometry = pane.adapter.geometry();
+                normalizedAnchor = {
+                    x: anchor.clientX - geometry.content.left,
+                    y: anchor.clientY - geometry.content.top
+                };
+            }
+            previewController.setZoom(groupId, paneId, zoom, normalizedAnchor);
+        }
+        function setPreviewCenter(groupId, paneId, center) { previewController.setCenter(groupId, paneId, center); }
+        function resetPreviewGroup(groupId) { previewController.resetGroup(groupId); }
+        function refreshPreviewGroup(groupId) { previewController.refreshGroup(groupId); }
+
         let state = {
             worker: "",
             taskType: "T2I",
@@ -620,8 +984,6 @@
         let badCaseSelections = { left: new Set(), right: new Set() };
         let activeBadCaseCategory = { left: "", right: "" };
         let badcaseCollapsed = false;
-        let lightboxZoom = {};
-        let lightboxPan = {};
         let activeLightboxPane = "";
         let lightboxBound = false;
         let sceneUpdateTimer = null;
@@ -629,6 +991,7 @@
         let resolutionRequestId = 0;
         let loadGeneration = 0;
         let taskActionInFlight = false;
+        const previewPointerCleanups = new Map();
 
         async function api(url, options) {
             const res = await fetch(url, options);
@@ -880,17 +1243,95 @@
             `).join("");
         }
 
+        function previewToolIcon(symbol) {
+            return `<svg class="preview-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><text x="12" y="17" text-anchor="middle" font-size="15">${symbol}</text></svg>`;
+        }
+
+        function previewToolButton(action, label, symbol, options = {}) {
+            const pressed = options.pressed == null ? "" : ` aria-pressed="${options.pressed}"`;
+            const active = options.active ? " active" : "";
+            const extra = options.extra || "";
+            return `<button type="button" class="lightbox-btn${active}" data-preview-action="${action}" aria-label="${label}" title="${label}"${pressed} ${extra}>${previewToolIcon(symbol)}<span class="preview-tool-label visually-hidden">${label}</span></button>`;
+        }
+
+        function renderPreviewToolbar(groupId, compact) {
+            return `
+                <div class="preview-toolbar${compact ? " compact" : ""}" data-preview-group="${groupId}">
+                    <button type="button" class="lightbox-btn" data-preview-action="collapse" data-collapse-direction="right" aria-expanded="true" aria-label="向右收起工具" title="向右收起工具"><span class="collapse-arrow" aria-hidden="true">→</span><span class="preview-tool-label visually-hidden">向右收起工具</span></button>
+                    <div class="preview-toolbar-content">
+                        ${previewToolButton("sync", "同步开", "🔗", { pressed: true, active: true })}
+                        ${previewToolButton("fit", "适应窗口", "▣")}
+                        ${previewToolButton("fit-width", "适应宽度", "↔")}
+                        ${previewToolButton("fit-height", "适应高度", "↕")}
+                        ${previewToolButton("actual", "原始尺寸", "1:1")}
+                        ${previewToolButton("zoom-out", "缩小（-）", "−")}
+                        ${previewToolButton("zoom-in", "放大（+）", "+")}
+                        ${previewToolButton("magnifier", "放大镜关", "🔍", { pressed: false })}
+                        ${previewToolButton("reset", "重置", "↺")}
+                        ${previewToolButton("background", "深色背景", "◐", { pressed: true, active: true })}
+                        ${previewToolButton("fullscreen", "全屏", "⛶")}
+                        ${previewToolButton("help", "快捷键帮助", "?", { extra: 'aria-expanded="false"' })}
+                        <span class="preview-shortcut-help hidden" data-preview-help="${groupId}">滚轮缩放；触屏双指缩放；拖动平移；+ / - 缩放；空格临时平移；Esc 关闭高清预览。</span>
+                        <span class="preview-info" data-preview-info="${groupId}">自然尺寸 - · 渲染比例 - · 适应倍率 100% · 模式 适应</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        const previewRenderGenerations = new Map();
+        const previewImageCleanups = new Map();
+
+        function releasePreviewImageListeners(groupId) {
+            (previewImageCleanups.get(groupId) || []).forEach(cleanup => cleanup());
+            previewImageCleanups.delete(groupId);
+        }
+
+        function beginPreviewRender(groupId) {
+            releasePreviewImageListeners(groupId);
+            const generation = (previewRenderGenerations.get(groupId) || 0) + 1;
+            previewRenderGenerations.set(groupId, generation);
+            return generation;
+        }
+
+        function isPreviewGenerationCurrent(groupId, generation) {
+            return previewRenderGenerations.get(groupId) === generation;
+        }
+
+        function addPreviewImageListener(groupId, img, eventName, callback, options) {
+            img.addEventListener(eventName, callback, options);
+            const cleanups = previewImageCleanups.get(groupId) || [];
+            cleanups.push(() => img.removeEventListener(eventName, callback));
+            previewImageCleanups.set(groupId, cleanups);
+        }
+
         function renderCompareGrid() {
+            releasePreviewPointers("main");
+            hidePreviewMagnifiers();
+            const generation = beginPreviewRender("main");
             const task = state.currentTask;
             const cards = [];
             if (state.config.show_ref) {
-                cards.push(renderImageCard("reference", "参考图", task.ref_img, false));
+                cards.push(renderImageCard("reference", "参考图", task.ref_img, true));
             }
             cards.push(renderImageCard("left", "候选图 A", task.left_img, true));
             cards.push(renderImageCard("right", "候选图 B", task.right_img, true));
             const grid = document.getElementById("compare-grid");
             grid.className = `compare-grid ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
             grid.innerHTML = cards.join("");
+            document.getElementById("main-preview-toolbar").innerHTML = renderPreviewToolbar("main", false);
+            createPreviewGroup("main");
+            grid.querySelectorAll('[data-preview-group-pane="main"]').forEach(container => {
+                const key = container.dataset.previewPane;
+                const img = container.querySelector("img");
+                const register = () => {
+                    if (!isPreviewGenerationCurrent("main", generation)) return;
+                    registerPreviewPane("main", key, container, img);
+                };
+                addPreviewImageListener("main", img, "load", register, { once: true });
+                if (img.complete && img.naturalWidth) register();
+            });
+            refreshPreviewGroup("main");
+            bindPreviewGroup("main", generation);
         }
 
         function renderImageCard(key, title, src, previewable) {
@@ -898,10 +1339,13 @@
                 <div class="panel image-card">
                     <div class="image-head">
                         <strong>${title}</strong>
-                        ${previewable ? '<button class="preview-btn" onclick="openLightbox()">高清预览</button>' : ""}
+                        ${previewable ? `<button class="preview-btn" onclick="openLightbox('${key}')">高清预览</button>` : ""}
                     </div>
-                    <div class="image-shell">
-                        <img src="${src || ""}" alt="${title}" ${previewable ? 'onclick="openLightbox()"' : ""}>
+                    <div class="image-shell loading" data-preview-group-pane="main" data-preview-pane="${key}">
+                        <img src="${src || ""}" alt="${title}" ${previewable ? `onclick="handlePreviewImageClick(event, '${key}')"` : ""}>
+                        <span class="image-loading">图片加载中…</span>
+                        <span class="image-error-message">图片加载失败</span>
+                        <span class="magnifier-layer"></span>
                     </div>
                     <div class="image-meta">
                         <span>${title}</span>
@@ -1019,6 +1463,10 @@
         async function loadNextTask() {
             const generation = ++loadGeneration;
             stopTimer();
+            if (typeof resetPreviewGroup === "function") {
+                resetPreviewGroup("main");
+                resetPreviewGroup("lightbox");
+            }
             startTime = null;
             document.getElementById("timer").textContent = "00:00";
             const params = new URLSearchParams({
@@ -1201,6 +1649,8 @@
         }
 
         function renderLightbox() {
+            releasePreviewPointers("lightbox");
+            const generation = beginPreviewRender("lightbox");
             const panes = [];
             if (state.config.show_ref && state.currentTask.ref_img) {
                 panes.push({ side: "reference", label: "参考图", src: state.currentTask.ref_img });
@@ -1208,149 +1658,545 @@
             panes.push({ side: "left", label: "候选图 A", src: state.currentTask.left_img });
             panes.push({ side: "right", label: "候选图 B", src: state.currentTask.right_img });
             const grid = document.getElementById("lightbox-grid");
-            grid.className = `lightbox-grid ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
+            grid.className = `lightbox-grid preview-viewport ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
             grid.innerHTML = panes.map(item => renderLightboxPane(item.side, item.label, item.src)).join("");
-            lightboxZoom = {};
-            lightboxPan = {};
+            document.getElementById("lightbox-preview-toolbar").innerHTML = renderPreviewToolbar("lightbox", true);
+            createPreviewGroup("lightbox");
             activeLightboxPane = "";
             panes.forEach(item => {
                 const side = item.side;
-                if (document.getElementById(`lightbox-img-${side}`)) {
-                    lightboxZoom[side] = 1;
-                    lightboxPan[side] = { x: 0, y: 0 };
-                    if (!activeLightboxPane) activeLightboxPane = side;
-                }
+                if (document.getElementById(`lightbox-img-${side}`) && !activeLightboxPane) activeLightboxPane = side;
             });
             bindLightboxControls();
+            bindPreviewGroup("lightbox", generation);
         }
 
         function renderLightboxPane(side, label, src) {
             return `
                 <div class="pane">
                     <div class="pane-head">${label}</div>
-                    <div class="pane-body" data-pane="${side}">
+                    <div class="pane-body loading" data-pane="${side}" data-preview-group-pane="lightbox" data-preview-pane="${side}">
                         <img id="lightbox-img-${side}" src="${src || ""}" alt="${label}">
+                        <span class="preview-loading">图片加载中…</span>
+                        <span class="image-error-message">图片加载失败</span>
+                        <span class="magnifier-layer"></span>
                     </div>
                 </div>
             `;
         }
 
-        function openLightbox() {
-            resetZoom();
+        function updatePreviewToggleControl(groupId, action, enabled, enabledText, disabledText) {
+            const button = document.querySelector(`[data-preview-group="${groupId}"] [data-preview-action="${action}"]`);
+            if (!button) return;
+            const label = enabled ? enabledText : disabledText;
+            button.classList.toggle("active", enabled);
+            button.setAttribute("aria-pressed", String(enabled));
+            button.setAttribute("aria-label", label);
+            button.setAttribute("title", label);
+            const labelNode = button.querySelector ? button.querySelector(".preview-tool-label") : null;
+            if (labelNode) labelNode.textContent = label;
+            else button.textContent = label;
+        }
+
+        function setPreviewMagnifierState(groupId, enabled) {
+            const group = previewController.groups.get(groupId);
+            if (!group) return;
+            group.magnifier = Boolean(enabled);
+            if (!group.magnifier) hidePreviewMagnifiers(groupId);
+            updatePreviewToggleControl(groupId, "magnifier", group.magnifier, "放大镜开", "放大镜关");
+        }
+
+        function openLightbox(sourcePaneId) {
             document.getElementById("lightbox").classList.add("open");
+            activeLightboxPane = sourcePaneId || activeLightboxPane;
+            previewController.groups.get("lightbox").activePaneId = activeLightboxPane;
+            previewController.setSync("lightbox", true);
+            updatePreviewToggleControl("lightbox", "sync", true, "同步开", "同步关");
+            setPreviewMagnifierState("lightbox", false);
+            setPreviewMode("lightbox", "fit");
+            resetPreviewGroup("lightbox");
+            bindPreviewResize("lightbox");
+            refreshPreviewGroup("lightbox");
             document.body.style.overflow = "hidden";
         }
 
+        function handlePreviewImageClick(event, paneId) {
+            const container = event.currentTarget.closest("[data-preview-group-pane]");
+            const suppressUntil = Number(container?.dataset.suppressPreviewClickUntil || 0);
+            if (suppressUntil > Date.now()) {
+                delete container.dataset.suppressPreviewClickUntil;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            openLightbox(paneId);
+        }
+
         function closeLightbox() {
+            setPreviewMagnifierState("lightbox", false);
+            hidePreviewMagnifiers();
+            if (typeof setPreviewSpacePan === "function") setPreviewSpacePan(false);
+            if (typeof releasePreviewPointers === "function") releasePreviewPointers("lightbox", true);
             document.getElementById("lightbox").classList.remove("open");
             document.body.style.overflow = "";
         }
 
-        function applyTransform(side) {
-            const img = document.getElementById(`lightbox-img-${side}`);
-            if (!img || !img.naturalWidth) return;
-            img.style.width = `${img.naturalWidth * lightboxZoom[side]}px`;
-            img.style.height = `${img.naturalHeight * lightboxZoom[side]}px`;
-            img.style.transform = `translate(${lightboxPan[side].x}px, ${lightboxPan[side].y}px)`;
+        function measurePreviewGeometry(container, img, inset = 0) {
+            const containerRect = container.getBoundingClientRect();
+            const imageRect = img.getBoundingClientRect();
+            const contentLeft = containerRect.left + (container.clientLeft || 0) + inset;
+            const contentTop = containerRect.top + (container.clientTop || 0) + inset;
+            return {
+                content: {
+                    left: contentLeft,
+                    top: contentTop,
+                    width: Math.max(0, container.clientWidth - inset * 2),
+                    height: Math.max(0, container.clientHeight - inset * 2)
+                },
+                image: {
+                    left: imageRect.left,
+                    top: imageRect.top,
+                    width: imageRect.width,
+                    height: imageRect.height
+                }
+            };
         }
 
-        function setZoom(side, nextZoom, anchor) {
-            const img = document.getElementById(`lightbox-img-${side}`);
+        function registerPreviewPane(groupId, paneId, container, img) {
             if (!img || !img.naturalWidth) return;
-            const previous = lightboxZoom[side] || 1;
-            const zoom = Math.max(0.4, Math.min(3, Number(nextZoom.toFixed(2))));
-            if (zoom === previous) return;
-            if (anchor) {
-                const rect = anchor.container.getBoundingClientRect();
-                const offsetX = anchor.clientX - rect.left - 18;
-                const offsetY = anchor.clientY - rect.top - 18;
-                const contentX = (offsetX - lightboxPan[side].x) / previous;
-                const contentY = (offsetY - lightboxPan[side].y) / previous;
-                lightboxZoom[side] = zoom;
-                lightboxPan[side].x = offsetX - contentX * zoom;
-                lightboxPan[side].y = offsetY - contentY * zoom;
-            } else {
-                lightboxZoom[side] = zoom;
-            }
-            applyTransform(side);
+            previewController.addPane(groupId, paneId, {
+                measure: () => {
+                    const geometry = measurePreviewGeometry(container, img, 0);
+                    return {
+                        naturalWidth: img.naturalWidth,
+                        naturalHeight: img.naturalHeight,
+                        viewportWidth: geometry.content.width,
+                        viewportHeight: geometry.content.height
+                    };
+                },
+                geometry: () => measurePreviewGeometry(container, img, 0),
+                apply: paneState => {
+                    img.style.maxWidth = "none";
+                    img.style.maxHeight = "none";
+                    img.style.width = `${img.naturalWidth * paneState.scale}px`;
+                    img.style.height = `${img.naturalHeight * paneState.scale}px`;
+                    img.style.transform = `translate(${(0.5 - paneState.normalizedCenter.x) * img.naturalWidth * paneState.scale}px, ${(0.5 - paneState.normalizedCenter.y) * img.naturalHeight * paneState.scale}px)`;
+                    updatePreviewInfo(groupId, paneId);
+                }
+            });
+        }
+
+        function applyTransform(side) {
+            const img = document.getElementById(`lightbox-img-${side}`);
+            const container = img && img.closest(".pane-body");
+            if (!img || !container || !img.naturalWidth) return;
+            previewController.addPane("lightbox", side, {
+                measure: () => {
+                    const geometry = measurePreviewGeometry(container, img, 18);
+                    return {
+                        naturalWidth: img.naturalWidth,
+                        naturalHeight: img.naturalHeight,
+                        viewportWidth: geometry.content.width,
+                        viewportHeight: geometry.content.height
+                    };
+                },
+                geometry: () => measurePreviewGeometry(container, img, 18),
+                apply: paneState => {
+                    const geometry = measurePreviewGeometry(container, img, 18);
+                    const width = img.naturalWidth * paneState.scale;
+                    const height = img.naturalHeight * paneState.scale;
+                    const x = Math.max(-width + 1, Math.min(geometry.content.width - 1, geometry.content.width / 2 - paneState.normalizedCenter.x * width));
+                    const y = Math.max(-height + 1, Math.min(geometry.content.height - 1, geometry.content.height / 2 - paneState.normalizedCenter.y * height));
+                    img.style.width = `${width}px`;
+                    img.style.height = `${height}px`;
+                    img.style.transform = `translate(${x}px, ${y}px)`;
+                    updatePreviewInfo("lightbox", side);
+                }
+            });
         }
 
         function adjustZoom(delta) {
-            ["reference", "left", "right"].forEach(side => {
-                if (lightboxZoom[side] != null) setZoom(side, lightboxZoom[side] + delta);
-            });
+            adjustPreviewZoom("lightbox", delta);
+        }
+
+        function adjustPreviewZoom(groupId, delta) {
+            const group = previewController.groups.get(groupId);
+            if (!group) return;
+            const paneId = group.activePaneId || group.panes.keys().next().value;
+            const pane = group.panes.get(paneId);
+            if (pane && !pane.failed) setPreviewZoom(groupId, paneId, pane.zoom + delta);
         }
 
         function resetZoom() {
-            Object.keys(lightboxZoom).forEach(side => {
-                lightboxZoom[side] = 1;
-                lightboxPan[side] = { x: 0, y: 0 };
-                applyTransform(side);
+            const group = previewController.groups.get("lightbox");
+            if (group) resetPreviewGroup("lightbox");
+        }
+
+        function updatePreviewInfo(groupId, paneId) {
+            const group = previewController.groups.get(groupId);
+            const pane = group && group.panes.get(paneId);
+            const label = document.querySelector(`[data-preview-info="${groupId}"]`);
+            if (!pane || !label) return;
+            if (!group.activePaneId) group.activePaneId = paneId;
+            if (group.activePaneId !== paneId) return;
+            const dimensions = pane.adapter.measure();
+            const modes = { fit: "适应", "fit-width": "适宽", "fit-height": "适高", actual: "原始" };
+            const renderedScale = previewController.fitScale(group.mode, pane.adapter) * pane.zoom;
+            label.textContent = `自然尺寸 ${dimensions.naturalWidth}×${dimensions.naturalHeight} · 渲染比例 ${Math.round(renderedScale * 100)}% · 适应倍率 ${Math.round(pane.zoom * 100)}% · 模式 ${modes[group.mode]}`;
+            document.querySelectorAll(`[data-preview-group="${groupId}"] [data-preview-action]`).forEach(button => {
+                if (["fit", "fit-width", "fit-height", "actual"].includes(button.dataset.previewAction)) {
+                    const active = button.dataset.previewAction === group.mode;
+                    button.classList.toggle("active", active);
+                    button.setAttribute("aria-pressed", String(active));
+                }
             });
+        }
+
+        function hidePreviewMagnifiers(groupId) {
+            const selector = groupId ? `[data-preview-group-pane="${groupId}"] .magnifier-layer` : ".magnifier-layer";
+            document.querySelectorAll(selector).forEach(layer => layer.classList.remove("visible", "marker"));
+        }
+
+        function bindPreviewImageState(groupId, paneId, container, img, generation) {
+            const loaded = () => {
+                if (!isPreviewGenerationCurrent(groupId, generation)) return;
+                container.classList.remove("loading");
+            };
+            const failed = () => {
+                if (!isPreviewGenerationCurrent(groupId, generation)) return;
+                container.classList.remove("loading");
+                container.classList.add("image-error");
+                const pane = previewController.groups.get(groupId)?.panes.get(paneId);
+                if (pane) pane.failed = true;
+                hidePreviewMagnifiers(groupId);
+            };
+            addPreviewImageListener(groupId, img, "load", loaded, { once: true });
+            addPreviewImageListener(groupId, img, "error", failed, { once: true });
+            if (img.complete) img.naturalWidth ? loaded() : failed();
+        }
+
+        function releasePreviewPointers(groupId, preserveBindings = false) {
+            (previewPointerCleanups.get(groupId) || []).forEach(cleanup => cleanup());
+            if (!preserveBindings) previewPointerCleanups.delete(groupId);
+            if (typeof releasePreviewResize === "function") releasePreviewResize(groupId);
+        }
+
+        const previewResizeCleanups = new Map();
+
+        function releasePreviewResize(groupId) {
+            (previewResizeCleanups.get(groupId) || []).forEach(cleanup => cleanup());
+            previewResizeCleanups.delete(groupId);
+        }
+
+        function bindPreviewResize(groupId) {
+            releasePreviewResize(groupId);
+            const containers = [...document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`)];
+            if (!containers.length) return;
+            const refresh = () => refreshPreviewGroup(groupId);
+            const cleanups = [];
+            if (typeof ResizeObserver !== "undefined") {
+                const resizeObserver = new ResizeObserver(refresh);
+                containers.forEach(container => resizeObserver.observe(container));
+                cleanups.push(() => resizeObserver.disconnect());
+            } else if (typeof window !== "undefined") {
+                window.addEventListener("resize", refresh);
+                cleanups.push(() => window.removeEventListener("resize", refresh));
+            }
+            previewResizeCleanups.set(groupId, cleanups);
+        }
+
+        function togglePreviewMagnifier(groupId) {
+            const group = previewController.groups.get(groupId);
+            if (!group) return;
+            setPreviewMagnifierState(groupId, !group.magnifier);
+        }
+
+        function togglePreviewBackground(groupId) {
+            const group = previewController.groups.get(groupId);
+            if (!group) return;
+            group.darkBackground = !group.darkBackground;
+            document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(pane => pane.classList.toggle("preview-dark", group.darkBackground));
+            const button = document.querySelector(`[data-preview-group="${groupId}"] [data-preview-action="background"]`);
+            if (button) {
+                const label = group.darkBackground ? "深色背景" : "浅色背景";
+                button.classList.toggle("active", group.darkBackground);
+                button.setAttribute("aria-pressed", String(group.darkBackground));
+                button.setAttribute("aria-label", label);
+                button.setAttribute("title", label);
+                const labelNode = button.querySelector ? button.querySelector(".preview-tool-label") : null;
+                if (labelNode) labelNode.textContent = label;
+                else button.textContent = label;
+            }
+        }
+
+        function renderMagnifier(groupId, paneId, point) {
+            const group = previewController.groups.get(groupId);
+            if (!group || !group.magnifier) return false;
+            hidePreviewMagnifiers(groupId);
+            const sourcePane = group.panes.get(paneId);
+            if (!sourcePane || sourcePane.failed || !sourcePane.adapter.geometry) return false;
+            const sourceGeometry = sourcePane.adapter.geometry();
+            const sourceImage = sourceGeometry.image;
+            if (
+                sourceImage.width <= 0 || sourceImage.height <= 0 ||
+                point.clientX < sourceImage.left || point.clientX > sourceImage.left + sourceImage.width ||
+                point.clientY < sourceImage.top || point.clientY > sourceImage.top + sourceImage.height
+            ) return false;
+            const normalizedPoint = {
+                x: (point.clientX - sourceImage.left) / sourceImage.width,
+                y: (point.clientY - sourceImage.top) / sourceImage.height
+            };
+            group.panes.forEach((pane, targetId) => {
+                if (pane.failed || !pane.adapter.geometry) return;
+                if (targetId !== paneId && !group.sync) return;
+                const container = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${targetId}"]`);
+                const img = container && container.querySelector("img");
+                const layer = container && container.querySelector(".magnifier-layer");
+                if (!img || !layer) return;
+                const containerRect = container.getBoundingClientRect();
+                const geometry = pane.adapter.geometry();
+                layer.classList.remove("marker");
+                layer.classList.add("visible");
+                const backgroundWidth = geometry.image.width * 3;
+                const backgroundHeight = geometry.image.height * 3;
+                const pointerX = geometry.image.left + normalizedPoint.x * geometry.image.width - containerRect.left;
+                const pointerY = geometry.image.top + normalizedPoint.y * geometry.image.height - containerRect.top;
+                const maxLayerLeft = Math.max(0, container.clientWidth - layer.offsetWidth);
+                const maxLayerTop = Math.max(0, container.clientHeight - layer.offsetHeight);
+                const layerLeft = Math.max(0, Math.min(maxLayerLeft, pointerX - layer.offsetWidth / 2));
+                const layerTop = Math.max(0, Math.min(maxLayerTop, pointerY - layer.offsetHeight / 2));
+                layer.style.left = `${layerLeft}px`;
+                layer.style.top = `${layerTop}px`;
+                layer.style.backgroundImage = `url("${img.currentSrc || img.src}")`;
+                layer.style.backgroundSize = `${backgroundWidth}px ${backgroundHeight}px`;
+                layer.style.backgroundPosition = `${pointerX - layerLeft - normalizedPoint.x * backgroundWidth}px ${pointerY - layerTop - normalizedPoint.y * backgroundHeight}px`;
+            });
+            return true;
         }
 
         function bindLightboxControls() {
             if (lightboxBound) return;
             lightboxBound = true;
+            document.addEventListener("click", event => {
+                const button = event.target.closest("[data-preview-action]");
+                if (!button) return;
+                const toolbar = button.closest("[data-preview-group]");
+                const groupId = toolbar && toolbar.dataset.previewGroup;
+                const action = button.dataset.previewAction;
+                const group = groupId && previewController.groups.get(groupId);
+                if (!group) return;
+                if (["fit", "fit-width", "fit-height", "actual"].includes(action)) setPreviewMode(groupId, action);
+                if (action === "reset") resetPreviewGroup(groupId);
+                if (action === "magnifier") togglePreviewMagnifier(groupId);
+                if (action === "background") togglePreviewBackground(groupId);
+                if (action === "fullscreen") openLightbox(activeLightboxPane);
+                if (action === "zoom-out") adjustPreviewZoom(groupId, -0.16);
+                if (action === "zoom-in") adjustPreviewZoom(groupId, 0.16);
+                if (action === "collapse") {
+                    const collapsed = toolbar.classList.toggle("collapsed");
+                    const label = collapsed ? "向左展开工具" : "向右收起工具";
+                    button.setAttribute("aria-expanded", String(!collapsed));
+                    button.setAttribute("aria-label", label);
+                    button.setAttribute("title", label);
+                    button.dataset.collapseDirection = collapsed ? "left" : "right";
+                    toolbar.classList.remove("help-open");
+                    const helpPanel = toolbar.querySelector(`[data-preview-help="${groupId}"]`);
+                    if (helpPanel) helpPanel.classList.add("hidden");
+                    const helpButton = toolbar.querySelector('[data-preview-action="help"]');
+                    if (helpButton) helpButton.setAttribute("aria-expanded", "false");
+                    const arrow = button.querySelector ? button.querySelector(".collapse-arrow") : null;
+                    if (arrow) arrow.textContent = collapsed ? "←" : "→";
+                    const labelNode = button.querySelector ? button.querySelector(".preview-tool-label") : null;
+                    if (labelNode) labelNode.textContent = label;
+                    else button.textContent = collapsed ? "展开工具" : "收起工具";
+                }
+                if (action === "help") {
+                    const help = toolbar.querySelector(`[data-preview-help="${groupId}"]`);
+                    if (help) {
+                        const hidden = help.classList.toggle("hidden");
+                        toolbar.classList.toggle("help-open", !hidden);
+                        button.setAttribute("aria-expanded", String(!hidden));
+                    }
+                }
+                if (action === "sync") {
+                    previewController.setSync(groupId, !group.sync);
+                    updatePreviewToggleControl(groupId, "sync", group.sync, "同步开", "同步关");
+                }
+            });
             document.addEventListener("keydown", (event) => {
                 if (!document.getElementById("lightbox").classList.contains("open")) return;
                 if (event.key === "Escape") closeLightbox();
             });
         }
 
-        function attachPaneInteractions() {
-            document.querySelectorAll(".pane-body").forEach(container => {
+        let previewSpacePan = false;
+
+        function setPreviewSpacePan(enabled) {
+            previewSpacePan = Boolean(enabled);
+            document.querySelectorAll("[data-preview-group-pane]").forEach(container => {
+                container.classList.toggle("pan-active", previewSpacePan);
+            });
+            if (previewSpacePan) hidePreviewMagnifiers();
+        }
+
+        function bindPreviewGroup(groupId, generation) {
+            document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(container => {
+                const group = previewController.groups.get(groupId);
+                container.classList.toggle("preview-dark", Boolean(group && group.darkBackground));
                 if (container.dataset.bound === "1") return;
                 container.dataset.bound = "1";
-                const side = container.dataset.pane;
-                let pointerId = null;
+                const side = container.dataset.previewPane;
+                const activePointers = new Map();
+                let dragPointerId = null;
+                let pinchStart = null;
                 let startX = 0;
                 let startY = 0;
-                let startPanX = 0;
-                let startPanY = 0;
-                const img = document.getElementById(`lightbox-img-${side}`);
-                img.addEventListener("load", () => applyTransform(side));
+                let startCenter = { x: 0.5, y: 0.5 };
+                const img = container.querySelector("img");
+                if (typeof bindPreviewImageState === "function") {
+                    bindPreviewImageState(groupId, side, container, img, generation);
+                } else {
+                    img.addEventListener("error", () => hidePreviewMagnifiers(groupId), { once: true });
+                }
+                if (groupId === "lightbox") {
+                    const register = () => {
+                        if (generation !== undefined && !isPreviewGenerationCurrent(groupId, generation)) return;
+                        applyTransform(side);
+                    };
+                    if (typeof addPreviewImageListener === "function") {
+                        addPreviewImageListener(groupId, img, "load", register, { once: true });
+                    } else {
+                        img.addEventListener("load", register, { once: true });
+                    }
+                    if (img.complete && img.naturalWidth) register();
+                }
                 container.addEventListener("wheel", event => {
+                    const pane = previewController.groups.get(groupId)?.panes.get(side);
+                    if (!pane || pane.failed) return;
                     activeLightboxPane = side;
+                    previewController.groups.get(groupId).activePaneId = side;
                     const delta = event.deltaY < 0 ? 0.16 : -0.16;
-                    setZoom(side, (lightboxZoom[side] || 1) + delta, { container, clientX: event.clientX, clientY: event.clientY });
+                    setPreviewZoom(groupId, side, pane.zoom + delta, { container, clientX: event.clientX, clientY: event.clientY });
                     event.preventDefault();
                 }, { passive: false });
                 container.addEventListener("pointerdown", event => {
-                    if (event.button !== 0) return;
+                    if (event.pointerType !== "touch" && event.button !== 0) return;
+                    const pane = previewController.groups.get(groupId)?.panes.get(side);
+                    if (!pane || pane.failed) return;
                     activeLightboxPane = side;
-                    pointerId = event.pointerId;
-                    startX = event.clientX;
-                    startY = event.clientY;
-                    startPanX = lightboxPan[side].x;
-                    startPanY = lightboxPan[side].y;
-                    container.classList.add("dragging");
+                    previewController.groups.get(groupId).activePaneId = side;
+                    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                    if (activePointers.size === 1) {
+                        dragPointerId = event.pointerId;
+                        startX = event.clientX;
+                        startY = event.clientY;
+                        startCenter = { ...pane.normalizedCenter };
+                        pinchStart = null;
+                        container.classList.add("dragging");
+                    } else if (activePointers.size === 2) {
+                        const [first, second] = [...activePointers.values()];
+                        pinchStart = {
+                            distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+                            zoom: pane.zoom
+                        };
+                        dragPointerId = null;
+                        container.classList.remove("dragging");
+                    }
                     container.setPointerCapture(event.pointerId);
                     event.preventDefault();
                 });
                 container.addEventListener("pointermove", event => {
-                    if (pointerId !== event.pointerId) return;
-                    lightboxPan[side].x = startPanX + (event.clientX - startX);
-                    lightboxPan[side].y = startPanY + (event.clientY - startY);
-                    applyTransform(side);
+                    if (event.pointerType === "touch") hidePreviewMagnifiers(groupId);
+                    else if (!previewSpacePan) renderMagnifier(groupId, side, { clientX: event.clientX, clientY: event.clientY });
+                    if (!activePointers.has(event.pointerId)) return;
+                    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                    const pane = previewController.groups.get(groupId).panes.get(side);
+                    if (!pane || pane.failed) return;
+                    if (dragPointerId === event.pointerId && Math.hypot(event.clientX - startX, event.clientY - startY) > 5) {
+                        container.dataset.suppressPreviewClickUntil = String(Date.now() + 500);
+                    }
+                    if (activePointers.size >= 2 && pinchStart) {
+                        const [first, second] = [...activePointers.values()];
+                        const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+                        setPreviewZoom(groupId, side, pinchStart.zoom * distance / pinchStart.distance, {
+                            clientX: (first.x + second.x) / 2,
+                            clientY: (first.y + second.y) / 2
+                        });
+                        event.preventDefault();
+                        return;
+                    }
+                    if (dragPointerId !== event.pointerId) return;
+                    const dimensions = pane.adapter.measure();
+                    const scale = previewController.fitScale(previewController.groups.get(groupId).mode, pane.adapter) * pane.zoom;
+                    setPreviewCenter(groupId, side, {
+                        x: startCenter.x - (event.clientX - startX) / (dimensions.naturalWidth * scale),
+                        y: startCenter.y - (event.clientY - startY) / (dimensions.naturalHeight * scale)
+                    });
                 });
                 const stop = event => {
-                    if (pointerId !== event.pointerId) return;
-                    pointerId = null;
-                    container.classList.remove("dragging");
+                    if (!activePointers.has(event.pointerId)) return;
+                    activePointers.delete(event.pointerId);
                     if (container.hasPointerCapture(event.pointerId)) {
                         container.releasePointerCapture(event.pointerId);
                     }
+                    pinchStart = null;
+                    if (activePointers.size === 1) {
+                        const [remainingPointerId, remainingPoint] = activePointers.entries().next().value;
+                        const pane = previewController.groups.get(groupId)?.panes.get(side);
+                        dragPointerId = remainingPointerId;
+                        startX = remainingPoint.x;
+                        startY = remainingPoint.y;
+                        startCenter = pane ? { ...pane.normalizedCenter } : { x: 0.5, y: 0.5 };
+                        container.classList.add("dragging");
+                    } else {
+                        dragPointerId = null;
+                        container.classList.remove("dragging");
+                    }
                 };
+                const cleanupPointer = () => {
+                    const pointerIds = [...activePointers.keys()];
+                    activePointers.clear();
+                    dragPointerId = null;
+                    pinchStart = null;
+                    container.classList.remove("dragging");
+                    pointerIds.forEach(pointerId => {
+                        if (container.hasPointerCapture(pointerId)) container.releasePointerCapture(pointerId);
+                    });
+                };
+                if (typeof previewPointerCleanups !== "undefined") {
+                    const cleanups = previewPointerCleanups.get(groupId) || [];
+                    cleanups.push(cleanupPointer);
+                    previewPointerCleanups.set(groupId, cleanups);
+                }
                 container.addEventListener("pointerup", stop);
                 container.addEventListener("pointercancel", stop);
+                container.addEventListener("lostpointercapture", stop);
+                container.addEventListener("pointerleave", () => hidePreviewMagnifiers(groupId));
             });
+            if (typeof bindPreviewResize === "function") bindPreviewResize(groupId);
         }
 
-        const observer = new MutationObserver(() => attachPaneInteractions());
+        const observer = new MutationObserver(() => bindPreviewGroup("lightbox"));
         observer.observe(document.getElementById("lightbox-grid"), { childList: true, subtree: true });
 
         document.addEventListener("keydown", event => {
+            if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target.tagName)) return;
+            if (event.key === " ") { setPreviewSpacePan(true); event.preventDefault(); }
+            if (event.key === "+" || event.key === "-") {
+                const groupId = document.getElementById("lightbox").classList.contains("open") ? "lightbox" : "main";
+                const group = previewController.groups.get(groupId);
+                const paneId = activeLightboxPane || (group && group.panes.keys().next().value);
+                const pane = group && group.panes.get(paneId);
+                if (pane) setPreviewZoom(groupId, paneId, pane.zoom + (event.key === "+" ? 0.16 : -0.16));
+                event.preventDefault();
+            }
+        });
+        document.addEventListener("keyup", event => {
+            if (event.key === " ") setPreviewSpacePan(false);
+        });
+
+        document.addEventListener("keydown", event => {
+            if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target.tagName)) return;
             if (document.getElementById("test-ui").classList.contains("hidden")) return;
             const dims = state.config ? getActiveEvalDims() : [];
             if (!dims.length) return;
