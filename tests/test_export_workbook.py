@@ -184,7 +184,11 @@ class ExportWorkbookTests(unittest.TestCase):
 
     @patch("app_core.export_service.get_prompt_text", return_value="portrait prompt")
     def test_ti2i_workbook_has_fidelity_reference_columns_and_round_trips(self, _prompt):
-        workbook = build_workbook(self.ti2i_request, self.ti2i_rows)
+        rows = self.ti2i_rows + [
+            make_row(2, task_type="TI2I", v_a="D", v_b="E", scene="portrait", fidelity="tie"),
+            make_row(3, task_type="TI2I", v_a="D", v_b="E", scene="portrait", fidelity="E"),
+        ]
+        workbook = build_workbook(self.ti2i_request, rows)
         sheet = workbook["portrait"]
         headers = [cell.value for cell in sheet[2]]
 
@@ -195,6 +199,14 @@ class ExportWorkbookTests(unittest.TestCase):
         self.assertNotIn("D 坏例标签", headers)
         self.assertEqual(sheet.cell(3, headers.index("参考图路径") + 1).value, "")
         self.assertEqual(sheet.cell(3, headers.index("参考图状态") + 1).value, "未导出")
+        fidelity_start = headers.index("D 胜") + 1
+        self.assertEqual(
+            [
+                [sheet.cell(row, column).value for column in range(fidelity_start, fidelity_start + 3)]
+                for row in range(3, 6)
+            ],
+            [[1, None, None], [None, 1, None], [None, None, 1]],
+        )
         loaded = load_workbook(BytesIO(workbook_bytes(workbook)))
         self.assertEqual(loaded.sheetnames, ["Overall", "portrait"])
 
@@ -246,15 +258,19 @@ class ExportWorkbookTests(unittest.TestCase):
             make_row(2, scene="a:b", aesthetic="A"),
             make_row(3, scene="a/b", aesthetic="A"),
             make_row(4, scene="x" * 40, aesthetic="A"),
+            make_row(5, scene="'quoted'", aesthetic="A"),
+            make_row(6, scene="History", aesthetic="A"),
         ]
 
         workbook = build_workbook(request, rows)
 
         self.assertEqual(workbook.sheetnames[0], "Overall")
-        self.assertEqual(len(workbook.sheetnames), 5)
-        self.assertEqual(len({name.casefold() for name in workbook.sheetnames}), 5)
+        self.assertEqual(len(workbook.sheetnames), 7)
+        self.assertEqual(len({name.casefold() for name in workbook.sheetnames}), 7)
         self.assertTrue(all(len(name) <= 31 for name in workbook.sheetnames))
         self.assertTrue(all(not any(char in name for char in "[]:*?/\\") for name in workbook.sheetnames[1:]))
+        self.assertTrue(all(not name.startswith("'") and not name.endswith("'") for name in workbook.sheetnames))
+        self.assertNotIn("history", {name.casefold() for name in workbook.sheetnames})
 
     @patch("app_core.export_service.get_prompt_text", return_value="cached prompt")
     def test_build_workbook_caches_prompt_by_task_scene_and_filename(self, prompt_lookup):

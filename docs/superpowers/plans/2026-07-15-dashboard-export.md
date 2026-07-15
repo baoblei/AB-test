@@ -571,20 +571,7 @@ Write metadata rows 1-9, a blank separator, table headers at row 11, total at ro
 
 When `include_images=false`, image path cells are empty and status cells contain `未导出`. When image export is enabled, existing files contain the archive-relative path and status `已导出`; missing files have an empty path and status `文件不存在`.
 
-Convert result values with:
-
-```python
-def result_label(value: str, v_a: str, v_b: str) -> str:
-    if value == "tie":
-        return "平局"
-    if value == v_a:
-        return f"{v_a} 胜"
-    if value == v_b:
-        return f"{v_b} 胜"
-    return value or ""
-```
-
-Set autofilter over the used range, freeze `A2`, wrap Prompt/bad-case cells, and cap Prompt width at 60 characters.
+Set autofilter from the second header row through the used range, freeze `A3`, wrap Prompt/bad-case cells, and cap Prompt width at 60 characters.
 
 - [ ] **Step 5: 实现字节序列化并确认 GREEN**
 

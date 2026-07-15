@@ -482,7 +482,8 @@ def _write_scene_detail_sheet(
 
 def _scene_sheet_title(scene: str, existing_titles: set[str]) -> str:
     cleaned = INVALID_SHEET_TITLE_CHARS.sub("_", str(scene))
-    cleaned = "".join(character if ord(character) >= 32 else "_" for character in cleaned).strip() or "场景"
+    cleaned = "".join(character if ord(character) >= 32 else "_" for character in cleaned)
+    cleaned = cleaned.strip().strip("'").strip() or "场景"
     cleaned = cleaned[:31]
     candidate = cleaned
     suffix_number = 2
@@ -530,7 +531,7 @@ def build_workbook(
     detail_scenes = {row["scene"] for row in overall_rows}
     detail_scenes.update(row["scene"] for rows_for_dimension in dimension_rows.values() for row in rows_for_dimension)
     prompt_cache = {}
-    existing_titles = {"overall"}
+    existing_titles = {"overall", "history"}
     for scene in sorted(detail_scenes):
         sheet = workbook.create_sheet(_scene_sheet_title(scene, existing_titles))
         scene_rows = [row for row in base_rows if row["id"] in detail_row_ids and row["scene"] == scene]
