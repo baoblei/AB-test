@@ -23,15 +23,15 @@ class BusinessTimeWriteTests(unittest.TestCase):
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO pair_tasks (task_type, v_a, v_b, scene, filename, worker)
-            VALUES ('T2I', 'model-a', 'model-b', 'scene', 'vote.png', 'worker')
+            INSERT INTO pair_tasks (task_type, v_a, v_b, scene, filename, status, worker, assigned_user_id)
+            VALUES ('T2I', 'model-a', 'model-b', 'scene', 'vote.png', 'working', 'worker', 1)
             """
         )
         full_task_id = cursor.lastrowid
         cursor.execute(
             """
-            INSERT INTO pair_tasks (task_type, v_a, v_b, scene, filename, worker)
-            VALUES ('T2I', 'model-a', 'model-b', 'scene', 'skip.png', 'worker')
+            INSERT INTO pair_tasks (task_type, v_a, v_b, scene, filename, status, worker, assigned_user_id)
+            VALUES ('T2I', 'model-a', 'model-b', 'scene', 'skip.png', 'working', 'worker', 1)
             """
         )
         self.skip_task_id = cursor.lastrowid

@@ -190,7 +190,7 @@ def init_db():
 
 def reset_working_tasks():
     conn = connect()
-    conn.execute("UPDATE pair_tasks SET status='pending', worker=NULL WHERE status='working'")
+    conn.execute("UPDATE pair_tasks SET status='pending' WHERE status='working'")
     conn.commit()
     conn.close()
 

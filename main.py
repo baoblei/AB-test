@@ -136,7 +136,7 @@ def scene_resolution_stats(task_type: str, v1: str, v2: str, scene: str, user: d
 
 @app.get("/api/eval_mode_status")
 def get_eval_mode_status(task_type: str, worker: str, v1: str, v2: str, scene: str, user: dict = Depends(require_login)):
-    return get_eval_mode_status_service(task_type, worker, v1, v2, scene)
+    return get_eval_mode_status_service(task_type, user["username"], v1, v2, scene)
 
 
 @app.post("/api/start_eval_session")
@@ -150,7 +150,9 @@ def start_eval_session(
     overwrite_overall: bool = False,
     user: dict = Depends(require_login),
 ):
-    return start_eval_session_service(task_type, worker, v1, v2, scene, eval_mode, user["id"], overwrite_overall)
+    return start_eval_session_service(
+        task_type, user["username"], v1, v2, scene, eval_mode, user["id"], overwrite_overall
+    )
 
 
 @app.get("/api/get_prompt")
@@ -160,12 +162,12 @@ def get_prompt(task_type: str, scene: str, filename: str):
 
 @app.get("/api/get_task")
 def get_task(task_type: str, worker: str, v1: str, v2: str, scene: str, user: dict = Depends(require_login)):
-    return get_next_task(task_type, worker, v1, v2, scene, user["id"])
+    return get_next_task(task_type, user["username"], v1, v2, scene, user["id"])
 
 
 @app.get("/api/progress")
 def get_progress(task_type: str, worker: str, v1: str, v2: str, scene: str, eval_mode: str = "full", user: dict = Depends(require_login)):
-    return get_progress_service(task_type, worker, v1, v2, scene, eval_mode)
+    return get_progress_service(task_type, user["username"], v1, v2, scene, eval_mode)
 
 
 @app.post("/api/submit")

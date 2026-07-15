@@ -6,7 +6,7 @@ from typing import Any, Optional
 from .bad_cases import categories_from_tags, derive_overall_result, normalize_bad_case_tags
 from .config import get_task_config, normalize_task_type
 from .database import connect
-from .errors import AppError, NotFoundError
+from .errors import AppError, ConflictError
 from .storage import get_prompt_text, get_ref_image_url, get_result_image_url, get_scene_path, list_scene_files
 from .time_utils import now_beijing_iso
 
@@ -147,6 +147,14 @@ def ensure_pair_tasks(task_type: str, worker: str, v_a: str, v_b: str, scene: st
                 """,
                 (task_type, v_a, v_b, scene, filename, worker, user_id),
             )
+            cursor.execute(
+                """
+                UPDATE pair_tasks SET assigned_user_id=?
+                WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND filename=? AND worker=?
+                  AND assigned_user_id IS NULL
+                """,
+                (user_id, task_type, v_a, v_b, scene, filename, worker),
+            )
     conn.commit()
     conn.close()
 
@@ -158,33 +166,46 @@ def get_next_task(task_type: str, worker: str, v1: str, v2: str, scene: str, use
     ensure_pair_tasks(task_type, worker, v_a, v_b, scene, user_id)
 
     conn = connect()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT id, filename FROM pair_tasks
-        WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND status='working' AND worker=?
-        LIMIT 1
-        """,
-        (task_type, v_a, v_b, scene, worker),
-    )
-    row = cursor.fetchone()
-    if not row:
-        cursor.execute("BEGIN EXCLUSIVE TRANSACTION")
+    try:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
         cursor.execute(
             """
             SELECT id, filename FROM pair_tasks
-            WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND status='pending' AND worker=?
+            WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND status='working' AND worker=?
+              AND assigned_user_id=?
+            LIMIT 1
             """,
-            (task_type, v_a, v_b, scene, worker),
+            (task_type, v_a, v_b, scene, worker, user_id),
         )
-        pending = cursor.fetchall()
-        row = random.choice(pending) if pending else None
-        if row:
-            cursor.execute("UPDATE pair_tasks SET status='working' WHERE id=?", (row[0],))
-            conn.commit()
-        else:
-            conn.rollback()
-    conn.close()
+        row = cursor.fetchone()
+        if not row:
+            cursor.execute(
+                """
+                SELECT id, filename FROM pair_tasks
+                WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND status='pending' AND worker=?
+                  AND assigned_user_id=?
+                """,
+                (task_type, v_a, v_b, scene, worker, user_id),
+            )
+            pending = cursor.fetchall()
+            row = random.choice(pending) if pending else None
+            if row:
+                cursor.execute(
+                    """
+                    UPDATE pair_tasks SET status='working'
+                    WHERE id=? AND status='pending' AND assigned_user_id=?
+                    """,
+                    (row[0], user_id),
+                )
+                if cursor.rowcount != 1:
+                    raise ConflictError("任务领取冲突，请重试")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     if not row:
         return {"status": "finished"}
 
@@ -244,6 +265,33 @@ def get_progress(task_type: str, worker: str, v1: str, v2: str, scene: str, eval
     }
 
 
+def _get_owned_working_task(cursor, task_id: int, task_type: str, user_id: int):
+    cursor.execute(
+        """
+        SELECT v_a, v_b, scene, filename, worker
+        FROM pair_tasks
+        WHERE id=? AND task_type=? AND status='working' AND assigned_user_id=?
+        """,
+        (task_id, task_type, user_id),
+    )
+    task = cursor.fetchone()
+    if not task:
+        raise ConflictError("任务已完成、已失效或不属于当前用户")
+    return task
+
+
+def _complete_owned_task(cursor, task_id: int, user_id: int) -> None:
+    cursor.execute(
+        """
+        UPDATE pair_tasks SET status='completed'
+        WHERE id=? AND status='working' AND assigned_user_id=?
+        """,
+        (task_id, user_id),
+    )
+    if cursor.rowcount != 1:
+        raise ConflictError("任务已完成、已失效或不属于当前用户")
+
+
 def submit_vote(vote: Any, user_id: int) -> dict:
     task_type = normalize_task_type(vote.task_type)
     eval_mode = normalize_eval_mode(getattr(vote, "eval_mode", "full"))
@@ -265,9 +313,6 @@ def submit_vote(vote: Any, user_id: int) -> dict:
 
     v_a, v_b = sorted([vote.v_left, vote.v_right])
     if eval_mode == "overall":
-        mode_status = get_eval_mode_status(task_type, vote.worker, v_a, v_b, vote.scene)
-        if mode_status["full_count"] > 0:
-            raise AppError("当前模型对和场景已进行过多维度评测，无法提交整体单一维度评测")
         overall = resolve(vote.overall)
         dim_values = {"aesthetic": None, "logic": None, "consistency": None, "fidelity": None}
     else:
@@ -283,41 +328,67 @@ def submit_vote(vote: Any, user_id: int) -> dict:
         overall = derive_overall_result([dim_values[dim] for dim in config["eval_dims"]])
 
     conn = connect()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO results_log (
-            eval_mode, task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity,
-            worker, timestamp, duration_seconds, user_id,
-            bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+    try:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+        task = _get_owned_working_task(cursor, vote.task_id, task_type, user_id)
+        task_v_a, task_v_b, task_scene, task_filename, task_worker = task
+        if (
+            (v_a, v_b) != (task_v_a, task_v_b)
+            or vote.scene != task_scene
+            or vote.filename != task_filename
+            or vote.worker != task_worker
+        ):
+            raise ConflictError("提交内容与当前任务不一致")
+        if eval_mode == "overall":
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM results_log
+                WHERE task_type=? AND v_a=? AND v_b=? AND scene=? AND worker=?
+                  AND eval_mode='full' AND skipped=0
+                """,
+                (task_type, task_v_a, task_v_b, task_scene, task_worker),
+            )
+            if cursor.fetchone()[0] > 0:
+                raise AppError("当前模型对和场景已进行过多维度评测，无法提交整体单一维度评测")
+        _complete_owned_task(cursor, vote.task_id, user_id)
+        cursor.execute(
+            """
+            INSERT INTO results_log (
+                eval_mode, task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity,
+                worker, timestamp, duration_seconds, user_id,
+                bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                eval_mode,
+                task_type,
+                task_v_a,
+                task_v_b,
+                task_scene,
+                task_filename,
+                overall,
+                dim_values["aesthetic"],
+                dim_values["logic"],
+                dim_values["consistency"],
+                dim_values["fidelity"],
+                task_worker,
+                now_beijing_iso(),
+                vote.duration_seconds,
+                user_id,
+                json.dumps(tags_a, ensure_ascii=False),
+                json.dumps(tags_b, ensure_ascii=False),
+                json.dumps(categories_from_tags(tags_a), ensure_ascii=False),
+                json.dumps(categories_from_tags(tags_b), ensure_ascii=False),
+            ),
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            eval_mode,
-            task_type,
-            v_a,
-            v_b,
-            vote.scene,
-            vote.filename,
-            overall,
-            dim_values["aesthetic"],
-            dim_values["logic"],
-            dim_values["consistency"],
-            dim_values["fidelity"],
-            vote.worker,
-            now_beijing_iso(),
-            vote.duration_seconds,
-            user_id,
-            json.dumps(tags_a, ensure_ascii=False),
-            json.dumps(tags_b, ensure_ascii=False),
-            json.dumps(categories_from_tags(tags_a), ensure_ascii=False),
-            json.dumps(categories_from_tags(tags_b), ensure_ascii=False),
-        ),
-    )
-    cursor.execute("UPDATE pair_tasks SET status='completed' WHERE id=?", (vote.task_id,))
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     return {"status": "ok"}
 
 
@@ -325,28 +396,26 @@ def skip_task(task_id: int, task_type: str, user_id: int, eval_mode: str = "full
     task_type = normalize_task_type(task_type)
     eval_mode = normalize_eval_mode(eval_mode)
     conn = connect()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT v_a, v_b, scene, filename, worker FROM pair_tasks WHERE id=? AND task_type=?",
-        (task_id, task_type),
-    )
-    task = cursor.fetchone()
-    if not task:
-        conn.close()
-        raise NotFoundError("任务不存在")
-
-    cursor.execute(
-        """
-        INSERT INTO results_log (
-            eval_mode, task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity,
-            worker, timestamp, skipped, user_id,
-            bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+    try:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+        task = _get_owned_working_task(cursor, task_id, task_type, user_id)
+        _complete_owned_task(cursor, task_id, user_id)
+        cursor.execute(
+            """
+            INSERT INTO results_log (
+                eval_mode, task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity,
+                worker, timestamp, skipped, user_id,
+                bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', ?, ?, 1, ?, '[]', '[]', '[]', '[]')
+            """,
+            (eval_mode, task_type, task[0], task[1], task[2], task[3], task[4], now_beijing_iso(), user_id),
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', ?, ?, 1, ?, '[]', '[]', '[]', '[]')
-        """,
-        (eval_mode, task_type, task[0], task[1], task[2], task[3], task[4], now_beijing_iso(), user_id),
-    )
-    cursor.execute("UPDATE pair_tasks SET status='completed' WHERE id=?", (task_id,))
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     return {"status": "ok"}

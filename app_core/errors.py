@@ -10,6 +10,10 @@ class ValidationError(AppError):
     status_code = 422
 
 
+class ConflictError(AppError):
+    status_code = 409
+
+
 class InvalidTaskTypeError(AppError):
     pass
 

@@ -388,6 +388,10 @@
             color: var(--muted);
             border-color: rgba(72, 55, 37, 0.1);
         }
+        .submit-btn:disabled, .skip-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
         .shortcut-hint {
             text-align: center;
             color: var(--muted);
@@ -572,8 +576,8 @@
                 <tbody id="eval-body"></tbody>
             </table>
             <div class="actions">
-                <button class="submit-btn" onclick="submitVote()">提交并加载下一组</button>
-                <button class="skip-btn" onclick="skipTask()">跳过此任务</button>
+                <button class="submit-btn" id="submit-task" onclick="submitVote()">提交并加载下一组</button>
+                <button class="skip-btn" id="skip-task" onclick="skipTask()">跳过此任务</button>
             </div>
             <div class="shortcut-hint">快捷键：1 / 2 / 3 逐维打分，Enter 提交</div>
         </div>
@@ -624,6 +628,7 @@
         let sceneRequestId = 0;
         let resolutionRequestId = 0;
         let loadGeneration = 0;
+        let taskActionInFlight = false;
 
         async function api(url, options) {
             const res = await fetch(url, options);
@@ -958,16 +963,17 @@
             document.getElementById("progress-fill").style.width = `${data.percent}%`;
         }
 
-        function startTimer() {
+        function startTimer(initialElapsedSeconds = 0) {
             stopTimer();
-            startTime = Date.now();
-            document.getElementById("timer").textContent = "00:00";
-            timerInterval = setInterval(() => {
+            startTime = Date.now() - initialElapsedSeconds * 1000;
+            const renderElapsed = () => {
                 const elapsed = Math.floor((Date.now() - startTime) / 1000);
                 const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
                 const secs = String(elapsed % 60).padStart(2, "0");
                 document.getElementById("timer").textContent = `${mins}:${secs}`;
-            }, 1000);
+            };
+            renderElapsed();
+            timerInterval = setInterval(renderElapsed, 1000);
         }
 
         function stopTimer() {
@@ -976,7 +982,7 @@
         }
 
         function elapsedSeconds() {
-            return startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+            return startTime !== null ? Math.floor((Date.now() - startTime) / 1000) : 0;
         }
 
         function waitForTaskImages(timeoutMs = 15000) {
@@ -1036,46 +1042,93 @@
             }
         }
 
+        function setTaskActionPending(pending) {
+            taskActionInFlight = pending;
+            document.getElementById("submit-task").disabled = pending;
+            document.getElementById("skip-task").disabled = pending;
+        }
+
+        function beginTaskAction() {
+            if (taskActionInFlight || !state.currentTask) return null;
+            const action = {
+                task: state.currentTask,
+                duration_seconds: elapsedSeconds()
+            };
+            stopTimer();
+            startTime = null;
+            setTaskActionPending(true);
+            return action;
+        }
+
+        async function runTaskAction(action, request) {
+            let committed = false;
+            try {
+                await request();
+                committed = true;
+                if (state.currentTask === action.task) state.currentTask = null;
+                try {
+                    await updateProgress();
+                } catch (error) {
+                    console.error("更新进度失败", error);
+                }
+                await loadNextTask();
+            } catch (error) {
+                if (!committed && state.currentTask === action.task) startTimer(action.duration_seconds);
+                alert(error.message || "请求失败");
+            } finally {
+                setTaskActionPending(false);
+            }
+        }
+
         async function submitVote() {
+            if (taskActionInFlight || !state.currentTask) return;
             const dims = getActiveEvalDims();
             const missing = dims.filter(dim => !currentVotes[dim.key]);
             if (missing.length) {
                 alert("请完成所有评分维度");
                 return;
             }
-            await api("/api/submit", {
+            const action = beginTaskAction();
+            if (!action) return;
+            const payload = {
+                task_type: state.taskType,
+                eval_mode: getEvalMode(),
+                task_id: action.task.task_id,
+                v_left: action.task.v_left,
+                v_right: action.task.v_right,
+                scene: action.task.scene,
+                filename: action.task.filename,
+                worker: state.worker,
+                overall: currentVotes.overall || null,
+                aesthetic: currentVotes.aesthetic || null,
+                logic: currentVotes.logic || null,
+                consistency: currentVotes.consistency || null,
+                fidelity: currentVotes.fidelity || null,
+                bad_case_left: [...badCaseSelections.left],
+                bad_case_right: [...badCaseSelections.right],
+                duration_seconds: action.duration_seconds
+            };
+            return runTaskAction(action, () => api("/api/submit", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    task_type: state.taskType,
-                    eval_mode: getEvalMode(),
-                    task_id: state.currentTask.task_id,
-                    v_left: state.currentTask.v_left,
-                    v_right: state.currentTask.v_right,
-                    scene: state.currentTask.scene,
-                    filename: state.currentTask.filename,
-                    worker: state.worker,
-                    overall: currentVotes.overall || null,
-                    aesthetic: currentVotes.aesthetic || null,
-                    logic: currentVotes.logic || null,
-                    consistency: currentVotes.consistency || null,
-                    fidelity: currentVotes.fidelity || null,
-                    bad_case_left: [...badCaseSelections.left],
-                    bad_case_right: [...badCaseSelections.right],
-                    duration_seconds: elapsedSeconds()
-                })
-            });
-            await updateProgress();
-            await loadNextTask();
+                body: JSON.stringify(payload)
+            }));
         }
 
         async function skipTask() {
-            if (!state.currentTask) return;
+            if (taskActionInFlight || !state.currentTask) return;
             if (!confirm("确定跳过当前任务？")) return;
-            const params = new URLSearchParams({ task_id: state.currentTask.task_id, task_type: state.taskType, eval_mode: getEvalMode() });
-            await api(`/api/skip_task?${params.toString()}`, { method: "POST" });
-            await updateProgress();
-            await loadNextTask();
+            const action = beginTaskAction();
+            if (!action) return;
+            const params = new URLSearchParams({
+                task_id: action.task.task_id,
+                task_type: state.taskType,
+                eval_mode: getEvalMode()
+            });
+            return runTaskAction(
+                action,
+                () => api(`/api/skip_task?${params.toString()}`, { method: "POST" })
+            );
         }
 
         function renderLightbox() {

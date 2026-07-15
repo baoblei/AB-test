@@ -48,7 +48,11 @@ class FrontendTimeContractTests(unittest.TestCase):
                 "elapsedSeconds",
                 "waitForTaskImages",
                 "loadNextTask",
+                "setTaskActionPending",
+                "beginTaskAction",
+                "runTaskAction",
                 "submitVote",
+                "skipTask",
             )
         )
         setup = r'''
@@ -62,6 +66,7 @@ let startTime = null;
 let badCaseSelections = { left: new Set(), right: new Set() };
 let activeBadCaseCategory = { left: "", right: "" };
 let loadGeneration = 0;
+let taskActionInFlight = false;
 let images = [];
 let now = 1000;
 let nextTimerId = 1;
@@ -70,12 +75,16 @@ const timeouts = new Map();
 const intervals = new Map();
 const requests = [];
 const submitPayloads = [];
+const taskActionRequests = [];
+let holdTaskActions = false;
 const events = [];
 const nodes = {
     timer: { textContent: "", style: {} },
     "prompt-text": { textContent: "", style: {} },
     "progress-label": { textContent: "", style: {} },
-    "progress-fill": { textContent: "", style: {} }
+    "progress-fill": { textContent: "", style: {} },
+    "submit-task": { textContent: "", style: {}, disabled: false },
+    "skip-task": { textContent: "", style: {}, disabled: false }
 };
 function deferred() {
     let resolve;
@@ -118,6 +127,20 @@ function api(url, options) {
     if (url === "/api/submit") {
         submitPayloads.push(JSON.parse(options.body));
         events.push("submit");
+        if (holdTaskActions) {
+            const request = deferred();
+            taskActionRequests.push(request);
+            return request.promise;
+        }
+        return Promise.resolve({});
+    }
+    if (url.startsWith("/api/skip_task")) {
+        events.push("skip");
+        if (holdTaskActions) {
+            const request = deferred();
+            taskActionRequests.push(request);
+            return request.promise;
+        }
         return Promise.resolve({});
     }
     throw new Error(`unexpected api request: ${url}`);
@@ -138,7 +161,8 @@ const document = {
     }
 };
 const window = { location: { reload() { events.push("reload"); } } };
-const alert = () => {};
+const alert = message => events.push(`alert:${message}`);
+const confirm = () => true;
 const console = { error() { events.push("error"); } };
 const setTimeout = callback => {
     const id = nextTimerId++;
@@ -217,6 +241,23 @@ vm.runInContext({scenario_source}, context, {{ filename: "scenario.js" }}).then(
         self.assertIn('timeZone: "Asia/Shanghai"', formatter)
         self.assertIn("formatBeijingNow()", html)
         self.assertNotIn("new Date().toLocaleTimeString()", html)
+
+    def test_submit_and_skip_share_one_inflight_guard_and_button_lock(self):
+        html = self.read_template("index.html")
+        self.assertIn('id="submit-task"', html)
+        self.assertIn('id="skip-task"', html)
+        self.assertIn("let taskActionInFlight = false;", html)
+        pending = self.function_source(html, "setTaskActionPending")
+        self.assertIn('getElementById("submit-task").disabled = pending', pending)
+        self.assertIn('getElementById("skip-task").disabled = pending', pending)
+        begin = self.function_source(html, "beginTaskAction")
+        self.assertIn("if (taskActionInFlight || !state.currentTask) return null", begin)
+        self.assertIn("duration_seconds: elapsedSeconds()", begin)
+        self.assertIn("stopTimer()", begin)
+        for function_name in ("submitVote", "skipTask"):
+            source = self.function_source(html, function_name)
+            self.assertIn("const action = beginTaskAction()", source)
+            self.assertRegex(source, r"runTaskAction\(\s*action")
 
     def test_runtime_waits_for_immediately_complete_t2i_and_ti2i_images(self):
         result = self.run_runtime_scenario(r'''
@@ -438,6 +479,87 @@ return { payloadBeforeNextTask, requestStartedAfterSubmit, timer: nodes.timer.te
             "requestStartedAfterSubmit": True,
             "timer": "00:00",
             "startTime": None,
+        })
+
+    def test_runtime_pending_submit_blocks_duplicate_submit_and_skip(self):
+        result = self.run_runtime_scenario(r'''
+state.currentTask = { task_id: "current", v_left: "model-a", v_right: "model-b", scene: "scene", filename: "current.png" };
+startTime = 2500;
+now = 12500;
+holdTaskActions = true;
+const first = submitVote();
+const duplicate = submitVote();
+const racedSkip = skipTask();
+await flush();
+const pending = {
+    submissions: submitPayloads.length,
+    requests: taskActionRequests.length,
+    submitDisabled: nodes["submit-task"].disabled,
+    skipDisabled: nodes["skip-task"].disabled,
+    inFlight: taskActionInFlight,
+    activeIntervals: intervals.size,
+    duration: submitPayloads[0].duration_seconds
+};
+taskActionRequests[0].resolve({});
+await flush();
+requests[0].resolve({ status: "finished" });
+await Promise.all([first, duplicate, racedSkip]);
+return {
+    pending,
+    finished: {
+        submissions: submitPayloads.length,
+        skips: events.filter(event => event === "skip").length,
+        submitDisabled: nodes["submit-task"].disabled,
+        skipDisabled: nodes["skip-task"].disabled,
+        inFlight: taskActionInFlight
+    }
+};
+''')
+        self.assertEqual(result["pending"], {
+            "submissions": 1,
+            "requests": 1,
+            "submitDisabled": True,
+            "skipDisabled": True,
+            "inFlight": True,
+            "activeIntervals": 0,
+            "duration": 10,
+        })
+        self.assertEqual(result["finished"], {
+            "submissions": 1,
+            "skips": 0,
+            "submitDisabled": False,
+            "skipDisabled": False,
+            "inFlight": False,
+        })
+
+    def test_runtime_failed_task_action_restores_snapshot_timer_and_buttons(self):
+        result = self.run_runtime_scenario(r'''
+state.currentTask = { task_id: "current", v_left: "model-a", v_right: "model-b", scene: "scene", filename: "current.png" };
+startTime = 2000;
+now = 12000;
+holdTaskActions = true;
+const submitting = submitVote();
+await flush();
+taskActionRequests[0].reject(new Error("network"));
+await submitting;
+return {
+    timer: nodes.timer.textContent,
+    elapsed: elapsedSeconds(),
+    activeIntervals: intervals.size,
+    submitDisabled: nodes["submit-task"].disabled,
+    skipDisabled: nodes["skip-task"].disabled,
+    inFlight: taskActionInFlight,
+    alerts: events.filter(event => event.startsWith("alert:"))
+};
+''')
+        self.assertEqual(result, {
+            "timer": "00:10",
+            "elapsed": 10,
+            "activeIntervals": 1,
+            "submitDisabled": False,
+            "skipDisabled": False,
+            "inFlight": False,
+            "alerts": ["alert:network"],
         })
 
 
