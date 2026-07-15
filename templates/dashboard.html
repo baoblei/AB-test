@@ -757,7 +757,10 @@
             document.getElementById("overview-desc").textContent = state.taskType === "TI2I"
                 ? "TI2I 看板额外展示保真度维度和参考图预览。"
                 : "T2I 看板展示生成质量、文本错误和坏例分布。";
-            document.getElementById("ranking-dimension").innerHTML = state.config.dashboard_dims.map(dim => `<option value="${dim.key}">${dim.label}</option>`).join("");
+            replaceSelectOptions(
+                document.getElementById("ranking-dimension"),
+                state.config.dashboard_dims.map(dim => [dim.key, dim.label])
+            );
             await loadDashboard();
         }
 
@@ -781,6 +784,30 @@
             select.replaceChildren(...nodes);
         }
 
+        function createNode(tag, className = "", text = null) {
+            const node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text !== null) node.textContent = String(text);
+            return node;
+        }
+
+        function createButton(label, className, handler) {
+            const button = createNode("button", className, label);
+            button.type = "button";
+            button.addEventListener("click", handler);
+            return button;
+        }
+
+        function createCell(text = null, className = "") {
+            return createNode("td", className, text);
+        }
+
+        function createEmptyState(message, tag = "div", colSpan = null) {
+            const node = createNode(tag, "empty-state", message);
+            if (colSpan !== null) node.colSpan = colSpan;
+            return node;
+        }
+
         async function syncResultScenes(selectedScene = "") {
             const taskType = document.getElementById("result-task-type").value;
             const select = document.getElementById("result-scene");
@@ -802,7 +829,10 @@
             state.overview = data;
             state.pairs = data.pairs;
             const scenes = [...new Set(data.pairs.flatMap(pair => pair.scenes.map(scene => scene.scene)))];
-            document.getElementById("ranking-scene").innerHTML = '<option value="">全部场景</option>' + scenes.map(scene => `<option value="${scene}">${scene}</option>`).join("");
+            replaceSelectOptions(
+                document.getElementById("ranking-scene"),
+                [["", "全部场景"], ...scenes.map(scene => [scene, scene])]
+            );
             applyFilters();
             document.getElementById("status-tag").textContent = `最后更新: ${formatBeijingNow()}`;
         }
@@ -826,79 +856,96 @@
             const dims = state.config.dashboard_dims;
             const container = document.getElementById("pairs-container");
             state.exportPairs = pairs;
+            container.replaceChildren();
             if (!pairs.length) {
-                container.innerHTML = '<div class="empty-state">暂无数据</div>';
+                container.append(createEmptyState("暂无数据"));
                 return;
             }
-            container.innerHTML = pairs.map((pair, index) => `
-                <div class="pair-card">
-                    <div class="pair-head" onclick="togglePair('${pair.pair.replace(/'/g, "\\'")}')">
-                        <div class="pair-title">
-                            <h3>${pair.v_a} vs ${pair.v_b}</h3>
-                            <p>${pair.scenes.length} 个场景 · ${pair.total} 条样本</p>
-                        </div>
-                        <div class="summary-grid">
-                            ${dims.map(dim => renderSummaryBox(pair, dim.key, dim.label)).join("")}
-                            ${renderBadcaseSummary(pair)}
-                        </div>
-                        <div class="pair-actions">
-                            <button class="btn btn-accent btn-sm" onclick="event.stopPropagation(); openWorkerModal('${pair.v_a}', '${pair.v_b}', '')">统计</button>
-                            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openBadcaseModal('${pair.v_a}', '${pair.v_b}', '')">坏例详情</button>
-                            <button class="btn btn-export btn-sm" type="button" data-export-pair-index="${index}">导出</button>
-                            <span>${state.expanded.has(pair.pair) ? "▲" : "▼"}</span>
-                        </div>
-                    </div>
-                    <div class="pair-body ${state.expanded.has(pair.pair) ? "show" : ""}">
-                        <table class="scene-table">
-                            <thead>
-                                <tr>
-                                    <th class="scene-name">场景</th>
-                                    <th>样本</th>
-                                    ${dims.map(dim => `<th>${dim.label}<br><small>A / 平 / B</small></th>`).join("")}
-                                    <th>坏例占比</th>
-                                    <th>高频坏例</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${pair.scenes.map(scene => renderSceneRow(pair, scene, dims)).join("")}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `).join("");
+            pairs.forEach((pair, index) => {
+                const card = createNode("div", "pair-card");
+                const head = createNode("div", "pair-head");
+                head.addEventListener("click", () => togglePair(pair.pair));
+
+                const title = createNode("div", "pair-title");
+                title.append(
+                    createNode("h3", "", `${pair.v_a} vs ${pair.v_b}`),
+                    createNode("p", "", `${pair.scenes.length} 个场景 · ${pair.total} 条样本`)
+                );
+
+                const summary = createNode("div", "summary-grid");
+                dims.forEach(dim => summary.append(renderSummaryBox(pair, dim.key, dim.label)));
+                summary.append(renderBadcaseSummary(pair));
+
+                const actions = createNode("div", "pair-actions");
+                actions.append(
+                    createButton("统计", "btn btn-accent btn-sm", event => {
+                        event.stopPropagation();
+                        openWorkerModal(pair.v_a, pair.v_b, "");
+                    }),
+                    createButton("坏例详情", "btn btn-outline btn-sm", event => {
+                        event.stopPropagation();
+                        openBadcaseModal(pair.v_a, pair.v_b, "");
+                    })
+                );
+                const exportButton = createNode("button", "btn btn-export btn-sm", "导出");
+                exportButton.type = "button";
+                exportButton.dataset.exportPairIndex = String(index);
+                actions.append(exportButton, createNode("span", "", state.expanded.has(pair.pair) ? "▲" : "▼"));
+                head.append(title, summary, actions);
+
+                const body = createNode("div", `pair-body${state.expanded.has(pair.pair) ? " show" : ""}`);
+                const table = createNode("table", "scene-table");
+                const header = createNode("tr");
+                header.append(createNode("th", "scene-name", "场景"), createNode("th", "", "样本"));
+                dims.forEach(dim => {
+                    const cell = createNode("th");
+                    cell.append(createNode("span", "", dim.label), createNode("br"), createNode("small", "", "A / 平 / B"));
+                    header.append(cell);
+                });
+                header.append(
+                    createNode("th", "", "坏例占比"),
+                    createNode("th", "", "高频坏例"),
+                    createNode("th", "", "操作")
+                );
+                const thead = createNode("thead");
+                thead.append(header);
+                const tbody = createNode("tbody");
+                pair.scenes.forEach(scene => tbody.append(renderSceneRow(pair, scene, dims)));
+                table.append(thead, tbody);
+                body.append(table);
+                card.append(head, body);
+                container.append(card);
+            });
         }
 
         function renderSummaryBox(pair, dimKey, label) {
             const stat = pair.dims[dimKey];
             const total = stat.total || 0;
+            const box = createNode("div", "summary-box");
+            box.append(createNode("strong", "", label));
             if (!total) {
-                return `
-                    <div class="summary-box">
-                        <strong>${label}</strong>
-                        <div class="legend"><span>暂无多维度样本</span></div>
-                    </div>
-                `;
+                const legend = createNode("div", "legend");
+                legend.append(createNode("span", "", "暂无多维度样本"));
+                box.append(legend);
+                return box;
             }
             const aPct = (stat.v_a_wins / total * 100).toFixed(1);
             const tiePct = (stat.tie_count / total * 100).toFixed(1);
             const bPct = (stat.v_b_wins / total * 100).toFixed(1);
-            return `
-                <div class="summary-box">
-                    <strong>${label}</strong>
-                    <div class="bar-track">
-                        <div class="seg-a" style="width:${aPct}%"></div>
-                        <div class="seg-tie" style="width:${tiePct}%"></div>
-                        <div class="seg-b" style="width:${bPct}%"></div>
-                    </div>
-                    <div class="legend">
-                        <span>A: ${aPct}% (${stat.v_a_wins})</span>
-                        <span>平: ${tiePct}% (${stat.tie_count})</span>
-                        <span>B: ${bPct}% (${stat.v_b_wins})</span>
-                    </div>
-                    ${renderSuppressionLine(stat)}
-                </div>
-            `;
+            const track = createNode("div", "bar-track");
+            [["seg-a", aPct], ["seg-tie", tiePct], ["seg-b", bPct]].forEach(([className, width]) => {
+                const segment = createNode("div", className);
+                segment.style.width = `${width}%`;
+                track.append(segment);
+            });
+            const legend = createNode("div", "legend");
+            legend.append(
+                createNode("span", "", `A: ${aPct}% (${stat.v_a_wins})`),
+                createNode("span", "", `平: ${tiePct}% (${stat.tie_count})`),
+                createNode("span", "", `B: ${bPct}% (${stat.v_b_wins})`)
+            );
+            box.append(track, legend, renderSuppressionLine(stat));
+            return box;
         }
 
         function formatSuppressionRatio(numerator, denominator) {
@@ -911,67 +958,78 @@
             const aDenominator = stat.v_b_wins + stat.tie_count;
             const bNumerator = stat.v_b_wins + stat.tie_count;
             const bDenominator = stat.v_a_wins + stat.tie_count;
-            return `
-                <div class="suppression-line">
-                    <span>A压制 ${formatSuppressionRatio(aNumerator, aDenominator)} (${aNumerator}/${aDenominator})</span>
-                    <span>B压制 ${formatSuppressionRatio(bNumerator, bDenominator)} (${bNumerator}/${bDenominator})</span>
-                </div>
-            `;
+            const line = createNode("div", "suppression-line");
+            line.append(
+                createNode("span", "", `A压制 ${formatSuppressionRatio(aNumerator, aDenominator)} (${aNumerator}/${aDenominator})`),
+                createNode("span", "", `B压制 ${formatSuppressionRatio(bNumerator, bDenominator)} (${bNumerator}/${bDenominator})`)
+            );
+            return line;
         }
 
         function renderBadcaseSummary(pair) {
-            return `
-                <div class="summary-box">
-                    <strong>坏例占比</strong>
-                    <div class="legend">
-                        <span>${pair.v_a}: ${pair.bad_case.v_a.rate}% (${pair.bad_case.v_a.bad_count}/${pair.bad_case.v_a.total})</span>
-                        <span>${pair.v_b}: ${pair.bad_case.v_b.rate}% (${pair.bad_case.v_b.bad_count}/${pair.bad_case.v_b.total})</span>
-                    </div>
-                </div>
-            `;
+            const box = createNode("div", "summary-box");
+            const legend = createNode("div", "legend");
+            legend.append(
+                createNode("span", "", `${pair.v_a}: ${pair.bad_case.v_a.rate}% (${pair.bad_case.v_a.bad_count}/${pair.bad_case.v_a.total})`),
+                createNode("span", "", `${pair.v_b}: ${pair.bad_case.v_b.rate}% (${pair.bad_case.v_b.bad_count}/${pair.bad_case.v_b.total})`)
+            );
+            box.append(createNode("strong", "", "坏例占比"), legend);
+            return box;
         }
 
         function renderSceneRow(pair, scene, dims) {
             const tags = topBadTags(pair, scene.bad_case);
-            return `
-                <tr>
-                    <td class="scene-name">${scene.scene}</td>
-                    <td>${scene.total}</td>
-                    ${dims.map(dim => {
-                        const stat = scene.dims[dim.key];
-                        const total = stat.total || 0;
-                        if (!total) return '<td><span style="color:var(--muted);">暂无多维度样本</span></td>';
-                        const aPct = (stat.v_a_wins / total * 100).toFixed(1);
-                        const tiePct = (stat.tie_count / total * 100).toFixed(1);
-                        const bPct = (stat.v_b_wins / total * 100).toFixed(1);
-                        return `
-                            <td>
-                                <div class="bar-track">
-                                    <div class="seg-a" style="width:${aPct}%"></div>
-                                    <div class="seg-tie" style="width:${tiePct}%"></div>
-                                    <div class="seg-b" style="width:${bPct}%"></div>
-                                </div>
-                                <div class="legend">
-                                    <span>${aPct}% (${stat.v_a_wins}) / ${tiePct}% (${stat.tie_count}) / ${bPct}% (${stat.v_b_wins})</span>
-                                </div>
-                                ${renderSuppressionLine(stat)}
-                            </td>
-                        `;
-                    }).join("")}
-                    <td>
-                        <div>${pair.v_a}: ${scene.bad_case.v_a.rate}% (${scene.bad_case.v_a.bad_count})</div>
-                        <div>${pair.v_b}: ${scene.bad_case.v_b.rate}% (${scene.bad_case.v_b.bad_count})</div>
-                    </td>
-                    <td>${tags.length ? tags.map(tag => `<span class="pill pill-bad">${tag.model}: ${tag.tag} (${tag.count})</span>`).join("") : '<span style="color:var(--muted);">暂无</span>'}</td>
-                    <td>
-                        <div style="display:flex; flex-direction:column; gap:8px;">
-                            <button class="btn btn-sm btn-outline" onclick="openDetailModal('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">明细</button>
-                            <button class="btn btn-sm btn-primary" onclick="openWorkerModal('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">统计</button>
-                            <button class="btn btn-sm btn-accent" onclick="openBadcaseModal('${pair.v_a}', '${pair.v_b}', '${scene.scene}')">坏例</button>
-                        </div>
-                    </td>
-                </tr>
-            `;
+            const row = createNode("tr");
+            row.append(createCell(scene.scene, "scene-name"), createCell(scene.total));
+            dims.forEach(dim => {
+                const stat = scene.dims[dim.key];
+                const total = stat.total || 0;
+                const cell = createCell();
+                if (!total) {
+                    const empty = createNode("span", "", "暂无多维度样本");
+                    empty.style.color = "var(--muted)";
+                    cell.append(empty);
+                } else {
+                    const aPct = (stat.v_a_wins / total * 100).toFixed(1);
+                    const tiePct = (stat.tie_count / total * 100).toFixed(1);
+                    const bPct = (stat.v_b_wins / total * 100).toFixed(1);
+                    const track = createNode("div", "bar-track");
+                    [["seg-a", aPct], ["seg-tie", tiePct], ["seg-b", bPct]].forEach(([className, width]) => {
+                        const segment = createNode("div", className);
+                        segment.style.width = `${width}%`;
+                        track.append(segment);
+                    });
+                    const legend = createNode("div", "legend");
+                    legend.append(createNode("span", "", `${aPct}% (${stat.v_a_wins}) / ${tiePct}% (${stat.tie_count}) / ${bPct}% (${stat.v_b_wins})`));
+                    cell.append(track, legend, renderSuppressionLine(stat));
+                }
+                row.append(cell);
+            });
+
+            const badRateCell = createCell();
+            badRateCell.append(
+                createNode("div", "", `${pair.v_a}: ${scene.bad_case.v_a.rate}% (${scene.bad_case.v_a.bad_count})`),
+                createNode("div", "", `${pair.v_b}: ${scene.bad_case.v_b.rate}% (${scene.bad_case.v_b.bad_count})`)
+            );
+            const tagCell = createCell();
+            if (tags.length) {
+                tags.forEach(tag => tagCell.append(createNode("span", "pill pill-bad", `${tag.model}: ${tag.tag} (${tag.count})`)));
+            } else {
+                const empty = createNode("span", "", "暂无");
+                empty.style.color = "var(--muted)";
+                tagCell.append(empty);
+            }
+            const actionCell = createCell();
+            const actions = createNode("div");
+            Object.assign(actions.style, { display: "flex", flexDirection: "column", gap: "8px" });
+            actions.append(
+                createButton("明细", "btn btn-sm btn-outline", () => openDetailModal(pair.v_a, pair.v_b, scene.scene)),
+                createButton("统计", "btn btn-sm btn-primary", () => openWorkerModal(pair.v_a, pair.v_b, scene.scene)),
+                createButton("坏例", "btn btn-sm btn-accent", () => openBadcaseModal(pair.v_a, pair.v_b, scene.scene))
+            );
+            actionCell.append(actions);
+            row.append(badRateCell, tagCell, actionCell);
+            return row;
         }
 
         function topBadTags(pair, badCaseStats) {
@@ -1014,15 +1072,18 @@
             const dim = document.getElementById("ranking-dimension").value;
             const scene = document.getElementById("ranking-scene").value;
             const rows = await api(`/api/ranking?task_type=${state.taskType}&dimension=${dim}${scene ? `&scene=${encodeURIComponent(scene)}` : ""}`).then(r => r.json());
-            document.getElementById("ranking-body").innerHTML = rows.map((row, index) => `
-                <tr>
-                    <td>${index + 1}</td>
-                    <td>${row.model}</td>
-                    <td>${row.wins}</td>
-                    <td>${row.total}</td>
-                    <td>${row.win_rate}%</td>
-                </tr>
-            `).join("");
+            const body = document.getElementById("ranking-body");
+            body.replaceChildren(...rows.map((row, index) => {
+                const tableRow = createNode("tr");
+                tableRow.append(
+                    createCell(index + 1),
+                    createCell(row.model),
+                    createCell(row.wins),
+                    createCell(row.total),
+                    createCell(`${row.win_rate}%`)
+                );
+                return tableRow;
+            }));
         }
 
         async function openDetailModal(v1, v2, scene) {
@@ -1039,9 +1100,16 @@
 
         function renderDetailWorkers() {
             const workers = [...new Set(state.detailRows.map(row => row.worker))].sort();
-            document.getElementById("detail-worker-group").innerHTML = workers.map(worker => `
-                <span class="checkbox-chip ${state.selectedDetailWorkers.has(worker) ? "selected" : ""}" onclick="toggleDetailWorker('${worker}')">${worker}</span>
-            `).join("");
+            const group = document.getElementById("detail-worker-group");
+            group.replaceChildren(...workers.map(worker => {
+                const chip = createNode(
+                    "span",
+                    `checkbox-chip${state.selectedDetailWorkers.has(worker) ? " selected" : ""}`,
+                    worker
+                );
+                chip.addEventListener("click", () => toggleDetailWorker(worker));
+                return chip;
+            }));
         }
 
         function toggleDetailWorker(worker) {
@@ -1064,43 +1132,84 @@
                 return true;
             });
             document.getElementById("detail-count").textContent = `共 ${rows.length} 条`;
-            document.getElementById("detail-body").innerHTML = rows.length ? rows.map(row => `
-                <tr>
-                    <td>${row.filename}</td>
-                    <td>
-                        <div style="display:flex; gap:6px;">
-                            ${state.taskType === "TI2I" && row.ref_img ? `<img class="preview-img" src="${row.ref_img}" onclick='openPreview(${JSON.stringify(buildPreviewPayload(row, v1, v2))})'>` : ""}
-                            <img class="preview-img" src="${imageUrl(v1, scene, row.filename)}" onclick='openPreview(${JSON.stringify(buildPreviewPayload(row, v1, v2))})'>
-                            <img class="preview-img" src="${imageUrl(v2, scene, row.filename)}" onclick='openPreview(${JSON.stringify(buildPreviewPayload(row, v1, v2))})'>
-                        </div>
-                    </td>
-                    <td style="max-width:320px;">${row.prompt || "-"}</td>
-                    <td>
-                        ${renderResultRow("整体", row.overall, v1, v2)}
-                        ${renderResultRow("美学", row.aesthetic, v1, v2)}
-                        ${renderResultRow("合理性", row.logic, v1, v2)}
-                        ${renderResultRow("一致性", row.consistency, v1, v2)}
-                        ${state.taskType === "TI2I" ? renderResultRow("保真度", row.fidelity, v1, v2) : ""}
-                    </td>
-                    <td>
-                        <div><strong>${v1}</strong>: ${renderBadTags(row.bad_case_tags_a)}</div>
-                        <div style="margin-top:6px;"><strong>${v2}</strong>: ${renderBadTags(row.bad_case_tags_b)}</div>
-                    </td>
-                    <td>${row.worker}</td>
-                    <td>${formatBusinessTime(row.time)}</td>
-                </tr>
-            `).join("") : '<tr><td colspan="7" class="empty-state">无匹配数据</td></tr>';
+            const body = document.getElementById("detail-body");
+            if (!rows.length) {
+                const emptyRow = createNode("tr");
+                emptyRow.append(createEmptyState("无匹配数据", "td", 7));
+                body.replaceChildren(emptyRow);
+                return;
+            }
+            body.replaceChildren(...rows.map(row => {
+                const tableRow = createNode("tr");
+                tableRow.append(createCell(row.filename));
+
+                const imageCell = createCell();
+                const imageGroup = createNode("div");
+                Object.assign(imageGroup.style, { display: "flex", gap: "6px" });
+                const preview = buildPreviewPayload(row, v1, v2);
+                const imageSources = [];
+                if (state.taskType === "TI2I" && row.ref_img) imageSources.push(row.ref_img);
+                imageSources.push(imageUrl(v1, scene, row.filename), imageUrl(v2, scene, row.filename));
+                imageSources.forEach(src => {
+                    const image = createNode("img", "preview-img");
+                    image.src = src;
+                    image.alt = row.filename;
+                    image.addEventListener("click", () => openPreview(preview));
+                    imageGroup.append(image);
+                });
+                imageCell.append(imageGroup);
+
+                const promptCell = createCell(row.prompt || "-");
+                promptCell.style.maxWidth = "320px";
+                const resultCell = createCell();
+                [
+                    ["整体", row.overall],
+                    ["美学", row.aesthetic],
+                    ["合理性", row.logic],
+                    ["一致性", row.consistency],
+                    ...(state.taskType === "TI2I" ? [["保真度", row.fidelity]] : [])
+                ].forEach(([label, result]) => {
+                    const resultNode = renderResultRow(label, result, v1, v2);
+                    if (resultNode) resultCell.append(resultNode);
+                });
+
+                const badCaseCell = createCell();
+                [[v1, row.bad_case_tags_a], [v2, row.bad_case_tags_b]].forEach(([model, tags], index) => {
+                    const line = createNode("div");
+                    if (index) line.style.marginTop = "6px";
+                    line.append(createNode("strong", "", model), document.createTextNode(": "), renderBadTags(tags));
+                    badCaseCell.append(line);
+                });
+                tableRow.append(
+                    imageCell,
+                    promptCell,
+                    resultCell,
+                    badCaseCell,
+                    createCell(row.worker),
+                    createCell(formatBusinessTime(row.time))
+                );
+                return tableRow;
+            }));
         }
 
         function renderResultRow(label, result, v1, v2) {
-            if (!result) return "";
+            if (!result) return null;
             const cls = result === "tie" ? "badge-tie" : result === v1 ? "badge-a" : "badge-b";
             const text = result === "tie" ? "平局" : result;
-            return `<div>${label}: <span class="result-badge ${cls}">${text}</span></div>`;
+            const row = createNode("div");
+            row.append(document.createTextNode(`${label}: `), createNode("span", `result-badge ${cls}`, text));
+            return row;
         }
 
         function renderBadTags(tags) {
-            return tags && tags.length ? tags.map(tag => `<span class="pill pill-bad">${tag}</span>`).join("") : '<span style="color:var(--muted);">无</span>';
+            const container = createNode("span");
+            if (tags && tags.length) {
+                tags.forEach(tag => container.append(createNode("span", "pill pill-bad", tag)));
+            } else {
+                container.textContent = "无";
+                container.style.color = "var(--muted)";
+            }
+            return container;
         }
 
         async function openWorkerModal(v1, v2, scene) {
@@ -1114,45 +1223,59 @@
 
         function renderWorkerStats() {
             const dims = state.config.dashboard_dims;
-            document.getElementById("worker-group").innerHTML = state.workerRows.map(row => `
-                <span class="checkbox-chip ${state.selectedWorkers.has(row.worker) ? "selected" : ""}" onclick="toggleWorker('${row.worker}')">${row.worker}</span>
-            `).join("");
+            const workerGroup = document.getElementById("worker-group");
+            workerGroup.replaceChildren(...state.workerRows.map(row => {
+                const chip = createNode(
+                    "span",
+                    `checkbox-chip${state.selectedWorkers.has(row.worker) ? " selected" : ""}`,
+                    row.worker
+                );
+                chip.addEventListener("click", () => toggleWorker(row.worker));
+                return chip;
+            }));
             const rows = state.workerRows.filter(row => state.selectedWorkers.has(row.worker));
+            const summaryContainer = document.getElementById("worker-summary");
+            const tableContainer = document.getElementById("worker-table");
             if (!rows.length) {
-                document.getElementById("worker-summary").innerHTML = "";
-                document.getElementById("worker-table").innerHTML = '<div class="empty-state">请选择评测员</div>';
+                summaryContainer.replaceChildren();
+                tableContainer.replaceChildren(createEmptyState("请选择评测员"));
                 return;
             }
-                const total = rows.reduce((sum, row) => sum + row.total, 0);
-                document.getElementById("worker-summary").innerHTML = `
-                <div class="card" style="margin:0 0 14px;">
-                    <div style="font-weight:800; margin-bottom:10px;">汇总 (${rows.length} 位评测员, ${total} 条样本)</div>
-                    <div class="summary-grid">
-                        ${dims.map(dim => {
-                            const aWins = rows.reduce((sum, row) => sum + row[dim.key].v_a_wins, 0);
-                            const tie = rows.reduce((sum, row) => sum + row[dim.key].tie_count, 0);
-                            const bWins = rows.reduce((sum, row) => sum + row[dim.key].v_b_wins, 0);
-                            const dimTotal = rows.reduce((sum, row) => sum + (row[dim.key].total || 0), 0);
-                            const stat = { total: dimTotal, v_a_wins: aWins, tie_count: tie, v_b_wins: bWins };
-                            return renderSummaryBox({ dims: { [dim.key]: stat } }, dim.key, dim.label);
-                        }).join("")}
-                    </div>
-                </div>
-            `;
-            document.getElementById("worker-table").innerHTML = `
-                <table class="data-table">
-                    <thead><tr><th>评测员</th><th>样本数</th>${dims.map(dim => `<th>${dim.label}</th>`).join("")}</tr></thead>
-                    <tbody>
-                        ${rows.map(row => `
-                            <tr>
-                                <td>${row.worker}</td>
-                                <td>${row.total}</td>
-                                ${dims.map(dim => `<td>A ${row[dim.key].v_a_wins} / 平 ${row[dim.key].tie_count} / B ${row[dim.key].v_b_wins}</td>`).join("")}
-                            </tr>
-                        `).join("")}
-                    </tbody>
-                </table>
-            `;
+            const total = rows.reduce((sum, row) => sum + row.total, 0);
+            const summaryCard = createNode("div", "card");
+            summaryCard.style.margin = "0 0 14px";
+            const summaryTitle = createNode("div", "", `汇总 (${rows.length} 位评测员, ${total} 条样本)`);
+            Object.assign(summaryTitle.style, { fontWeight: "800", marginBottom: "10px" });
+            const summaryGrid = createNode("div", "summary-grid");
+            dims.forEach(dim => {
+                const stat = {
+                    total: rows.reduce((sum, row) => sum + (row[dim.key].total || 0), 0),
+                    v_a_wins: rows.reduce((sum, row) => sum + row[dim.key].v_a_wins, 0),
+                    tie_count: rows.reduce((sum, row) => sum + row[dim.key].tie_count, 0),
+                    v_b_wins: rows.reduce((sum, row) => sum + row[dim.key].v_b_wins, 0)
+                };
+                summaryGrid.append(renderSummaryBox({ dims: { [dim.key]: stat } }, dim.key, dim.label));
+            });
+            summaryCard.append(summaryTitle, summaryGrid);
+            summaryContainer.replaceChildren(summaryCard);
+
+            const table = createNode("table", "data-table");
+            const headerRow = createNode("tr");
+            headerRow.append(createNode("th", "", "评测员"), createNode("th", "", "样本数"));
+            dims.forEach(dim => headerRow.append(createNode("th", "", dim.label)));
+            const thead = createNode("thead");
+            thead.append(headerRow);
+            const tbody = createNode("tbody");
+            rows.forEach(workerRow => {
+                const row = createNode("tr");
+                row.append(createCell(workerRow.worker), createCell(workerRow.total));
+                dims.forEach(dim => row.append(createCell(
+                    `A ${workerRow[dim.key].v_a_wins} / 平 ${workerRow[dim.key].tie_count} / B ${workerRow[dim.key].v_b_wins}`
+                )));
+                tbody.append(row);
+            });
+            table.append(thead, tbody);
+            tableContainer.replaceChildren(table);
         }
 
         function toggleWorker(worker) {
@@ -1165,8 +1288,14 @@
             state.currentBadcase = { v1, v2, scene };
             document.getElementById("badcase-title").textContent = scene ? `坏例详情: ${v1} vs ${v2} [${scene}]` : `坏例详情: ${v1} vs ${v2} [全部场景]`;
             document.getElementById("badcase-modal").style.display = "flex";
-            document.getElementById("badcase-model-filter").innerHTML = `<option value="">全部模型</option><option value="${v1}">${v1}</option><option value="${v2}">${v2}</option>`;
-            document.getElementById("badcase-category-filter").innerHTML = '<option value="">全部类别</option>' + Object.keys(state.config.bad_case_options).map(category => `<option value="${category}">${category}</option>`).join("");
+            replaceSelectOptions(
+                document.getElementById("badcase-model-filter"),
+                [["", "全部模型"], [v1, v1], [v2, v2]]
+            );
+            replaceSelectOptions(
+                document.getElementById("badcase-category-filter"),
+                [["", "全部类别"], ...Object.keys(state.config.bad_case_options).map(category => [category, category])]
+            );
             syncBadcaseTags();
             await loadBadcaseDetails();
         }
@@ -1174,7 +1303,10 @@
         function syncBadcaseTags() {
             const category = document.getElementById("badcase-category-filter").value;
             const options = category ? state.config.bad_case_options[category] : Object.values(state.config.bad_case_options).flat();
-            document.getElementById("badcase-tag-filter").innerHTML = '<option value="">全部标签</option>' + options.map(tag => `<option value="${tag}">${tag}</option>`).join("");
+            replaceSelectOptions(
+                document.getElementById("badcase-tag-filter"),
+                [["", "全部标签"], ...options.map(tag => [tag, tag])]
+            );
         }
 
         async function loadBadcaseDetails() {
@@ -1190,19 +1322,42 @@
             const data = await api(`/api/bad_case_details?${params.toString()}`).then(r => r.json());
             state.badcaseRows = data.results;
             document.getElementById("badcase-count").textContent = `共 ${state.badcaseRows.length} 条坏例记录`;
-            document.getElementById("badcase-body").innerHTML = state.badcaseRows.length ? state.badcaseRows.map(row => `
-                <tr>
-                    <td>${row.scene}</td>
-                    <td>${row.filename}</td>
-                    <td><img class="preview-img" src="${imageUrl(row.model, row.scene, row.filename)}" onclick='openSinglePreview("${imageUrl(row.model, row.scene, row.filename)}", "${row.model}")'></td>
-                    <td style="max-width:320px;">${row.prompt || "-"}</td>
-                    <td>${row.model}</td>
-                    <td>${row.categories.map(category => `<span class="pill">${category}</span>`).join("")}</td>
-                    <td>${row.tags.map(item => `<span class="pill pill-bad">${item}</span>`).join("")}</td>
-                    <td>${row.worker}</td>
-                    <td>${formatBusinessTime(row.time)}</td>
-                </tr>
-            `).join("") : '<tr><td colspan="9" class="empty-state">无匹配坏例</td></tr>';
+            const body = document.getElementById("badcase-body");
+            if (!state.badcaseRows.length) {
+                const emptyRow = createNode("tr");
+                emptyRow.append(createEmptyState("无匹配坏例", "td", 9));
+                body.replaceChildren(emptyRow);
+                return;
+            }
+            body.replaceChildren(...state.badcaseRows.map(row => {
+                const tableRow = createNode("tr");
+                const previewCell = createCell();
+                const src = imageUrl(row.model, row.scene, row.filename);
+                const image = createNode("img", "preview-img");
+                image.src = src;
+                image.alt = row.filename;
+                image.addEventListener("click", () => openSinglePreview(src, row.model));
+                previewCell.append(image);
+
+                const promptCell = createCell(row.prompt || "-");
+                promptCell.style.maxWidth = "320px";
+                const categoryCell = createCell();
+                row.categories.forEach(category => categoryCell.append(createNode("span", "pill", category)));
+                const tagCell = createCell();
+                row.tags.forEach(tag => tagCell.append(createNode("span", "pill pill-bad", tag)));
+                tableRow.append(
+                    createCell(row.scene),
+                    createCell(row.filename),
+                    previewCell,
+                    promptCell,
+                    createCell(row.model),
+                    categoryCell,
+                    tagCell,
+                    createCell(row.worker),
+                    createCell(formatBusinessTime(row.time))
+                );
+                return tableRow;
+            }));
         }
 
         function buildPreviewPayload(row, v1, v2) {
@@ -1211,29 +1366,38 @@
                 ref: row.ref_img,
                 a: imageUrl(v1, row.scene, row.filename),
                 b: imageUrl(v2, row.scene, row.filename),
-                labels: state.taskType === "TI2I" ? ["参考图", v1, v2] : [v1, v2]
+                labels: [v1, v2]
             };
         }
 
         function imageUrl(model, scene, filename) {
-            return `/images/${state.taskType}/${model}/${scene}/${filename}`;
+            return `/images/${[state.taskType, model, scene, filename].map(encodeURIComponent).join("/")}`;
+        }
+
+        function createCompareBox(src, label) {
+            const box = createNode("div", "compare-box");
+            const image = createNode("img");
+            image.src = src;
+            image.alt = label;
+            box.append(image, createNode("div", "compare-label", label));
+            return box;
         }
 
         function openPreview(payload) {
             const container = document.getElementById("image-preview");
             if (payload.mode === "TI2I" && payload.ref) {
                 container.className = "compare-preview ti2i";
-                container.innerHTML = `
-                    <div class="compare-box"><img src="${payload.ref}"><div class="compare-label">参考图</div></div>
-                    <div class="compare-box"><img src="${payload.a}"><div class="compare-label">${payload.labels[1]}</div></div>
-                    <div class="compare-box"><img src="${payload.b}"><div class="compare-label">${payload.labels[2]}</div></div>
-                `;
+                container.replaceChildren(
+                    createCompareBox(payload.ref, "参考图"),
+                    createCompareBox(payload.a, payload.labels[0]),
+                    createCompareBox(payload.b, payload.labels[1])
+                );
             } else {
                 container.className = "compare-preview t2i";
-                container.innerHTML = `
-                    <div class="compare-box"><img src="${payload.a}"><div class="compare-label">${payload.labels[0]}</div></div>
-                    <div class="compare-box"><img src="${payload.b}"><div class="compare-label">${payload.labels[1]}</div></div>
-                `;
+                container.replaceChildren(
+                    createCompareBox(payload.a, payload.labels[0]),
+                    createCompareBox(payload.b, payload.labels[1])
+                );
             }
             document.getElementById("image-overlay").style.display = "flex";
         }
@@ -1241,7 +1405,7 @@
         function openSinglePreview(src, label) {
             const container = document.getElementById("image-preview");
             container.className = "compare-preview t2i";
-            container.innerHTML = `<div class="compare-box"><img src="${src}"><div class="compare-label">${label}</div></div>`;
+            container.replaceChildren(createCompareBox(src, label));
             document.getElementById("image-overlay").style.display = "flex";
         }
 

@@ -58,7 +58,7 @@ class DashboardExportUiTests(unittest.TestCase):
         for marker in (
             'id="export-modal"',
             'id="export-form"',
-            'class="btn btn-export btn-sm"',
+            '"btn btn-export btn-sm"',
             'data-export-pair-index',
             'openExportModal(',
         ):
@@ -121,6 +121,75 @@ class DashboardExportUiTests(unittest.TestCase):
         self.assertEqual(children[1]["value"], malicious_scene)
         self.assertEqual(children[1]["textContent"], malicious_scene)
         self.assertNotIn("onclick", children[1])
+
+    def test_ranking_scene_selector_treats_overview_scene_names_as_text(self):
+        malicious_scene = 'x"><img src=x onerror="globalThis.injected=true">'
+        script = f"""
+            const select = {{
+                children: [],
+                replaceChildren(...children) {{ this.children = children; }}
+            }};
+            const status = {{ textContent: "" }};
+            const document = {{
+                getElementById(id) {{ return id === "ranking-scene" ? select : status; }},
+                createElement(tag) {{ return {{ tag, value: "", textContent: "" }}; }}
+            }};
+            const state = {{ taskType: "T2I", overview: null, pairs: [] }};
+            const api = async () => ({{ json: async () => ({{
+                pairs: [{{ scenes: [{{ scene: {json.dumps(malicious_scene)} }}] }}]
+            }}) }});
+            const applyFilters = () => {{}};
+            const formatBeijingNow = () => "now";
+            {self.function_source("replaceSelectOptions")}
+            async {self.function_source("loadDashboard")}
+            loadDashboard().then(() => console.log(JSON.stringify(select.children)));
+        """
+
+        children = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+
+        self.assertNotIn("innerHTML", self.function_source("loadDashboard"))
+        self.assertEqual(children[1]["value"], malicious_scene)
+        self.assertEqual(children[1]["textContent"], malicious_scene)
+        self.assertNotIn("onerror", children[1])
+
+    def test_dynamic_dashboard_renderers_do_not_interpolate_backend_html(self):
+        functions = (
+            "handleTaskTypeChange",
+            "renderPairs",
+            "renderSummaryBox",
+            "renderSceneRow",
+            "loadRanking",
+            "renderDetailWorkers",
+            "renderDetailTable",
+            "renderWorkerStats",
+            "openBadcaseModal",
+            "syncBadcaseTags",
+            "loadBadcaseDetails",
+            "openPreview",
+            "openSinglePreview",
+        )
+        for name in functions:
+            with self.subTest(name=name):
+                source = self.function_source(name)
+                self.assertNotIn("innerHTML", source)
+                self.assertNotIn("onclick=", source)
+
+    def test_ti2i_preview_keeps_model_labels_when_reference_image_is_missing(self):
+        script = f"""
+            const state = {{ taskType: "TI2I" }};
+            const imageUrl = (model, scene, filename) => `${{model}}/${{scene}}/${{filename}}`;
+            {self.function_source("buildPreviewPayload")}
+            const payload = buildPreviewPayload(
+                {{ ref_img: null, scene: "open", filename: "scene1.jpg" }},
+                "model-a",
+                "model-b"
+            );
+            console.log(JSON.stringify(payload));
+        """
+        payload = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+
+        self.assertIsNone(payload["ref"])
+        self.assertEqual(payload["labels"], ["model-a", "model-b"])
 
     def test_beijing_datetime_is_appended_without_timezone_conversion(self):
         self.assertEqual(
