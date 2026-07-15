@@ -1,6 +1,7 @@
 import io
 import os
 import shutil
+import stat
 import struct
 import zipfile
 from datetime import datetime
@@ -413,6 +414,73 @@ def _safe_existing_file_path(root: str, *components: str) -> Optional[str]:
     except (OSError, RuntimeError, ValueError):
         return None
     return os.fspath(candidate)
+
+
+def get_regular_file_identity(source_path: str) -> Optional[tuple[int, int, int, int]]:
+    try:
+        source_stat = os.stat(source_path, follow_symlinks=False)
+    except (OSError, ValueError):
+        return None
+    if not stat.S_ISREG(source_stat.st_mode):
+        return None
+    return (source_stat.st_dev, source_stat.st_ino, source_stat.st_size, source_stat.st_mtime_ns)
+
+
+def copy_regular_file_without_symlinks(
+    source_path: str,
+    destination_path: str,
+    expected_identity: Optional[tuple[int, int, int, int]] = None,
+) -> bool:
+    absolute_source = os.path.abspath(source_path)
+    if not os.path.isabs(absolute_source) or not hasattr(os, "O_NOFOLLOW"):
+        return False
+
+    source_identity = expected_identity or get_regular_file_identity(absolute_source)
+    if source_identity is None:
+        return False
+
+    # Resolve the parent only. The final component must still be opened with
+    # O_NOFOLLOW, while the stored identity detects parent-directory swaps.
+    canonical_parent = os.path.realpath(os.path.dirname(absolute_source))
+    parts = Path(canonical_parent).parts
+    if len(parts) < 1:
+        return False
+
+    directory_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW
+    opened_directories = []
+    file_descriptor = None
+    try:
+        current_directory = os.open(parts[0], directory_flags)
+        opened_directories.append(current_directory)
+        for component in parts[1:]:
+            current_directory = os.open(component, directory_flags, dir_fd=current_directory)
+            opened_directories.append(current_directory)
+        file_descriptor = os.open(os.path.basename(absolute_source), file_flags, dir_fd=current_directory)
+        opened_stat = os.fstat(file_descriptor)
+        opened_identity = (
+            opened_stat.st_dev,
+            opened_stat.st_ino,
+            opened_stat.st_size,
+            opened_stat.st_mtime_ns,
+        )
+        if not stat.S_ISREG(opened_stat.st_mode) or opened_identity != tuple(source_identity):
+            return False
+        with os.fdopen(file_descriptor, "rb") as source, open(destination_path, "xb") as destination:
+            file_descriptor = None
+            shutil.copyfileobj(source, destination)
+        return True
+    except (OSError, RuntimeError, ValueError):
+        try:
+            os.remove(destination_path)
+        except OSError:
+            pass
+        return False
+    finally:
+        if file_descriptor is not None:
+            os.close(file_descriptor)
+        for directory_descriptor in reversed(opened_directories):
+            os.close(directory_descriptor)
 
 
 def get_result_image_path(task_type: str, version: str, scene: str, filename: str) -> Optional[str]:

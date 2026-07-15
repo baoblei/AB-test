@@ -323,6 +323,48 @@ class ExportArchiveTests(unittest.TestCase):
                 make_temp_file.assert_not_called()
                 create_archive.assert_not_called()
 
+    def test_ti2i_ref_collision_uses_trimmed_canonical_model_names(self):
+        from app_core import export_service
+
+        for model in (" ref", "ref ", " REF "):
+            with self.subTest(model=model):
+                request = ExportRequest(task_type="TI2I", v1=model, v2="Z", include_images=True)
+                with self.assertRaisesRegex(ValidationError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                    export_service.validate_export_request(request)
+
+        with self.assertRaisesRegex(ValidationError, "模型必须不同"):
+            export_service.validate_export_request(
+                ExportRequest(task_type="T2I", v1="model", v2=" model ", include_images=True)
+            )
+
+    def test_archive_does_not_follow_source_replaced_after_manifest_creation(self):
+        from app_core.export_service import build_archive, build_image_manifest
+
+        request = ExportRequest(task_type="T2I", v1="D", v2="E", include_images=True)
+        source = self.results / "D" / "portrait" / "scene1.jpg"
+        outside = Path(self.temp_dir.name) / "outside.txt"
+        outside.write_bytes(b"outside-secret")
+        manifest = build_image_manifest(
+            request,
+            [make_row(task_type="T2I")],
+            result_path_resolver=self.result_resolver,
+        )
+        source.unlink()
+        source.symlink_to(outside)
+
+        archive_path = Path(self.temp_dir.name) / "replaced-source.zip"
+        build_archive(
+            request,
+            b"xlsx",
+            [make_row(task_type="T2I")],
+            archive_path=str(archive_path),
+            image_manifest=manifest,
+        )
+
+        with zipfile.ZipFile(archive_path) as archive:
+            self.assertNotIn("images/portrait/D/scene1.jpg", archive.namelist())
+            self.assertNotIn(b"outside-secret", [archive.read(name) for name in archive.namelist()])
+
     def test_ti2i_ref_model_allows_pure_xlsx_export(self):
         from app_core import export_service
 

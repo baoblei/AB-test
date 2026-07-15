@@ -16,7 +16,14 @@ from .config import DIM_LABELS, TASK_CONFIGS, dim_payload, normalize_task_type
 from .database import connect
 from .errors import AppError, ValidationError
 from .schemas import ExportRequest
-from .storage import get_prompt_text, get_ref_image_path, get_result_image_path, validate_storage_component
+from .storage import (
+    copy_regular_file_without_symlinks,
+    get_regular_file_identity,
+    get_prompt_text,
+    get_ref_image_path,
+    get_result_image_path,
+    validate_storage_component,
+)
 from .time_utils import is_canonical_beijing_iso, now_beijing_iso
 
 
@@ -47,11 +54,13 @@ def canonical_models(request: ExportRequest) -> tuple[str, str]:
 
 
 def canonical_model_pair(v1: str, v2: str) -> tuple[str, str]:
-    if not v1 or not v1.strip() or not v2 or not v2.strip():
+    normalized_v1 = v1.strip() if isinstance(v1, str) else ""
+    normalized_v2 = v2.strip() if isinstance(v2, str) else ""
+    if not normalized_v1 or not normalized_v2:
         raise ValidationError("模型名称不能为空")
-    if v1 == v2:
+    if normalized_v1 == normalized_v2:
         raise ValidationError("模型必须不同")
-    return tuple(sorted((v1, v2)))
+    return tuple(sorted((normalized_v1, normalized_v2)))
 
 
 def _validate_ti2i_ref_model_collision(task_type: str, v_a: str, v_b: str) -> None:
@@ -579,20 +588,53 @@ def build_image_manifest(
         for model in (v_a, v_b):
             model = validate_storage_component(model, "模型")
             source_path = result_path_resolver(task_type, model, scene, filename)
+            source_identity = get_regular_file_identity(source_path) if source_path else None
             entry[model] = {
                 "path": _archive_path(scene, model, filename),
-                "status": "已导出" if source_path else "文件不存在",
-                "source_path": source_path,
+                "status": "已导出" if source_identity else "文件不存在",
+                "source_path": source_path if source_identity else None,
+                "_source_identity": source_identity,
             }
         if task_type == "TI2I":
             source_path = ref_path_resolver(task_type, scene, filename)
+            source_identity = get_regular_file_identity(source_path) if source_path else None
             entry["ref"] = {
                 "path": "/".join(("images", scene, "ref", filename)),
-                "status": "已导出" if source_path else "文件不存在",
-                "source_path": source_path,
+                "status": "已导出" if source_identity else "文件不存在",
+                "source_path": source_path if source_identity else None,
+                "_source_identity": source_identity,
             }
         manifest[key] = entry
     return manifest
+
+
+def snapshot_image_manifest(image_manifest: dict, snapshot_dir: str) -> dict:
+    os.makedirs(snapshot_dir, exist_ok=True)
+    snapshot = {}
+    image_index = 0
+    for key, images in image_manifest.items():
+        snapshot_images = {}
+        for model, image in images.items():
+            snapshot_image = dict(image)
+            source_path = image.get("source_path")
+            if source_path:
+                destination = os.path.join(snapshot_dir, f"{image_index}.bin")
+                image_index += 1
+                if copy_regular_file_without_symlinks(
+                    source_path,
+                    destination,
+                    image.get("_source_identity"),
+                ):
+                    snapshot_image["source_path"] = destination
+                    snapshot_image["status"] = "已导出"
+                    snapshot_image["_source_identity"] = get_regular_file_identity(destination)
+                else:
+                    snapshot_image["source_path"] = None
+                    snapshot_image["status"] = "文件不存在"
+                    snapshot_image["_source_identity"] = None
+            snapshot_images[model] = snapshot_image
+        snapshot[key] = snapshot_images
+    return snapshot
 
 
 def build_archive(
@@ -607,18 +649,20 @@ def build_archive(
     task_type, v_a, v_b = validate_export_request(request)
     _validate_ti2i_ref_model_collision(task_type, v_a, v_b)
     manifest = image_manifest or build_image_manifest(request, selected_rows, result_path_resolver, ref_path_resolver)
-    if archive_path is None:
-        descriptor, archive_path = tempfile.mkstemp(prefix="ab-test-export-", suffix=".zip")
-        os.close(descriptor)
-    with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("评测结果.xlsx", workbook_data)
-        for entry in manifest.values():
-            for model in (v_a, v_b):
-                image = entry[model]
-                if image["source_path"]:
-                    archive.write(image["source_path"], image["path"])
-            if task_type == "TI2I" and entry["ref"]["source_path"]:
-                archive.write(entry["ref"]["source_path"], entry["ref"]["path"])
+    with tempfile.TemporaryDirectory(prefix="ab-test-export-snapshot-") as snapshot_dir:
+        stable_manifest = snapshot_image_manifest(manifest, snapshot_dir)
+        if archive_path is None:
+            descriptor, archive_path = tempfile.mkstemp(prefix="ab-test-export-", suffix=".zip")
+            os.close(descriptor)
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("评测结果.xlsx", workbook_data)
+            for entry in stable_manifest.values():
+                for model in (v_a, v_b):
+                    image = entry[model]
+                    if image["source_path"]:
+                        archive.write(image["source_path"], image["path"])
+                if task_type == "TI2I" and entry["ref"]["source_path"]:
+                    archive.write(entry["ref"]["source_path"], entry["ref"]["path"])
     return archive_path
 
 
@@ -633,6 +677,8 @@ def create_export_artifact(request: ExportRequest) -> ExportArtifact:
     cleanup_dir = tempfile.mkdtemp(prefix="ab-test-export-")
     try:
         manifest = build_image_manifest(request, selected_rows) if request.include_images else None
+        if manifest is not None:
+            manifest = snapshot_image_manifest(manifest, os.path.join(cleanup_dir, "image-snapshots"))
         workbook_data = workbook_bytes(build_workbook(request, rows, image_manifest=manifest))
         generated_at = now_beijing_iso().replace(":", "-").replace("+", "_")
         task_label = validate_storage_component(task_type, "任务类型")
