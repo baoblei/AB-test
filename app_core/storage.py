@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from . import config as app_config
 from .config import IMAGE_EXTENSIONS, PROMPT_DIR, REF_IMAGE_DIR, RESULT_DIR, get_task_config, normalize_task_type
 from .errors import AppError
 
@@ -43,6 +44,11 @@ def get_ref_root(task_type: str) -> str:
 
 def get_versions_for_type(task_type: str) -> List[str]:
     preferred = get_result_root(task_type)
+    task_type_names = {normalize_task_type(name) for name in app_config.TASK_CONFIGS}
+    task_roots = {
+        os.path.normpath(str(config["result_root"]))
+        for config in app_config.TASK_CONFIGS.values()
+    }
     versions = set()
     for root in get_result_roots(task_type):
         if not os.path.isdir(root):
@@ -52,6 +58,8 @@ def get_versions_for_type(task_type: str) -> List[str]:
             for name in os.listdir(root)
             if os.path.isdir(os.path.join(root, name))
             and os.path.normpath(os.path.join(root, name)) != os.path.normpath(preferred)
+            and os.path.normpath(os.path.join(root, name)) not in task_roots
+            and normalize_task_type(name) not in task_type_names
         )
     return sorted(versions)
 

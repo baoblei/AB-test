@@ -90,6 +90,12 @@ class ResultRootResolutionTests(unittest.TestCase):
             "/images/T2I/shared/overlap-scene/configured.png",
         )
 
+    def test_t2i_versions_exclude_sibling_task_type_directories(self):
+        self.make_image(self.configured_root, "model-a", "open", "scene.png")
+        self.make_image(self.result_root, "TI2I", "model-d", "open", "scene.png")
+
+        self.assertEqual(storage.get_versions_for_type("T2I"), ["model-a"])
+
     def test_new_result_uploads_write_only_to_configured_root(self):
         upload = SimpleNamespace(file=io.BytesIO(image_zip("img_001.png")))
         with patch.object(
