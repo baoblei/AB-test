@@ -771,18 +771,29 @@
             if (!isTi2i) refInput.value = "";
         }
 
+        function replaceSelectOptions(select, options) {
+            const nodes = options.map(([value, label]) => {
+                const option = document.createElement("option");
+                option.value = value;
+                option.textContent = label;
+                return option;
+            });
+            select.replaceChildren(...nodes);
+        }
+
         async function syncResultScenes(selectedScene = "") {
             const taskType = document.getElementById("result-task-type").value;
             const select = document.getElementById("result-scene");
-            select.innerHTML = '<option value="">加载中...</option>';
+            replaceSelectOptions(select, [["", "加载中..."]]);
             try {
                 const scenes = await api(`/api/dataset_scenes?task_type=${taskType}`).then(r => r.json());
-                select.innerHTML = scenes.length
-                    ? '<option value="">选择场景...</option>' + scenes.map(scene => `<option value="${scene}">${scene}</option>`).join("")
-                    : '<option value="">请先上传测评集</option>';
+                const options = scenes.length
+                    ? [["", "选择场景..."], ...scenes.map(scene => [scene, scene])]
+                    : [["", "请先上传测评集"]];
+                replaceSelectOptions(select, options);
                 if (selectedScene && scenes.includes(selectedScene)) select.value = selectedScene;
             } catch (error) {
-                select.innerHTML = '<option value="">场景加载失败</option>';
+                replaceSelectOptions(select, [["", "场景加载失败"]]);
             }
         }
 

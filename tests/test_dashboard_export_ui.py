@@ -96,6 +96,32 @@ class DashboardExportUiTests(unittest.TestCase):
         self.assertIn("option.label || option.key", self.html)
         self.assertIn("document.createTextNode(label)", self.html)
 
+    def test_result_scene_selector_treats_uploaded_scene_names_as_text(self):
+        malicious_scene = 'x" onclick="globalThis.injected=true'
+        script = f"""
+            const select = {{
+                value: "",
+                children: [],
+                replaceChildren(...children) {{ this.children = children; }}
+            }};
+            const taskType = {{ value: "TI2I" }};
+            const document = {{
+                getElementById(id) {{ return id === "result-scene" ? select : taskType; }},
+                createElement(tag) {{ return {{ tag, value: "", textContent: "" }}; }}
+            }};
+            const api = async () => ({{ json: async () => [{json.dumps(malicious_scene)}] }});
+            {self.function_source("replaceSelectOptions")}
+            async {self.function_source("syncResultScenes")}
+            syncResultScenes().then(() => console.log(JSON.stringify(select.children)));
+        """
+
+        children = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+
+        self.assertNotIn("innerHTML", self.function_source("syncResultScenes"))
+        self.assertEqual(children[1]["value"], malicious_scene)
+        self.assertEqual(children[1]["textContent"], malicious_scene)
+        self.assertNotIn("onclick", children[1])
+
     def test_beijing_datetime_is_appended_without_timezone_conversion(self):
         self.assertEqual(
             self.run_function("localInputToBeijingIso", ["2026-07-15T09:30", False]),
