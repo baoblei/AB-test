@@ -132,6 +132,62 @@ class ExportArchiveTests(unittest.TestCase):
                         export_service.create_export_artifact(self.request)
         self.assertFalse((temp_root / "artifact").exists())
 
+    def test_ti2i_image_export_rejects_ref_models_before_preview_or_artifact_creation(self):
+        from app_core import export_service
+
+        temp_root = Path(self.temp_dir.name) / "ref-collision"
+        temp_root.mkdir()
+        for model in ("ref", "REF"):
+            with self.subTest(model=model):
+                request = ExportRequest(task_type="TI2I", v1=model, v2="Z", include_images=True)
+                with self.assertRaisesRegex(AppError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                    export_service.validate_export_request(request)
+                with patch.object(export_service, "fetch_base_rows") as fetch_rows:
+                    with self.assertRaisesRegex(AppError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                        export_service.preview_export(request)
+                fetch_rows.assert_not_called()
+                with patch.object(export_service.tempfile, "mkdtemp") as make_temp_dir:
+                    with self.assertRaisesRegex(AppError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                        export_service.create_export_artifact(request)
+                make_temp_dir.assert_not_called()
+        self.assertEqual(list(temp_root.iterdir()), [])
+
+    def test_direct_manifest_rejects_ti2i_ref_model_without_image_export_flag(self):
+        from app_core.export_service import build_image_manifest
+
+        for model in ("ref", "REF"):
+            with self.subTest(model=model):
+                request = ExportRequest(task_type="TI2I", v1=model, v2="Z", include_images=False)
+                with self.assertRaisesRegex(AppError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                    build_image_manifest(request, [make_row(v_a=model, v_b="Z")])
+
+    def test_ti2i_ref_model_allows_pure_xlsx_export(self):
+        from app_core import export_service
+
+        request = ExportRequest(task_type="TI2I", v1="ref", v2="Z", include_images=False)
+        artifact_dir = Path(self.temp_dir.name) / "xlsx-artifact"
+
+        def make_temp_dir(**_kwargs):
+            artifact_dir.mkdir()
+            return str(artifact_dir)
+
+        with patch.object(export_service, "fetch_base_rows", return_value=[make_row(v_a="Z", v_b="ref")]):
+            with patch.object(export_service.tempfile, "mkdtemp", side_effect=make_temp_dir):
+                artifact = export_service.create_export_artifact(request)
+
+        self.assertEqual(artifact.media_type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.assertTrue(Path(artifact.path).is_file())
+        Path(artifact.path).unlink()
+        artifact_dir.rmdir()
+
+    def test_t2i_ref_model_allows_image_manifest(self):
+        from app_core.export_service import build_image_manifest
+
+        request = ExportRequest(task_type="T2I", v1="ref", v2="Z", include_images=True)
+        manifest = build_image_manifest(request, [make_row(task_type="T2I", v_a="Z", v_b="ref")], lambda *args: None)
+
+        self.assertIn("ref", manifest[("portrait", "scene1.jpg")])
+
 
 class ExportApiTests(unittest.TestCase):
     def test_new_export_routes_preserve_legacy_get_and_return_file_response(self):

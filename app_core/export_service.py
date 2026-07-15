@@ -35,6 +35,7 @@ WRAPPED_ALIGNMENT = Alignment(vertical="top", wrap_text=True)
 EXCEL_FORMULA_PREFIXES = ("=", "+", "-", "@")
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ZIP_MEDIA_TYPE = "application/zip"
+TI2I_REF_MODEL_COLLISION_ERROR = "TI2I 导出图片时模型名称 ref 与参考图目录冲突"
 
 
 @dataclass
@@ -57,12 +58,19 @@ def canonical_model_pair(v1: str, v2: str) -> tuple[str, str]:
     return tuple(sorted((v1, v2)))
 
 
+def _validate_ti2i_ref_model_collision(task_type: str, v_a: str, v_b: str) -> None:
+    if task_type == "TI2I" and any(model.casefold() == "ref" for model in (v_a, v_b)):
+        raise AppError(TI2I_REF_MODEL_COLLISION_ERROR)
+
+
 def validate_export_request(request: ExportRequest) -> tuple[str, str, str]:
     task_type = normalize_task_type(request.task_type)
     if task_type not in TASK_CONFIGS:
         raise AppError("无效任务类型")
 
     v_a, v_b = canonical_models(request)
+    if request.include_images:
+        _validate_ti2i_ref_model_collision(task_type, v_a, v_b)
     valid_dimensions = set(TASK_CONFIGS[task_type]["eval_dims"])
     if any(dimension not in valid_dimensions for dimension in request.dimensions):
         raise AppError("无效导出维度")
@@ -499,6 +507,7 @@ def build_image_manifest(
     ref_path_resolver=get_ref_image_path,
 ) -> dict:
     task_type, v_a, v_b = validate_export_request(request)
+    _validate_ti2i_ref_model_collision(task_type, v_a, v_b)
     manifest = {}
     for row in selected_rows:
         scene = validate_storage_component(row["scene"], "场景")
@@ -536,6 +545,7 @@ def build_archive(
     image_manifest: Optional[dict] = None,
 ) -> str:
     task_type, v_a, v_b = validate_export_request(request)
+    _validate_ti2i_ref_model_collision(task_type, v_a, v_b)
     manifest = image_manifest or build_image_manifest(request, selected_rows, result_path_resolver, ref_path_resolver)
     if archive_path is None:
         descriptor, archive_path = tempfile.mkstemp(prefix="ab-test-export-", suffix=".zip")
