@@ -65,6 +65,8 @@ ab_test/
 │   ├── bad_cases.py
 │   ├── task_service.py
 │   ├── dashboard_service.py
+│   ├── export_service.py
+│   ├── time_utils.py
 │   ├── user_service.py
 │   └── admin_service.py
 ├── database.db
@@ -106,6 +108,8 @@ ab_test/
 - `app_core/config.py` 维护任务类型、评测维度和坏例标签
 - `app_core/database.py` 负责 SQLite 连接、初始化和 schema 兼容迁移
 - `app_core/*_service.py` 承载认证、任务、看板、用户和管理后台业务逻辑
+- `app_core/export_service.py` 负责导出记录筛选、XLSX 构建、ZIP 打包和图片归档
+- `app_core/time_utils.py` 负责北京时间业务时间格式化、校验，以及历史 UTC 时间迁移的转换
 
 ## 数据组织规范
 
@@ -293,7 +297,31 @@ Prompt 格式：
 - 每行必须使用 tab 分隔图片名和 prompt
 - 图片名不能带路径和扩展名
 - 图片名不能重复
-- `TI2I` 参考图 zip 中的图片名前缀必须和 prompt 中的图片名一致
+- `TI2I` 参考图 zip 中每个图片文件名去掉扩展名后，必须与 prompt 中的图片 ID 完全一致
+
+### 上传/补传参考图
+
+接口对应功能：
+
+- 后端接口：`POST /api/upload_ref`
+- 仅管理员可以调用
+
+该接口使用 `multipart/form-data`，表单字段为：
+
+- `task_type`：`T2I` 或 `TI2I`
+- `scene`：场景名
+- `file`：参考图 zip
+
+该入口用于在已有场景中独立补传参考图；与 `POST /api/upload_dataset` 在上传 `TI2I` 测评集时通过 `ref_file` 一体上传参考图，是两种上传入口。
+
+参考图 zip 会按目标 `task_type` 和 `scene` 的现有 prompt 校验：
+
+- 文件必须为有效 zip，且至少包含一张系统支持的图片扩展名文件
+- 隐藏文件、`__MACOSX` 条目和非图片扩展名文件会被忽略
+- zip 内不能出现重复的图片文件名；目录路径不参与匹配，系统只使用文件基名
+- 每张图片文件名去掉扩展名后，必须与 prompt 中的图片 ID 完全一致，不能缺少或多出
+
+上传成功后，该场景现有的参考图目录会被本次 zip 内容替换。
 
 ### 上传新结果图
 
