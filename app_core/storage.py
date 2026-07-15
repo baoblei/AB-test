@@ -4,6 +4,7 @@ import shutil
 import struct
 import zipfile
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 from .config import IMAGE_EXTENSIONS, PROMPT_DIR, REF_IMAGE_DIR, RESULT_DIR, get_task_config, normalize_task_type
@@ -392,14 +393,36 @@ def get_result_image_url(task_type: str, version: str, scene: str, filename: str
     return f"/images/{rel}"
 
 
+def _safe_existing_file_path(root: str, *components: str) -> Optional[str]:
+    root_path = Path(root)
+    candidate = root_path.joinpath(*components)
+    try:
+        current = root_path
+        if current.is_symlink():
+            return None
+        for component in components:
+            current = current / component
+            if current.is_symlink():
+                return None
+
+        resolved_root = root_path.resolve(strict=True)
+        resolved_candidate = candidate.resolve(strict=True)
+        resolved_candidate.relative_to(resolved_root)
+        if not resolved_candidate.is_file():
+            return None
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return os.fspath(candidate)
+
+
 def get_result_image_path(task_type: str, version: str, scene: str, filename: str) -> Optional[str]:
     task_type = validate_storage_component(normalize_task_type(task_type), "任务类型")
     version = validate_storage_component(version, "模型")
     scene = validate_storage_component(scene, "场景")
     filename = validate_storage_component(filename, "图片名")
     for root in get_result_roots(task_type):
-        path = os.path.join(root, version, scene, filename)
-        if os.path.isfile(path):
+        path = _safe_existing_file_path(root, version, scene, filename)
+        if path:
             return path
     return None
 
@@ -410,8 +433,8 @@ def get_ref_image_path(task_type: str, scene: str, filename: str) -> Optional[st
     filename = validate_storage_component(filename, "图片名")
     roots = [get_ref_root(task_type), REF_IMAGE_DIR]
     for root in roots:
-        path = os.path.join(root, scene, filename)
-        if os.path.isfile(path):
+        path = _safe_existing_file_path(root, scene, filename)
+        if path:
             return path
     return None
 

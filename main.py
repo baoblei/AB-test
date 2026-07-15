@@ -222,17 +222,17 @@ def export_data(format: str = "json", task_type: str = "T2I", v1: Optional[str] 
 
 
 @app.get("/api/export_options")
-def export_options(task_type: str, v1: str, v2: str):
+def export_options(task_type: str, v1: str, v2: str, user: dict = Depends(require_login)):
     return get_export_options(task_type, v1, v2)
 
 
 @app.post("/api/export/preview")
-def export_preview(payload: ExportRequest):
+def export_preview(payload: ExportRequest, user: dict = Depends(require_login)):
     return preview_export(payload)
 
 
 @app.post("/api/export")
-def export_file(payload: ExportRequest):
+def export_file(payload: ExportRequest, user: dict = Depends(require_login)):
     artifact = create_export_artifact(payload)
     return FileResponse(
         artifact.path,

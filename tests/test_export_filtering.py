@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app_core.database import connect, init_db
-from app_core.errors import AppError
+from app_core.errors import AppError, ValidationError
 from app_core.export_service import (
     canonical_models,
     filter_rows,
@@ -135,6 +135,29 @@ class ExportFilteringTests(unittest.TestCase):
 
         self.assertEqual(len(filter_rows(rows, request, "fidelity")), 1)
 
+    def test_noncanonical_timestamps_are_kept_without_bounds_and_excluded_with_either_bound(self):
+        rows = [
+            make_row(1, timestamp="2026-07-15T12:00:00+08:00"),
+            make_row(2, timestamp=None),
+            make_row(3, timestamp="2026-07-15 11:00:00"),
+            make_row(4, timestamp="2026-07-15T10:00:00+08:00"),
+        ]
+
+        unbounded = ExportRequest(task_type="T2I", v1="A", v2="B")
+        self.assertEqual([row["id"] for row in filter_rows(rows, unbounded, "overall")], [1, 2, 3, 4])
+
+        bounded_cases = [
+            ({"start_time": "2026-07-15T11:00:00+08:00"}, [1]),
+            ({"end_time": "2026-07-15T11:00:00+08:00"}, [4]),
+        ]
+        for boundaries, expected_ids in bounded_cases:
+            with self.subTest(boundaries=boundaries):
+                request = ExportRequest(task_type="T2I", v1="A", v2="B", **boundaries)
+                self.assertEqual(
+                    [row["id"] for row in filter_rows(rows, request, "overall")],
+                    expected_ids,
+                )
+
     def test_empty_dimensions_keeps_overall_only_and_preview_unions_selected_rows(self):
         request = ExportRequest(task_type="T2I", v1="B", v2="A")
 
@@ -164,12 +187,24 @@ class ExportFilteringTests(unittest.TestCase):
                 ),
                 "开始时间不能晚于结束时间",
             ),
+            (
+                ExportRequest(task_type="TI2I", v1="ref", v2="B", include_images=True),
+                "TI2I 导出图片时模型名称 ref 与参考图目录冲突",
+            ),
         ]
 
         for request, message in cases:
             with self.subTest(message=message):
-                with self.assertRaisesRegex(AppError, message):
+                with self.assertRaisesRegex(ValidationError, message) as context:
                     filter_rows(self.rows, request, "overall")
+                self.assertEqual(context.exception.status_code, 422)
+
+        with self.assertRaisesRegex(ValidationError, "无效导出维度") as context:
+            filter_rows(self.rows, ExportRequest(task_type="T2I", v1="A", v2="B"), "fidelity")
+        self.assertEqual(context.exception.status_code, 422)
+
+    def test_generic_app_error_keeps_bad_request_status(self):
+        self.assertEqual(AppError("普通业务错误").status_code, 400)
 
 
 class ExportQueryTests(unittest.TestCase):
@@ -185,14 +220,15 @@ class ExportQueryTests(unittest.TestCase):
         self.db_path_patch.stop()
         self.temp_dir.cleanup()
 
-    def insert_rows(self):
-        rows = [
-            make_row(1, scene="zoo", filename="shared.png", timestamp="2026-07-15T09:00:00+08:00", aesthetic="A"),
-            make_row(2, eval_mode="overall", scene="zoo", filename="overall.png", worker="zoe", timestamp="2026-07-15T10:00:00+08:00", overall="B", aesthetic=None, logic=None, consistency=None),
-            make_row(3, scene="arch", filename="shared.png", worker="bob", timestamp="2026-07-15T11:00:00+08:00", aesthetic="B"),
-            make_row(4, task_type="TI2I", v_a="A", v_b="B", scene="other", filename="other.png"),
-            make_row(5, skipped=1, scene="skip", filename="skip.png"),
-        ]
+    def insert_rows(self, rows=None):
+        if rows is None:
+            rows = [
+                make_row(1, scene="zoo", filename="shared.png", timestamp="2026-07-15T09:00:00+08:00", aesthetic="A"),
+                make_row(2, eval_mode="overall", scene="zoo", filename="overall.png", worker="zoe", timestamp="2026-07-15T10:00:00+08:00", overall="B", aesthetic=None, logic=None, consistency=None),
+                make_row(3, scene="arch", filename="shared.png", worker="bob", timestamp="2026-07-15T11:00:00+08:00", aesthetic="B"),
+                make_row(4, task_type="TI2I", v_a="A", v_b="B", scene="other", filename="other.png"),
+                make_row(5, skipped=1, scene="skip", filename="skip.png"),
+            ]
         conn = connect()
         columns = list(rows[0])
         placeholders = ", ".join("?" for _ in columns)
@@ -215,6 +251,26 @@ class ExportQueryTests(unittest.TestCase):
         self.assertEqual(options["max_time"], "2026-07-15T11:00:00+08:00")
         self.assertEqual(options["total"], 3)
 
+    def test_get_export_options_uses_only_canonical_beijing_timestamps_for_bounds(self):
+        self.insert_rows(
+            [
+                make_row(6, scene="null-time", timestamp=None),
+                make_row(7, scene="legacy-time", timestamp="2026-07-15 08:00:00"),
+                make_row(8, v_a="C", v_b="D", timestamp=None),
+                make_row(9, v_a="C", v_b="D", timestamp="2026-07-15T08:00:00Z"),
+            ]
+        )
+
+        mixed_options = get_export_options("T2I", "A", "B")
+        self.assertEqual(mixed_options["min_time"], "2026-07-15T09:00:00+08:00")
+        self.assertEqual(mixed_options["max_time"], "2026-07-15T11:00:00+08:00")
+        self.assertEqual(mixed_options["total"], 5)
+
+        invalid_only_options = get_export_options("T2I", "C", "D")
+        self.assertIsNone(invalid_only_options["min_time"])
+        self.assertIsNone(invalid_only_options["max_time"])
+        self.assertEqual(invalid_only_options["total"], 2)
+
     def test_preview_includes_overall_and_counts_unique_images_across_sheets(self):
         request = ExportRequest(task_type="T2I", v1="B", v2="A", dimensions=["aesthetic"])
 
@@ -227,6 +283,29 @@ class ExportQueryTests(unittest.TestCase):
         request = ExportRequest(task_type="T2I", v1="A", v2="B", dimensions=[])
 
         self.assertEqual(preview_export(request), {"overall": 3, "dimensions": {}, "unique_images": 3})
+
+    def test_preview_keeps_invalid_timestamps_unbounded_and_excludes_them_when_bounded(self):
+        self.insert_rows(
+            [
+                make_row(6, scene="null-time", filename="null.png", timestamp=None),
+                make_row(7, scene="legacy-time", filename="legacy.png", timestamp="2026-07-15 08:00:00"),
+            ]
+        )
+
+        unbounded = ExportRequest(task_type="T2I", v1="A", v2="B")
+        self.assertEqual(preview_export(unbounded), {"overall": 5, "dimensions": {}, "unique_images": 5})
+
+        bounded_cases = [
+            ({"start_time": "2026-07-15T09:30:00+08:00"}, 2),
+            ({"end_time": "2026-07-15T10:30:00+08:00"}, 2),
+        ]
+        for boundaries, expected_count in bounded_cases:
+            with self.subTest(boundaries=boundaries):
+                request = ExportRequest(task_type="T2I", v1="A", v2="B", **boundaries)
+                self.assertEqual(
+                    preview_export(request),
+                    {"overall": expected_count, "dimensions": {}, "unique_images": expected_count},
+                )
 
 
 if __name__ == "__main__":

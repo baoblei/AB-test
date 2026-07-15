@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 from .bad_cases import safe_load_json_list
 from .config import DIM_LABELS, TASK_CONFIGS, dim_payload, normalize_task_type
 from .database import connect
-from .errors import AppError
+from .errors import AppError, ValidationError
 from .schemas import ExportRequest
 from .storage import get_prompt_text, get_ref_image_path, get_result_image_path, validate_storage_component
 from .time_utils import is_canonical_beijing_iso, now_beijing_iso
@@ -48,40 +48,40 @@ def canonical_models(request: ExportRequest) -> tuple[str, str]:
 
 def canonical_model_pair(v1: str, v2: str) -> tuple[str, str]:
     if not v1 or not v1.strip() or not v2 or not v2.strip():
-        raise AppError("模型名称不能为空")
+        raise ValidationError("模型名称不能为空")
     if v1 == v2:
-        raise AppError("模型必须不同")
+        raise ValidationError("模型必须不同")
     return tuple(sorted((v1, v2)))
 
 
 def _validate_ti2i_ref_model_collision(task_type: str, v_a: str, v_b: str) -> None:
     if task_type == "TI2I" and any(model.casefold() == "ref" for model in (v_a, v_b)):
-        raise AppError(TI2I_REF_MODEL_COLLISION_ERROR)
+        raise ValidationError(TI2I_REF_MODEL_COLLISION_ERROR)
 
 
 def validate_export_request(request: ExportRequest) -> tuple[str, str, str]:
     task_type = normalize_task_type(request.task_type)
     if task_type not in TASK_CONFIGS:
-        raise AppError("无效任务类型")
+        raise ValidationError("无效任务类型")
 
     v_a, v_b = canonical_models(request)
     if request.include_images:
         _validate_ti2i_ref_model_collision(task_type, v_a, v_b)
     valid_dimensions = set(TASK_CONFIGS[task_type]["eval_dims"])
     if any(dimension not in valid_dimensions for dimension in request.dimensions):
-        raise AppError("无效导出维度")
+        raise ValidationError("无效导出维度")
     if request.result_filter not in VALID_RESULT_FILTERS:
-        raise AppError("无效结果筛选")
+        raise ValidationError("无效结果筛选")
     if request.bad_case_filter not in VALID_BAD_CASE_FILTERS:
-        raise AppError("无效坏例筛选")
+        raise ValidationError("无效坏例筛选")
     if any(mode not in VALID_EVAL_MODES for mode in request.eval_modes):
-        raise AppError("无效评测模式")
+        raise ValidationError("无效评测模式")
     if request.start_time and not is_canonical_beijing_iso(request.start_time):
-        raise AppError("导出时间必须为北京时间 ISO 格式")
+        raise ValidationError("导出时间必须为北京时间 ISO 格式")
     if request.end_time and not is_canonical_beijing_iso(request.end_time):
-        raise AppError("导出时间必须为北京时间 ISO 格式")
+        raise ValidationError("导出时间必须为北京时间 ISO 格式")
     if request.start_time and request.end_time and request.start_time > request.end_time:
-        raise AppError("开始时间不能晚于结束时间")
+        raise ValidationError("开始时间不能晚于结束时间")
     return task_type, v_a, v_b
 
 
@@ -95,10 +95,14 @@ def row_has_bad_case(row) -> bool:
     return bool(safe_load_json_list(row["bad_case_tags_a"]) or safe_load_json_list(row["bad_case_tags_b"]))
 
 
+def _is_canonical_export_timestamp(value) -> bool:
+    return isinstance(value, str) and is_canonical_beijing_iso(value)
+
+
 def filter_rows(rows: Iterable, request: ExportRequest, dimension: str) -> list:
     task_type, v_a, v_b = validate_export_request(request)
     if dimension != "overall" and dimension not in TASK_CONFIGS[task_type]["eval_dims"]:
-        raise AppError("无效导出维度")
+        raise ValidationError("无效导出维度")
 
     wanted_result = expected_result(request, v_a, v_b)
     result = []
@@ -117,10 +121,14 @@ def filter_rows(rows: Iterable, request: ExportRequest, dimension: str) -> list:
             continue
         if request.eval_modes and mode not in request.eval_modes:
             continue
-        if request.start_time and row["timestamp"] < request.start_time:
-            continue
-        if request.end_time and row["timestamp"] > request.end_time:
-            continue
+        if request.start_time or request.end_time:
+            timestamp = row["timestamp"]
+            if not _is_canonical_export_timestamp(timestamp):
+                continue
+            if request.start_time and timestamp < request.start_time:
+                continue
+            if request.end_time and timestamp > request.end_time:
+                continue
         has_bad_case = row_has_bad_case(row)
         if request.bad_case_filter == "with" and not has_bad_case:
             continue
@@ -152,10 +160,10 @@ def fetch_base_rows(task_type: str, v_a: str, v_b: str) -> list:
 def get_export_options(task_type: str, v1: str, v2: str) -> dict:
     normalized_task_type = normalize_task_type(task_type)
     if normalized_task_type not in TASK_CONFIGS:
-        raise AppError("无效任务类型")
+        raise ValidationError("无效任务类型")
     v_a, v_b = canonical_model_pair(v1, v2)
     rows = fetch_base_rows(normalized_task_type, v_a, v_b)
-    timestamps = [row["timestamp"] for row in rows]
+    timestamps = [row["timestamp"] for row in rows if _is_canonical_export_timestamp(row["timestamp"])]
     config = TASK_CONFIGS[normalized_task_type]
     return {
         "task_type": normalized_task_type,

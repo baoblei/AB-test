@@ -8,7 +8,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
-from app_core.errors import AppError
+from app_core.errors import AppError, ValidationError
 from app_core.schemas import ExportRequest
 from app_core.storage import get_ref_image_path, get_result_image_path
 
@@ -58,6 +58,108 @@ class ExportArchiveTests(unittest.TestCase):
                     get_result_image_path("T2I", value, "scene", "image.png")
                 with self.assertRaises(AppError):
                     get_ref_image_path("TI2I", "scene", value)
+
+    def test_result_image_path_rejects_symlink_components_and_marks_manifest_missing(self):
+        from app_core.export_service import build_image_manifest
+
+        request = ExportRequest(task_type="T2I", v1="D", v2="E", include_images=True)
+        row = make_row(task_type="T2I")
+        for component in ("root", "version", "scene", "filename"):
+            with self.subTest(component=component):
+                base = Path(self.temp_dir.name) / f"result-symlink-{component}"
+                base.mkdir()
+                root = base / "root"
+                if component == "root":
+                    target = base / "outside-root"
+                    (target / "D" / "portrait").mkdir(parents=True)
+                    (target / "D" / "portrait" / "scene1.jpg").write_bytes(b"outside")
+                    root.symlink_to(target, target_is_directory=True)
+                elif component == "version":
+                    root.mkdir()
+                    target = base / "outside-version"
+                    (target / "portrait").mkdir(parents=True)
+                    (target / "portrait" / "scene1.jpg").write_bytes(b"outside")
+                    (root / "D").symlink_to(target, target_is_directory=True)
+                elif component == "scene":
+                    (root / "D").mkdir(parents=True)
+                    target = base / "outside-scene"
+                    target.mkdir()
+                    (target / "scene1.jpg").write_bytes(b"outside")
+                    (root / "D" / "portrait").symlink_to(target, target_is_directory=True)
+                else:
+                    (root / "D" / "portrait").mkdir(parents=True)
+                    target = base / "outside-file.jpg"
+                    target.write_bytes(b"outside")
+                    (root / "D" / "portrait" / "scene1.jpg").symlink_to(target)
+
+                with patch("app_core.storage.get_result_roots", return_value=[str(root)]):
+                    self.assertIsNone(get_result_image_path("T2I", "D", "portrait", "scene1.jpg"))
+                    manifest = build_image_manifest(
+                        request,
+                        [row],
+                        result_path_resolver=get_result_image_path,
+                    )
+                self.assertEqual(manifest[("portrait", "scene1.jpg")]["D"]["status"], "文件不存在")
+                self.assertIsNone(manifest[("portrait", "scene1.jpg")]["D"]["source_path"])
+
+        root = Path(self.temp_dir.name) / "result-resolution-error"
+        (root / "D" / "portrait").mkdir(parents=True)
+        (root / "D" / "portrait" / "scene1.jpg").write_bytes(b"inside")
+        outside = Path(self.temp_dir.name) / "resolved-outside.jpg"
+        outside.write_bytes(b"outside")
+        resolved_root = root.resolve()
+        resolved_outside = outside.resolve()
+        with patch("app_core.storage.get_result_roots", return_value=[str(root)]):
+            with patch.object(Path, "resolve", side_effect=[resolved_root, resolved_outside]):
+                self.assertIsNone(get_result_image_path("T2I", "D", "portrait", "scene1.jpg"))
+        with patch("app_core.storage.get_result_roots", return_value=[str(root)]):
+            with patch.object(Path, "resolve", side_effect=OSError("resolution failed")):
+                self.assertIsNone(get_result_image_path("T2I", "D", "portrait", "scene1.jpg"))
+
+    def test_ref_image_path_rejects_symlink_components_and_marks_manifest_missing(self):
+        from app_core.export_service import build_image_manifest
+
+        for component in ("root", "scene", "filename"):
+            with self.subTest(component=component):
+                base = Path(self.temp_dir.name) / f"ref-symlink-{component}"
+                base.mkdir()
+                root = base / "root"
+                if component == "root":
+                    target = base / "outside-root"
+                    (target / "portrait").mkdir(parents=True)
+                    (target / "portrait" / "scene1.jpg").write_bytes(b"outside")
+                    root.symlink_to(target, target_is_directory=True)
+                elif component == "scene":
+                    root.mkdir()
+                    target = base / "outside-scene"
+                    target.mkdir()
+                    (target / "scene1.jpg").write_bytes(b"outside")
+                    (root / "portrait").symlink_to(target, target_is_directory=True)
+                else:
+                    (root / "portrait").mkdir(parents=True)
+                    target = base / "outside-file.jpg"
+                    target.write_bytes(b"outside")
+                    (root / "portrait" / "scene1.jpg").symlink_to(target)
+
+                with patch("app_core.storage.get_ref_root", return_value=str(root)):
+                    with patch("app_core.storage.REF_IMAGE_DIR", str(base / "missing-legacy")):
+                        self.assertIsNone(get_ref_image_path("TI2I", "portrait", "scene1.jpg"))
+                        manifest = build_image_manifest(
+                            self.request,
+                            [make_row()],
+                            result_path_resolver=lambda *_args: None,
+                            ref_path_resolver=get_ref_image_path,
+                        )
+                self.assertEqual(manifest[("portrait", "scene1.jpg")]["ref"]["status"], "文件不存在")
+                self.assertIsNone(manifest[("portrait", "scene1.jpg")]["ref"]["source_path"])
+
+        root = Path(self.temp_dir.name) / "ref-resolution-error"
+        (root / "portrait").mkdir(parents=True)
+        (root / "portrait" / "scene1.jpg").write_bytes(b"inside")
+        with patch("app_core.storage.get_ref_root", return_value=str(root)):
+            with patch("app_core.storage.REF_IMAGE_DIR", str(Path(self.temp_dir.name) / "missing-legacy")):
+                with patch.object(Path, "resolve", side_effect=OSError("resolution failed")):
+                    self.assertIsNone(get_ref_image_path("TI2I", "portrait", "scene1.jpg"))
 
     def test_archive_uses_scene_model_ref_layout_and_deduplicates_rows(self):
         from app_core.export_service import build_archive
@@ -132,6 +234,41 @@ class ExportArchiveTests(unittest.TestCase):
                         export_service.create_export_artifact(self.request)
         self.assertFalse((temp_root / "artifact").exists())
 
+    def test_workbook_artifact_handles_invalid_timestamps_according_to_time_bounds(self):
+        from app_core import export_service
+
+        rows = [
+            make_row(1, filename="canonical.jpg", timestamp="2026-07-15T12:00:00+08:00"),
+            make_row(2, filename="null.jpg", timestamp=None),
+            make_row(3, filename="legacy.jpg", timestamp="2026-07-15 11:00:00"),
+        ]
+        cases = [
+            (ExportRequest(task_type="TI2I", v1="D", v2="E", dimensions=["fidelity"]), 3),
+            (
+                ExportRequest(
+                    task_type="TI2I",
+                    v1="D",
+                    v2="E",
+                    dimensions=["fidelity"],
+                    start_time="2026-07-15T00:00:00+08:00",
+                ),
+                1,
+            ),
+        ]
+
+        for request, expected_count in cases:
+            with self.subTest(start_time=request.start_time):
+                with patch.object(export_service, "fetch_base_rows", return_value=rows):
+                    artifact = export_service.create_export_artifact(request)
+                try:
+                    workbook = load_workbook(artifact.path)
+                    self.assertEqual(workbook["Overall"]["B9"].value, expected_count)
+                    self.assertEqual(workbook["portrait"].max_row - 2, expected_count)
+                    workbook.close()
+                finally:
+                    Path(artifact.path).unlink(missing_ok=True)
+                    Path(artifact.cleanup_dir).rmdir()
+
     def test_ti2i_image_export_rejects_ref_models_before_preview_or_artifact_creation(self):
         from app_core import export_service
 
@@ -140,14 +277,14 @@ class ExportArchiveTests(unittest.TestCase):
         for model in ("ref", "REF"):
             with self.subTest(model=model):
                 request = ExportRequest(task_type="TI2I", v1=model, v2="Z", include_images=True)
-                with self.assertRaisesRegex(AppError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                with self.assertRaisesRegex(ValidationError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
                     export_service.validate_export_request(request)
                 with patch.object(export_service, "fetch_base_rows") as fetch_rows:
-                    with self.assertRaisesRegex(AppError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                    with self.assertRaisesRegex(ValidationError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
                         export_service.preview_export(request)
                 fetch_rows.assert_not_called()
                 with patch.object(export_service.tempfile, "mkdtemp") as make_temp_dir:
-                    with self.assertRaisesRegex(AppError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                    with self.assertRaisesRegex(ValidationError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
                         export_service.create_export_artifact(request)
                 make_temp_dir.assert_not_called()
         self.assertEqual(list(temp_root.iterdir()), [])
@@ -158,8 +295,33 @@ class ExportArchiveTests(unittest.TestCase):
         for model in ("ref", "REF"):
             with self.subTest(model=model):
                 request = ExportRequest(task_type="TI2I", v1=model, v2="Z", include_images=False)
-                with self.assertRaisesRegex(AppError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"):
+                with self.assertRaisesRegex(
+                    ValidationError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"
+                ) as context:
                     build_image_manifest(request, [make_row(v_a=model, v_b="Z")])
+                self.assertEqual(context.exception.status_code, 422)
+
+    def test_direct_archive_rejects_ti2i_ref_model_before_tempfile_with_prebuilt_manifest(self):
+        from app_core import export_service
+
+        manifest = {("portrait", "scene1.jpg"): {}}
+        for model in ("ref", "REF"):
+            with self.subTest(model=model):
+                request = ExportRequest(task_type="TI2I", v1=model, v2="Z", include_images=False)
+                with patch.object(export_service.tempfile, "mkstemp") as make_temp_file:
+                    with patch.object(export_service.zipfile, "ZipFile") as create_archive:
+                        with self.assertRaisesRegex(
+                            ValidationError, "TI2I 导出图片时模型名称 ref 与参考图目录冲突"
+                        ) as context:
+                            export_service.build_archive(
+                                request,
+                                workbook_data=b"xlsx",
+                                selected_rows=[make_row(v_a=model, v_b="Z")],
+                                image_manifest=manifest,
+                            )
+                self.assertEqual(context.exception.status_code, 422)
+                make_temp_file.assert_not_called()
+                create_archive.assert_not_called()
 
     def test_ti2i_ref_model_allows_pure_xlsx_export(self):
         from app_core import export_service
@@ -204,15 +366,78 @@ class ExportApiTests(unittest.TestCase):
                         with patch.object(main, "create_export_artifact", return_value=artifact) as create:
                             client = TestClient(main.app)
                             self.assertEqual(client.get("/api/export", params={"format": "json"}).status_code, 200)
-                            self.assertEqual(client.get("/api/export_options", params={"task_type": "T2I", "v1": "A", "v2": "B"}).json(), {"total": 1})
-                            self.assertEqual(client.post("/api/export/preview", json={"task_type": "T2I", "v1": "A", "v2": "B"}).json(), {"overall": 1})
-                            response = client.post("/api/export", json={"task_type": "T2I", "v1": "A", "v2": "B"})
+                            self.assertEqual(
+                                client.get(
+                                    "/api/export_options", params={"task_type": "T2I", "v1": "A", "v2": "B"}
+                                ).status_code,
+                                401,
+                            )
+                            self.assertEqual(
+                                client.post(
+                                    "/api/export/preview", json={"task_type": "T2I", "v1": "A", "v2": "B"}
+                                ).status_code,
+                                401,
+                            )
+                            self.assertEqual(
+                                client.post(
+                                    "/api/export", json={"task_type": "T2I", "v1": "A", "v2": "B"}
+                                ).status_code,
+                                401,
+                            )
+
+                            main.app.dependency_overrides[main.require_login] = lambda: {
+                                "id": 1,
+                                "username": "reviewer",
+                            }
+                            try:
+                                self.assertEqual(
+                                    client.get(
+                                        "/api/export_options",
+                                        params={"task_type": "T2I", "v1": "A", "v2": "B"},
+                                    ).json(),
+                                    {"total": 1},
+                                )
+                                self.assertEqual(
+                                    client.post(
+                                        "/api/export/preview",
+                                        json={"task_type": "T2I", "v1": "A", "v2": "B"},
+                                    ).json(),
+                                    {"overall": 1},
+                                )
+                                response = client.post(
+                                    "/api/export", json={"task_type": "T2I", "v1": "A", "v2": "B"}
+                                )
+                            finally:
+                                main.app.dependency_overrides.pop(main.require_login, None)
             options.assert_called_once_with("T2I", "A", "B")
             preview.assert_called_once()
             create.assert_called_once()
             self.assertEqual(response.headers["content-type"], artifact.media_type)
             self.assertIn("filename*=utf-8''", response.headers["content-disposition"])
             self.assertFalse(path.exists())
+
+    def test_export_request_validation_returns_422_without_changing_generic_app_errors(self):
+        import main
+
+        client = TestClient(main.app)
+        main.app.dependency_overrides[main.require_login] = lambda: {"id": 1, "username": "reviewer"}
+        try:
+            semantic_response = client.post(
+                "/api/export/preview", json={"task_type": "invalid", "v1": "A", "v2": "B"}
+            )
+            pydantic_response = client.post(
+                "/api/export/preview", json={"task_type": "T2I", "v1": "A"}
+            )
+            with patch.object(main, "preview_export", side_effect=AppError("普通业务错误")):
+                generic_response = client.post(
+                    "/api/export/preview", json={"task_type": "T2I", "v1": "A", "v2": "B"}
+                )
+        finally:
+            main.app.dependency_overrides.pop(main.require_login, None)
+
+        self.assertEqual(semantic_response.status_code, 422)
+        self.assertEqual(pydantic_response.status_code, 422)
+        self.assertEqual(generic_response.status_code, 400)
 
 
 if __name__ == "__main__":

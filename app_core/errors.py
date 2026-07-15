@@ -6,6 +6,10 @@ class AppError(Exception):
         self.message = message
 
 
+class ValidationError(AppError):
+    status_code = 422
+
+
 class InvalidTaskTypeError(AppError):
     pass
 
