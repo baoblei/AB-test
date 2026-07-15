@@ -136,7 +136,7 @@ def scene_resolution_stats(task_type: str, v1: str, v2: str, scene: str, user: d
 
 @app.get("/api/eval_mode_status")
 def get_eval_mode_status(task_type: str, worker: str, v1: str, v2: str, scene: str, user: dict = Depends(require_login)):
-    return get_eval_mode_status_service(task_type, user["username"], v1, v2, scene)
+    return get_eval_mode_status_service(task_type, user["username"], v1, v2, scene, user["id"])
 
 
 @app.post("/api/start_eval_session")
@@ -161,23 +161,31 @@ def get_prompt(task_type: str, scene: str, filename: str):
 
 
 @app.get("/api/get_task")
-def get_task(task_type: str, worker: str, v1: str, v2: str, scene: str, user: dict = Depends(require_login)):
-    return get_next_task(task_type, user["username"], v1, v2, scene, user["id"])
+def get_task(
+    task_type: str,
+    worker: str,
+    v1: str,
+    v2: str,
+    scene: str,
+    eval_mode: str = "full",
+    user: dict = Depends(require_login),
+):
+    return get_next_task(task_type, user["username"], v1, v2, scene, user["id"], eval_mode)
 
 
 @app.get("/api/progress")
 def get_progress(task_type: str, worker: str, v1: str, v2: str, scene: str, eval_mode: str = "full", user: dict = Depends(require_login)):
-    return get_progress_service(task_type, user["username"], v1, v2, scene, eval_mode)
+    return get_progress_service(task_type, user["username"], v1, v2, scene, eval_mode, user["id"])
 
 
 @app.post("/api/submit")
 def submit_vote(vote: VoteSubmit, user: dict = Depends(require_login)):
-    return submit_vote_service(vote, user["id"])
+    return submit_vote_service(vote, user["id"], user["username"])
 
 
 @app.post("/api/skip_task")
 def skip_task(task_id: int, task_type: str, eval_mode: str = "full", user: dict = Depends(require_login)):
-    return skip_task_service(task_id, task_type, user["id"], eval_mode)
+    return skip_task_service(task_id, task_type, user["id"], eval_mode, user["username"])
 
 
 @app.get("/api/my_history")

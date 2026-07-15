@@ -103,8 +103,8 @@ class BusinessTimeWriteTests(unittest.TestCase):
         self.assertRegex(last_login, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$")
 
     def test_submit_and_skip_write_beijing_iso(self):
-        submit_vote(self.full_vote, 1)
-        skip_task(self.skip_task_id, "T2I", 1, "full")
+        submit_vote(self.full_vote, 1, "worker")
+        skip_task(self.skip_task_id, "T2I", 1, "full", "worker")
         values = [row[0] for row in connect().execute("SELECT timestamp FROM results_log ORDER BY id")]
 
         self.assertTrue(all(value.endswith("+08:00") for value in values))

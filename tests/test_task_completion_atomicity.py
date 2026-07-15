@@ -65,10 +65,10 @@ class TaskCompletionAtomicityTests(unittest.TestCase):
         return count
 
     def test_duplicate_submit_inserts_one_result_and_rejects_second_claim(self):
-        self.assertEqual(submit_vote(self.vote, 1), {"status": "ok"})
+        self.assertEqual(submit_vote(self.vote, 1, "worker"), {"status": "ok"})
 
         with self.assertRaisesRegex(ConflictError, "任务已完成、已失效或不属于当前用户"):
-            submit_vote(self.vote, 1)
+            submit_vote(self.vote, 1, "worker")
 
         conn = connect()
         status = conn.execute("SELECT status FROM pair_tasks WHERE id=?", (self.task_id,)).fetchone()[0]
@@ -115,10 +115,10 @@ class TaskCompletionAtomicityTests(unittest.TestCase):
         finally:
             main.app.dependency_overrides.pop(main.require_login, None)
 
-        status.assert_called_once_with("T2I", "worker", "model-a", "model-b", "scene")
+        status.assert_called_once_with("T2I", "worker", "model-a", "model-b", "scene", 1)
         start.assert_called_once_with("T2I", "worker", "model-a", "model-b", "scene", "full", 1, False)
-        next_task.assert_called_once_with("T2I", "worker", "model-a", "model-b", "scene", 1)
-        progress.assert_called_once_with("T2I", "worker", "model-a", "model-b", "scene", "full")
+        next_task.assert_called_once_with("T2I", "worker", "model-a", "model-b", "scene", 1, "full")
+        progress.assert_called_once_with("T2I", "worker", "model-a", "model-b", "scene", "full", 1)
 
     def test_duplicate_skip_inserts_one_result_and_rejects_second_claim(self):
         self.assertEqual(skip_task(self.task_id, "T2I", 1), {"status": "ok"})
@@ -143,7 +143,7 @@ class TaskCompletionAtomicityTests(unittest.TestCase):
             with outcome_lock:
                 outcomes.append(outcome)
 
-        submit_thread = threading.Thread(target=run, args=(lambda: submit_vote(self.vote, 1),))
+        submit_thread = threading.Thread(target=run, args=(lambda: submit_vote(self.vote, 1, "worker"),))
         skip_thread = threading.Thread(target=run, args=(lambda: skip_task(self.task_id, "T2I", 1),))
         submit_thread.start()
         skip_thread.start()
@@ -158,12 +158,12 @@ class TaskCompletionAtomicityTests(unittest.TestCase):
 
     def test_submit_rejects_other_user_and_payload_mismatch_without_mutation(self):
         with self.assertRaises(ConflictError):
-            submit_vote(self.vote, 2)
+            submit_vote(self.vote, 2, "other-worker")
 
         tampered_vote = SimpleNamespace(**vars(self.vote))
         tampered_vote.filename = "other.png"
         with self.assertRaisesRegex(ConflictError, "提交内容与当前任务不一致"):
-            submit_vote(tampered_vote, 1)
+            submit_vote(tampered_vote, 1, "worker")
 
         self.assertEqual(self.result_count(), 0)
         conn = connect()

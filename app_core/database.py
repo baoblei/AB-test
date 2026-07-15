@@ -92,6 +92,7 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS results_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER,
             eval_mode TEXT DEFAULT 'full',
             task_type TEXT DEFAULT 'T2I',
             v_a TEXT,
@@ -115,6 +116,7 @@ def init_db():
         )
         """
     )
+    ensure_column(cursor, "results_log", "task_id", "INTEGER")
     ensure_column(cursor, "results_log", "eval_mode", "TEXT DEFAULT 'full'")
     ensure_column(cursor, "results_log", "task_type", "TEXT DEFAULT 'T2I'")
     ensure_column(cursor, "results_log", "fidelity", "TEXT DEFAULT 'tie'")
@@ -136,6 +138,7 @@ def init_db():
                 scene TEXT,
                 filename TEXT,
                 status TEXT DEFAULT 'pending',
+                eval_mode TEXT DEFAULT 'full',
                 worker TEXT,
                 assigned_user_id INTEGER,
                 UNIQUE(task_type, v_a, v_b, scene, filename, worker)
@@ -145,8 +148,8 @@ def init_db():
         cursor.execute(
             """
             INSERT OR IGNORE INTO pair_tasks_new
-            (id, task_type, v_a, v_b, scene, filename, status, worker, assigned_user_id)
-            SELECT id, 'T2I', v_a, v_b, scene, filename, status, worker, assigned_user_id
+            (id, task_type, v_a, v_b, scene, filename, status, eval_mode, worker, assigned_user_id)
+            SELECT id, 'T2I', v_a, v_b, scene, filename, status, 'full', worker, assigned_user_id
             FROM pair_tasks
             """
         )
@@ -163,6 +166,7 @@ def init_db():
             scene TEXT,
             filename TEXT,
             status TEXT DEFAULT 'pending',
+            eval_mode TEXT DEFAULT 'full',
             worker TEXT,
             assigned_user_id INTEGER,
             UNIQUE(task_type, v_a, v_b, scene, filename, worker)
@@ -170,6 +174,14 @@ def init_db():
         """
     )
     ensure_column(cursor, "pair_tasks", "task_type", "TEXT DEFAULT 'T2I'")
+    ensure_column(cursor, "pair_tasks", "eval_mode", "TEXT DEFAULT 'full'")
+
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_results_log_task_id_unique
+        ON results_log(task_id) WHERE task_id IS NOT NULL
+        """
+    )
 
     cursor.execute("SELECT id FROM users WHERE username='admin'")
     if not cursor.fetchone():
@@ -179,6 +191,26 @@ def init_db():
             "INSERT INTO users (username, password_hash, role, email, created_at) VALUES (?, ?, ?, ?, ?)",
             ("admin", hash_password("admin123"), "admin", "admin@example.com", now_beijing_iso()),
         )
+
+    cursor.execute(
+        """
+        UPDATE results_log
+        SET user_id=(SELECT id FROM users WHERE users.username=results_log.worker)
+        WHERE user_id IS NULL
+          AND EXISTS (SELECT 1 FROM users WHERE users.username=results_log.worker)
+        """
+    )
+    cursor.execute(
+        """
+        UPDATE pair_tasks
+        SET assigned_user_id=(SELECT id FROM users WHERE users.username=pair_tasks.worker)
+        WHERE EXISTS (SELECT 1 FROM users WHERE users.username=pair_tasks.worker)
+          AND (
+              assigned_user_id IS NULL
+              OR NOT EXISTS (SELECT 1 FROM users owner WHERE owner.id=pair_tasks.assigned_user_id)
+          )
+        """
+    )
 
     migration_result = migrate_business_times(conn)
     if migration_result["invalid"]:

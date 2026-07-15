@@ -50,6 +50,8 @@ class FrontendTimeContractTests(unittest.TestCase):
                 "loadNextTask",
                 "setTaskActionPending",
                 "beginTaskAction",
+                "restoreTaskActionState",
+                "reconcileTaskAction",
                 "runTaskAction",
                 "submitVote",
                 "skipTask",
@@ -258,6 +260,17 @@ vm.runInContext({scenario_source}, context, {{ filename: "scenario.js" }}).then(
             source = self.function_source(html, function_name)
             self.assertIn("const action = beginTaskAction()", source)
             self.assertRegex(source, r"runTaskAction\(\s*action")
+
+    def test_task_loading_includes_persisted_eval_mode(self):
+        source = self.function_source(self.read_template("index.html"), "loadNextTask")
+        self.assertIn("eval_mode: getEvalMode()", source)
+
+    def test_initial_task_load_failure_restores_setup_screen(self):
+        source = self.function_source(self.read_template("index.html"), "startTest")
+        self.assertIn("const taskLoad = await loadNextTask()", source)
+        self.assertIn('taskLoad.status === "error"', source)
+        self.assertIn('getElementById("setup-overlay").classList.remove("hidden")', source)
+        self.assertIn('getElementById("test-ui").classList.add("hidden")', source)
 
     def test_runtime_waits_for_immediately_complete_t2i_and_ti2i_images(self):
         result = self.run_runtime_scenario(r'''
@@ -535,12 +548,20 @@ return {
     def test_runtime_failed_task_action_restores_snapshot_timer_and_buttons(self):
         result = self.run_runtime_scenario(r'''
 state.currentTask = { task_id: "current", v_left: "model-a", v_right: "model-b", scene: "scene", filename: "current.png" };
+currentVotes = { overall: "left" };
+badCaseSelections = { left: new Set(["乱码"]), right: new Set(["模糊失焦"]) };
+activeBadCaseCategory = { left: "美学缺陷", right: "美学缺陷" };
 startTime = 2000;
 now = 12000;
 holdTaskActions = true;
 const submitting = submitVote();
 await flush();
 taskActionRequests[0].reject(new Error("network"));
+await flush();
+requests[0].resolve({
+    task_id: "current", prompt: "prompt", v_left: "model-b", v_right: "model-a",
+    images: [makeImage(true), makeImage(true)]
+});
 await submitting;
 return {
     timer: nodes.timer.textContent,
@@ -549,6 +570,10 @@ return {
     submitDisabled: nodes["submit-task"].disabled,
     skipDisabled: nodes["skip-task"].disabled,
     inFlight: taskActionInFlight,
+    votes: currentVotes,
+    leftTags: [...badCaseSelections.left],
+    rightTags: [...badCaseSelections.right],
+    checked: nodes["opt-overall-right"].checked,
     alerts: events.filter(event => event.startsWith("alert:"))
 };
 ''')
@@ -559,7 +584,88 @@ return {
             "submitDisabled": False,
             "skipDisabled": False,
             "inFlight": False,
+            "votes": {"overall": "right"},
+            "leftTags": ["模糊失焦"],
+            "rightTags": ["乱码"],
+            "checked": True,
             "alerts": ["alert:network"],
+        })
+
+    def test_runtime_failed_action_accepts_server_advanced_task_during_reconciliation(self):
+        result = self.run_runtime_scenario(r'''
+state.currentTask = { task_id: "current", v_left: "model-a", v_right: "model-b", scene: "scene", filename: "current.png" };
+startTime = 2000;
+now = 12000;
+holdTaskActions = true;
+const submitting = submitVote();
+await flush();
+taskActionRequests[0].reject(new Error("network"));
+await flush();
+requests[0].resolve({ task_id: "next", prompt: "next", images: [makeImage(true), makeImage(true)] });
+await submitting;
+return {
+    taskId: state.currentTask.task_id,
+    elapsed: elapsedSeconds(),
+    starts: intervalStarts,
+    reloads: events.filter(event => event === "reload").length,
+    alerts: events.filter(event => event.startsWith("alert:"))
+};
+''')
+        self.assertEqual(result, {
+            "taskId": "next",
+            "elapsed": 0,
+            "starts": 1,
+            "reloads": 0,
+            "alerts": [],
+        })
+
+    def test_runtime_failed_action_reload_when_reconciliation_cannot_load(self):
+        result = self.run_runtime_scenario(r'''
+state.currentTask = { task_id: "current", v_left: "model-a", v_right: "model-b", scene: "scene", filename: "current.png" };
+startTime = 2000;
+now = 12000;
+holdTaskActions = true;
+const submitting = submitVote();
+await flush();
+taskActionRequests[0].reject(new Error("network"));
+await flush();
+requests[0].reject(new Error("offline"));
+await submitting;
+return {
+    reloads: events.filter(event => event === "reload").length,
+    alerts: events.filter(event => event.startsWith("alert:")),
+    inFlight: taskActionInFlight
+};
+''')
+        self.assertEqual(result, {
+            "reloads": 1,
+            "alerts": ["alert:无法确认本次操作是否成功，页面将重新加载。"],
+            "inFlight": False,
+        })
+
+    def test_runtime_successful_action_reload_when_next_task_cannot_load(self):
+        result = self.run_runtime_scenario(r'''
+state.currentTask = { task_id: "current", v_left: "model-a", v_right: "model-b", scene: "scene", filename: "current.png" };
+startTime = 2000;
+now = 12000;
+const submitting = submitVote();
+await flush();
+requests[0].reject(new Error("offline"));
+await submitting;
+return {
+    task: state.currentTask,
+    reloads: events.filter(event => event === "reload").length,
+    alerts: events.filter(event => event.startsWith("alert:")),
+    activeIntervals: intervals.size,
+    inFlight: taskActionInFlight
+};
+''')
+        self.assertEqual(result, {
+            "task": None,
+            "reloads": 1,
+            "alerts": ["alert:操作已成功，但加载下一任务失败，页面将重新加载。"],
+            "activeIntervals": 0,
+            "inFlight": False,
         })
 
 

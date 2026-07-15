@@ -638,7 +638,9 @@
                     const data = await res.json();
                     message = data.detail || data.message || message;
                 } catch (_) {}
-                throw new Error(message);
+                const error = new Error(message);
+                error.status = res.status;
+                throw error;
             }
             return res;
         }
@@ -817,8 +819,18 @@
             document.getElementById("test-ui").classList.remove("hidden");
             renderEvalTable();
             renderBadcasePanels();
-            await updateProgress();
-            await loadNextTask();
+            try {
+                await updateProgress();
+                const taskLoad = await loadNextTask();
+                if (!taskLoad || taskLoad.status === "error" || taskLoad.status === "stale") {
+                    throw taskLoad && taskLoad.error ? taskLoad.error : new Error("加载评测任务失败，请重试");
+                }
+            } catch (error) {
+                state.currentTask = null;
+                document.getElementById("setup-overlay").classList.remove("hidden");
+                document.getElementById("test-ui").classList.add("hidden");
+                alert(error.message || "加载评测任务失败，请重试");
+            }
         }
 
         async function prepareEvalSession(overwriteOverall) {
@@ -1014,15 +1026,16 @@
                 worker: state.worker,
                 v1: state.v1,
                 v2: state.v2,
-                scene: state.scene
+                scene: state.scene,
+                eval_mode: getEvalMode()
             });
             try {
                 const task = await api(`/api/get_task?${params.toString()}`).then(r => r.json());
-                if (generation !== loadGeneration) return;
+                if (generation !== loadGeneration) return { status: "stale" };
                 if (task.status === "finished") {
                     alert("当前场景的评测已完成。");
                     window.location.reload();
-                    return;
+                    return task;
                 }
                 state.currentTask = task;
                 renderCompareGrid();
@@ -1034,11 +1047,13 @@
                 document.getElementById("prompt-text").textContent = task.prompt;
                 renderBadcasePanels();
                 await waitForTaskImages();
-                if (generation !== loadGeneration) return;
+                if (generation !== loadGeneration) return { status: "stale" };
                 startTimer();
+                return task;
             } catch (err) {
-                if (generation !== loadGeneration) return;
+                if (generation !== loadGeneration) return { status: "stale" };
                 console.error("加载任务失败", err);
+                return { status: "error", error: err };
             }
         }
 
@@ -1052,7 +1067,13 @@
             if (taskActionInFlight || !state.currentTask) return null;
             const action = {
                 task: state.currentTask,
-                duration_seconds: elapsedSeconds()
+                duration_seconds: elapsedSeconds(),
+                votes: { ...currentVotes },
+                badCases: {
+                    left: [...badCaseSelections.left],
+                    right: [...badCaseSelections.right]
+                },
+                badCaseCategories: { ...activeBadCaseCategory }
             };
             stopTimer();
             startTime = null;
@@ -1060,21 +1081,69 @@
             return action;
         }
 
+        function restoreTaskActionState(action) {
+            const currentTask = state.currentTask;
+            const remapChoice = choice => {
+                if (choice !== "left" && choice !== "right") return choice;
+                const selectedModel = action.task[`v_${choice}`];
+                if (!selectedModel || !currentTask) return choice;
+                if (currentTask.v_left === selectedModel) return "left";
+                if (currentTask.v_right === selectedModel) return "right";
+                return choice;
+            };
+            currentVotes = Object.fromEntries(
+                Object.entries(action.votes).map(([dimension, choice]) => [dimension, remapChoice(choice)])
+            );
+            const leftSource = currentTask && currentTask.v_left === action.task.v_right ? "right" : "left";
+            const rightSource = leftSource === "left" ? "right" : "left";
+            badCaseSelections = {
+                left: new Set(action.badCases[leftSource]),
+                right: new Set(action.badCases[rightSource])
+            };
+            activeBadCaseCategory = {
+                left: action.badCaseCategories[leftSource],
+                right: action.badCaseCategories[rightSource]
+            };
+            Object.entries(currentVotes).forEach(([dimension, value]) => {
+                const input = document.getElementById(`opt-${dimension}-${value}`);
+                if (input) input.checked = true;
+            });
+            renderBadcasePanels();
+        }
+
+        async function reconcileTaskAction(action, requestError) {
+            const reconciliation = await loadNextTask();
+            if (!reconciliation || reconciliation.status === "error" || reconciliation.status === "stale") {
+                alert("无法确认本次操作是否成功，页面将重新加载。");
+                window.location.reload();
+                return;
+            }
+            if (reconciliation.task_id === action.task.task_id) {
+                restoreTaskActionState(action);
+                startTimer(action.duration_seconds);
+                alert(requestError.message || "请求失败");
+            }
+        }
+
         async function runTaskAction(action, request) {
-            let committed = false;
             try {
-                await request();
-                committed = true;
+                try {
+                    await request();
+                } catch (error) {
+                    await reconcileTaskAction(action, error);
+                    return;
+                }
                 if (state.currentTask === action.task) state.currentTask = null;
                 try {
                     await updateProgress();
                 } catch (error) {
                     console.error("更新进度失败", error);
                 }
-                await loadNextTask();
-            } catch (error) {
-                if (!committed && state.currentTask === action.task) startTimer(action.duration_seconds);
-                alert(error.message || "请求失败");
+                const nextTask = await loadNextTask();
+                if (!nextTask || nextTask.status === "error" || nextTask.status === "stale") {
+                    alert("操作已成功，但加载下一任务失败，页面将重新加载。");
+                    window.location.reload();
+                }
             } finally {
                 setTaskActionPending(false);
             }
@@ -1092,7 +1161,7 @@
             if (!action) return;
             const payload = {
                 task_type: state.taskType,
-                eval_mode: getEvalMode(),
+                eval_mode: action.task.eval_mode || getEvalMode(),
                 task_id: action.task.task_id,
                 v_left: action.task.v_left,
                 v_right: action.task.v_right,
@@ -1123,7 +1192,7 @@
             const params = new URLSearchParams({
                 task_id: action.task.task_id,
                 task_type: state.taskType,
-                eval_mode: getEvalMode()
+                eval_mode: action.task.eval_mode || getEvalMode()
             });
             return runTaskAction(
                 action,
