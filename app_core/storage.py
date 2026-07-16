@@ -42,7 +42,7 @@ def get_ref_root(task_type: str) -> str:
     return REF_IMAGE_DIR
 
 
-def get_versions_for_type(task_type: str) -> List[str]:
+def get_filesystem_model_names(task_type: str) -> List[str]:
     preferred = get_result_root(task_type)
     task_type_names = {normalize_task_type(name) for name in app_config.TASK_CONFIGS}
     task_roots = {
@@ -62,6 +62,10 @@ def get_versions_for_type(task_type: str) -> List[str]:
             and normalize_task_type(name) not in task_type_names
         )
     return sorted(versions)
+
+
+def get_versions_for_type(task_type: str) -> List[str]:
+    return get_filesystem_model_names(task_type)
 
 
 def get_scene_path(task_type: str, version: str, scene: str) -> str:
