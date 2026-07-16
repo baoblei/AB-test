@@ -60,7 +60,7 @@
         }
         .card-title h2 { margin: 0; font-size: 1.1rem; }
         .card-title p { margin: 6px 0 0; color: var(--muted); font-size: 0.86rem; }
-        .toolbar, .filter-grid, .upload-grid, .publish-grid, .dataset-upload-grid, .result-upload-grid {
+        .toolbar, .filter-grid, .upload-grid, .publish-grid, .dataset-upload-grid, .result-upload-grid, .dataset-download-grid {
             display: grid;
             gap: 14px;
             align-items: end;
@@ -90,12 +90,17 @@
         }
         .dataset-upload-grid { grid-template-columns: 160px 1fr 1.4fr 1.4fr auto; }
         .result-upload-grid { grid-template-columns: 160px 1fr 1fr 1.4fr auto; }
+        .publish-card, .dataset-download-card, .statistics-filter-card { min-width: 0; }
+        .dataset-download-grid {
+            grid-template-columns: 150px minmax(220px, 1.5fr) minmax(220px, 1.2fr) auto auto;
+        }
         .form-note {
             margin-top: 10px;
             color: var(--muted);
             font-size: 0.78rem;
             line-height: 1.45;
         }
+        .input-group, .input-group > * { min-width: 0; }
         .input-group { display: flex; flex-direction: column; gap: 6px; }
         .input-group label { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
         input, select, textarea {
@@ -106,6 +111,7 @@
             background: white;
             font-size: 0.92rem;
         }
+        select, input { text-overflow: ellipsis; }
         .btn {
             border: 1px solid transparent;
             border-radius: 12px;
@@ -367,7 +373,15 @@
         }
         .compare-label { color: white; margin-top: 10px; font-weight: 800; }
         @media (max-width: 1180px) {
-            .toolbar, .filter-grid, .upload-grid, .publish-grid, .dataset-upload-grid, .result-upload-grid, .pair-head, .summary-grid, .compare-preview.t2i, .compare-preview.ti2i, .export-fixed-info, .export-grid {
+            .dataset-upload-grid, .result-upload-grid, .dataset-download-grid, .filter-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .toolbar, .pair-head, .summary-grid, .compare-preview.t2i, .compare-preview.ti2i, .export-fixed-info, .export-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 720px) {
+            .publish-grid, .dataset-upload-grid, .result-upload-grid, .dataset-download-grid, .filter-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -388,7 +402,7 @@
             </div>
         </div>
 
-        <div class="card">
+        <div class="card publish-card">
             <div class="card-title">
                 <div>
                     <h2>发布新测试任务</h2>
@@ -453,7 +467,39 @@
             <div id="upload-msg" style="margin-top:12px; color:var(--muted); font-size:0.85rem;"></div>
         </div>
 
-        <div class="card">
+        <div class="card dataset-download-card">
+            <div class="card-title">
+                <div>
+                    <h2>下载测评集</h2>
+                    <p>T2I 下载 prompt TXT；TI2I 可选择同时打包参考图为 ZIP。</p>
+                </div>
+            </div>
+            <div class="dataset-download-grid">
+                <div class="input-group">
+                    <label>任务类型</label>
+                    <select id="dataset-download-task-type" onchange="loadDatasets()">
+                        <option value="T2I">T2I</option>
+                        <option value="TI2I">TI2I</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>搜索测评集</label>
+                    <input id="dataset-search" type="search" placeholder="输入场景名" oninput="filterDatasets()">
+                </div>
+                <div class="input-group">
+                    <label>测评集</label>
+                    <select id="dataset-download-scene"></select>
+                </div>
+                <label class="checkbox-chip">
+                    <input id="dataset-include-ref" type="checkbox" onchange="syncDatasetDownloadMode()">
+                    包含参考图
+                </label>
+                <button class="btn btn-primary" id="dataset-download-button" type="button" onclick="downloadDataset()">下载 TXT</button>
+            </div>
+            <div id="dataset-download-msg" class="form-note" role="status"></div>
+        </div>
+
+        <div class="card statistics-filter-card">
             <div class="card-title">
                 <div>
                     <h2>任务控制与筛选</h2>
@@ -705,7 +751,9 @@
             exportOpenRequestId: 0,
             modalSessionId: 0,
             downloadRequestId: 0,
-            exportPairs: []
+            exportPairs: [],
+            datasets: [],
+            filteredDatasets: []
         };
 
         async function api(url, options) {
@@ -746,6 +794,7 @@
             await handleTaskTypeChange();
             syncDatasetUploadMode();
             await syncResultScenes();
+            await loadDatasets();
             bindUploadForms();
             bindExportEvents();
         }
@@ -782,6 +831,80 @@
                 return option;
             });
             select.replaceChildren(...nodes);
+        }
+
+        async function loadDatasets(selectedScene = "") {
+            const taskType = document.getElementById("dataset-download-task-type").value;
+            const message = document.getElementById("dataset-download-msg");
+            message.textContent = "正在加载测评集...";
+            try {
+                state.datasets = await api(`/api/datasets?task_type=${encodeURIComponent(taskType)}`).then(r => r.json());
+                filterDatasets(selectedScene);
+                message.textContent = state.datasets.length ? "" : "当前任务类型暂无可下载测评集";
+            } catch (error) {
+                state.datasets = [];
+                filterDatasets();
+                message.textContent = error.message;
+            }
+        }
+
+        function filterDatasets(selectedScene = "") {
+            const query = document.getElementById("dataset-search").value.trim().toLowerCase();
+            state.filteredDatasets = state.datasets.filter(item => item.scene.toLowerCase().includes(query));
+            const select = document.getElementById("dataset-download-scene");
+            replaceSelectOptions(
+                select,
+                [["", state.filteredDatasets.length ? "请选择测评集" : "没有匹配的测评集"],
+                    ...state.filteredDatasets.map(item => [item.scene, `${item.scene}（${item.prompt_count} 条）`])]
+            );
+            if (selectedScene && state.filteredDatasets.some(item => item.scene === selectedScene)) {
+                select.value = selectedScene;
+            }
+            syncDatasetDownloadMode();
+        }
+
+        function syncDatasetDownloadMode() {
+            const taskType = document.getElementById("dataset-download-task-type").value;
+            const includeRef = document.getElementById("dataset-include-ref");
+            if (taskType === "T2I") includeRef.checked = false;
+            includeRef.disabled = taskType !== "TI2I";
+            document.getElementById("dataset-download-button").textContent =
+                taskType === "TI2I" && includeRef.checked ? "下载 ZIP" : "下载 TXT";
+        }
+
+        async function downloadDataset() {
+            const taskType = document.getElementById("dataset-download-task-type").value;
+            const scene = document.getElementById("dataset-download-scene").value;
+            const includeRef = taskType === "TI2I" && document.getElementById("dataset-include-ref").checked;
+            const button = document.getElementById("dataset-download-button");
+            const message = document.getElementById("dataset-download-msg");
+            if (!scene || button.disabled) return;
+            const params = new URLSearchParams({ task_type: taskType, scene, include_ref: String(includeRef) });
+            button.disabled = true;
+            button.textContent = "正在生成...";
+            message.textContent = "";
+            try {
+                const response = await fetch(`/api/datasets/download?${params.toString()}`);
+                if (!response.ok) {
+                    const payload = await response.json().catch(() => ({}));
+                    throw new Error(payload.detail || "测评集下载失败");
+                }
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = extractDownloadFilename(response.headers.get("Content-Disposition"), includeRef);
+                document.body.append(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                message.textContent = "下载已开始";
+            } catch (error) {
+                message.textContent = error.message;
+            } finally {
+                button.disabled = false;
+                syncDatasetDownloadMode();
+            }
         }
 
         function createNode(tag, className = "", text = null) {
