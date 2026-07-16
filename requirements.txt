@@ -6,3 +6,4 @@ bcrypt
 python-jose
 jinja2
 openpyxl
+Pillow>=11,<12
