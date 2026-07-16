@@ -41,6 +41,14 @@
   - 保留 JSON / CSV 旧版导出接口
   - 旧版 `results/<version>/<scene>` 数据迁移到 `results/T2I/<version>/<scene>`
 
+### 下载测评集
+
+- 看板一次选择并下载一个测评集。
+- T2I 和未选择参考图的 TI2I 直接下载场景 Prompt TXT。
+- TI2I 可勾选“包含参考图”；勾选后下载 ZIP，包内包含场景 TXT 和 `ref_images/`。
+- TI2I 的“包含参考图”默认不勾选。
+- 下载前会校验 Prompt 与参考图 ID 是否完整对应；不完整时拒绝生成 ZIP。
+
 ## 页面说明
 
 - `/`：评测终端
