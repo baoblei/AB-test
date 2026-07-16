@@ -1,5 +1,8 @@
+import os
+import shutil
 import tempfile
 import unittest
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
@@ -77,3 +80,47 @@ class DatasetMetadataTests(unittest.TestCase):
                 create_dataset_artifact("T2I", "../secret")
             with self.assertRaisesRegex(AppError, "未找到场景 missing 的 prompt 文件"):
                 create_dataset_artifact("T2I", "missing")
+
+
+class DatasetReferenceArchiveTests(unittest.TestCase):
+    def test_ti2i_reference_archive_contains_prompt_and_matching_images(self):
+        with configured_dataset_roots() as roots:
+            roots.write_prompt("TI2I", "edit", "a\tone\nb\ttwo\n")
+            roots.write_ref("TI2I", "edit", "a.jpg", b"a-image")
+            roots.write_ref("TI2I", "edit", "b.png", b"b-image")
+            artifact = create_dataset_artifact("TI2I", "edit", include_ref=True)
+            self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+            with zipfile.ZipFile(artifact.path) as archive:
+                self.assertEqual(
+                    archive.namelist(),
+                    ["edit.txt", "ref_images/a.jpg", "ref_images/b.png"],
+                )
+                self.assertEqual(archive.read("edit.txt"), b"a\tone\nb\ttwo\n")
+            self.assertEqual(artifact.filename, "edit.zip")
+            self.assertTrue(artifact.cleanup_dir)
+
+    def test_reference_archive_rejects_missing_extra_and_duplicate_stems(self):
+        cases = (
+            ({"a.jpg": b"a"}, "缺少 1 个"),
+            ({"a.jpg": b"a", "b.png": b"b", "extra.png": b"x"}, "多出 1 个"),
+            ({"a.jpg": b"a", "a.png": b"a2", "b.png": b"b"}, "重复"),
+        )
+        for files, message in cases:
+            with self.subTest(files=files), configured_dataset_roots() as roots:
+                roots.write_prompt("TI2I", "edit", "a\tone\nb\ttwo\n")
+                for name, data in files.items():
+                    roots.write_ref("TI2I", "edit", name, data)
+                with self.assertRaisesRegex(AppError, message):
+                    create_dataset_artifact("TI2I", "edit", include_ref=True)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unsupported")
+    def test_reference_archive_rejects_symlinked_image(self):
+        with configured_dataset_roots() as roots, tempfile.TemporaryDirectory() as outside:
+            roots.write_prompt("TI2I", "edit", "a\tone\n")
+            outside_image = Path(outside) / "target.jpg"
+            outside_image.write_bytes(b"outside-image")
+            scene_root = roots.ref_roots["TI2I"] / "edit"
+            scene_root.mkdir(parents=True, exist_ok=True)
+            os.symlink(outside_image, scene_root / "a.jpg")
+            with self.assertRaisesRegex(AppError, "不安全"):
+                create_dataset_artifact("TI2I", "edit", include_ref=True)
