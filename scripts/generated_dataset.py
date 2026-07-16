@@ -405,13 +405,17 @@ def validate_dataset(
 
 
 def render_contact_sheet(
-    entries: list[tuple[str, Path]], destination: Path, columns: int = 3
+    entries: list[tuple[str, Path]],
+    destination: Path,
+    columns: int = 3,
+    thumbnail_size: int = 240,
 ) -> None:
     if columns < 1:
         raise ValueError("columns must be at least 1")
+    if thumbnail_size < 1:
+        raise ValueError("thumbnail_size must be at least 1")
     if not entries:
         raise ValueError("at least one image is required")
-    thumbnail_size = 240
     label_height = 44
     rows = (len(entries) + columns - 1) // columns
     sheet = Image.new("RGB", (columns * thumbnail_size, rows * (thumbnail_size + label_height)), "white")
@@ -434,6 +438,15 @@ def render_contact_sheet(
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(destination, "JPEG", quality=85, optimize=True, exif=b"")
+
+
+def _short_contact_sheet_label(label: str) -> str:
+    parts = label.split("/")
+    if len(parts) >= 5 and parts[0] == "results":
+        return "/".join(parts[-3:])
+    if len(parts) >= 4 and parts[0] == "ref_images":
+        return "/".join(("reference", *parts[-2:]))
+    return label
 
 
 def _discover_images(root: Path) -> list[Path]:
@@ -480,6 +493,8 @@ def _build_parser() -> argparse.ArgumentParser:
     contact_parser = subparsers.add_parser("contact-sheet")
     contact_parser.add_argument("root", type=Path)
     contact_parser.add_argument("output", type=Path)
+    contact_parser.add_argument("--short-labels", action="store_true")
+    contact_parser.add_argument("--thumbnail-size", type=int, default=240)
     return parser
 
 
@@ -500,10 +515,10 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(error)
         return 1 if errors else 0
     paths = [path for path in _discover_images(args.root) if path.resolve() != args.output.resolve()]
-    render_contact_sheet(
-        [(_relative(path, args.root), path) for path in paths],
-        args.output,
-    )
+    entries = [(_relative(path, args.root), path) for path in paths]
+    if args.short_labels:
+        entries = [(_short_contact_sheet_label(label), path) for label, path in entries]
+    render_contact_sheet(entries, args.output, thumbnail_size=args.thumbnail_size)
     print(f"rendered {len(paths)} images to {args.output}")
     return 0
 

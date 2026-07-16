@@ -1,12 +1,14 @@
 import json
 from collections import Counter
 from io import BytesIO
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
+import scripts.generated_dataset as generated_dataset
 from scripts.generated_dataset import (
     load_prompt,
     normalize_jpeg,
@@ -395,6 +397,68 @@ class GeneratedDatasetToolTests(unittest.TestCase):
             self.assertEqual(image.mode, "RGB")
             self.assertEqual(image.width, 480)
             self.assertGreater(image.height, 240)
+
+    def test_contact_sheet_supports_larger_review_thumbnails(self):
+        self.assertIn("thumbnail_size", inspect.signature(render_contact_sheet).parameters)
+        first = self.write_image("inputs/one.jpg", size=(400, 200))
+        second = self.write_image("inputs/two.jpg", size=(200, 400))
+        destination = self.root / "review-sheet.jpg"
+
+        render_contact_sheet(
+            [("one.jpg", first), ("two.jpg", second)],
+            destination,
+            columns=2,
+            thumbnail_size=420,
+        )
+
+        with Image.open(destination) as image:
+            self.assertEqual(image.width, 840)
+            self.assertGreater(image.height, 420)
+
+    def test_short_contact_sheet_labels_keep_review_identity(self):
+        self.assertTrue(hasattr(generated_dataset, "_short_contact_sheet_label"))
+        cases = {
+            "results/TI2I/Prism/object_edit/object_edit_01.jpg": (
+                "Prism/object_edit/object_edit_01.jpg"
+            ),
+            "ref_images/TI2I/object_edit/object_edit_01.jpg": (
+                "reference/object_edit/object_edit_01.jpg"
+            ),
+        }
+        draw = ImageDraw.Draw(Image.new("RGB", (420, 44), "white"))
+        for full_label, expected in cases.items():
+            with self.subTest(full_label=full_label):
+                short_label = generated_dataset._short_contact_sheet_label(full_label)
+                self.assertEqual(short_label, expected)
+                self.assertLessEqual(draw.textbbox((0, 0), short_label)[2], 412)
+
+    def test_contact_sheet_cli_accepts_short_labels_and_thumbnail_size(self):
+        contact_parser = next(
+            action.choices["contact-sheet"]
+            for action in generated_dataset._build_parser()._actions
+            if getattr(action, "choices", None) and "contact-sheet" in action.choices
+        )
+        option_strings = {
+            option
+            for action in contact_parser._actions
+            for option in action.option_strings
+        }
+        self.assertIn("--short-labels", option_strings)
+        self.assertIn("--thumbnail-size", option_strings)
+
+        args = generated_dataset._build_parser().parse_args(
+            [
+                "contact-sheet",
+                "pilot",
+                "pilot-sheet.jpg",
+                "--short-labels",
+                "--thumbnail-size",
+                "420",
+            ]
+        )
+
+        self.assertTrue(args.short_labels)
+        self.assertEqual(args.thumbnail_size, 420)
 
 
 class GeneratedDatasetRepositoryContractTests(unittest.TestCase):
