@@ -141,12 +141,13 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
                 getElementById: id => elements[id],
                 createElement: tag => ({{ tag, value: "", textContent: "" }})
             }};
-            const state = {{ datasets: [], filteredDatasets: [], datasetListRequestId: 0 }};
+            const state = {{ datasets: [], filteredDatasets: [], datasetListRequestId: 0, datasetDownloadRequestId: 0, datasetDownloadController: null }};
             const pending = {{}};
             const api = url => new Promise(resolve => {{ pending[url] = resolve; }});
             {self.function_source("replaceSelectOptions")}
             {self.function_source("syncDatasetDownloadMode")}
             {self.function_source("filterDatasets")}
+            {self.function_source("invalidateDatasetDownload")}
             {self.function_source("loadDatasets")}
             const first = loadDatasets("old");
             elements["dataset-download-task-type"].value = "TI2I";
@@ -205,7 +206,8 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
                 return {{ ok: true, blob: async () => ({{}}), headers: {{ get: () => null }} }};
             }};
             const URL = {{ createObjectURL: () => "blob:test", revokeObjectURL() {{}} }};
-            const extractDownloadFilename = (_, includeRef) => includeRef ? "dataset.zip" : "dataset.txt";
+            const state = {{ datasetDownloadRequestId: 0, datasetDownloadController: null }};
+            const extractDatasetDownloadFilename = (_, includeRef) => includeRef ? "dataset.zip" : "dataset.txt";
             {self.function_source("syncDatasetDownloadMode")}
             {self.function_source("downloadDataset")}
             downloadDataset().then(() => console.log(JSON.stringify({{ requested }})));
@@ -215,6 +217,54 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
             result["requested"],
             "/api/datasets/download?task_type=TI2I&scene=%E5%95%86%E5%93%81%E7%BC%96%E8%BE%91&include_ref=true",
         )
+
+    def test_main_task_change_synchronizes_download_task_and_reloads(self):
+        source = self.function_source("handleTaskTypeChange")
+        self.assertIn('document.getElementById("dataset-download-task-type").value = state.taskType', source)
+        self.assertIn("await loadDatasets()", source)
+
+    def test_stale_download_response_cannot_create_download_or_mutate_new_selection(self):
+        source = self.function_source("downloadDataset")
+        self.assertIn("datasetDownloadRequestId", self.html)
+        self.assertIn("isCurrentDatasetDownload", source)
+        self.assertGreaterEqual(source.count("if (!isCurrentDatasetDownload"), 2)
+
+    def test_stale_download_response_is_ignored_at_runtime(self):
+        script = f"""
+            const elements = {{
+                "dataset-download-task-type": {{ value: "T2I" }},
+                "dataset-download-scene": {{ value: "old" }},
+                "dataset-include-ref": {{ checked: false, disabled: true }},
+                "dataset-download-button": {{ disabled: false, textContent: "下载 TXT" }},
+                "dataset-download-msg": {{ textContent: "" }}
+            }};
+            let clicks = 0;
+            const document = {{
+                getElementById: id => elements[id],
+                createElement: () => ({{ click() {{ clicks += 1; }}, remove() {{}} }}),
+                body: {{ append() {{}} }}
+            }};
+            const state = {{ datasetDownloadRequestId: 0, datasetDownloadController: null }};
+            let resolveFetch;
+            const fetch = () => new Promise(resolve => {{ resolveFetch = resolve; }});
+            const URL = {{ createObjectURL: () => "blob:test", revokeObjectURL() {{}} }};
+            const extractDatasetDownloadFilename = () => "old.txt";
+            {self.function_source("syncDatasetDownloadMode")}
+            {self.function_source("invalidateDatasetDownload")}
+            {self.function_source("downloadDataset")}
+            const pending = downloadDataset();
+            elements["dataset-download-scene"].value = "new";
+            elements["dataset-download-msg"].textContent = "new selection";
+            invalidateDatasetDownload();
+            resolveFetch({{ ok: true, blob: async () => ({{}}), headers: {{ get: () => null }} }});
+            pending.then(() => console.log(JSON.stringify({{
+                clicks,
+                message: elements["dataset-download-msg"].textContent,
+                disabled: elements["dataset-download-button"].disabled
+            }})));
+        """
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {"clicks": 0, "message": "new selection", "disabled": False})
 
     def test_backend_dataset_names_are_added_as_text_nodes(self):
         self.assertNotIn("innerHTML", self.function_source("filterDatasets"))

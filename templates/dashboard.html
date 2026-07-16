@@ -477,7 +477,7 @@
             <div class="dataset-download-grid">
                 <div class="input-group">
                     <label>任务类型</label>
-                    <select id="dataset-download-task-type" onchange="loadDatasets()">
+                    <select id="dataset-download-task-type" onchange="handleDatasetDownloadTaskChange()">
                         <option value="T2I">T2I</option>
                         <option value="TI2I">TI2I</option>
                     </select>
@@ -488,10 +488,10 @@
                 </div>
                 <div class="input-group">
                     <label>测评集</label>
-                    <select id="dataset-download-scene"></select>
+                    <select id="dataset-download-scene" onchange="invalidateDatasetDownload()"></select>
                 </div>
                 <label class="checkbox-chip">
-                    <input id="dataset-include-ref" type="checkbox" onchange="syncDatasetDownloadMode()">
+                    <input id="dataset-include-ref" type="checkbox" onchange="handleDatasetDownloadOptionChange()">
                     包含参考图
                 </label>
                 <button class="btn btn-primary" id="dataset-download-button" type="button" onclick="downloadDataset()">下载 TXT</button>
@@ -754,7 +754,9 @@
             exportPairs: [],
             datasets: [],
             filteredDatasets: [],
-            datasetListRequestId: 0
+            datasetListRequestId: 0,
+            datasetDownloadRequestId: 0,
+            datasetDownloadController: null
         };
 
         async function api(url, options) {
@@ -795,13 +797,14 @@
             await handleTaskTypeChange();
             syncDatasetUploadMode();
             await syncResultScenes();
-            await loadDatasets();
             bindUploadForms();
             bindExportEvents();
         }
 
         async function handleTaskTypeChange() {
             state.taskType = document.getElementById("task-type-select").value;
+            document.getElementById("dataset-download-task-type").value = state.taskType;
+            invalidateDatasetDownload();
             state.config = await api(`/api/task_config?task_type=${state.taskType}`).then(r => r.json());
             document.getElementById("overview-title").textContent = `${state.taskType} 看板总览`;
             document.getElementById("overview-desc").textContent = state.taskType === "TI2I"
@@ -811,7 +814,26 @@
                 document.getElementById("ranking-dimension"),
                 state.config.dashboard_dims.map(dim => [dim.key, dim.label])
             );
-            await loadDashboard();
+            const dashboardPromise = loadDashboard();
+            await loadDatasets();
+            await dashboardPromise;
+        }
+
+        function invalidateDatasetDownload() {
+            state.datasetDownloadRequestId += 1;
+            if (state.datasetDownloadController) state.datasetDownloadController.abort();
+            state.datasetDownloadController = null;
+            document.getElementById("dataset-download-button").disabled = false;
+        }
+
+        async function handleDatasetDownloadTaskChange() {
+            invalidateDatasetDownload();
+            await loadDatasets();
+        }
+
+        function handleDatasetDownloadOptionChange() {
+            invalidateDatasetDownload();
+            syncDatasetDownloadMode();
         }
 
         function syncDatasetUploadMode() {
@@ -835,6 +857,7 @@
         }
 
         async function loadDatasets(selectedScene = "") {
+            invalidateDatasetDownload();
             const requestId = ++state.datasetListRequestId;
             const taskType = document.getElementById("dataset-download-task-type").value;
             const message = document.getElementById("dataset-download-msg");
@@ -900,17 +923,23 @@
             const button = document.getElementById("dataset-download-button");
             const message = document.getElementById("dataset-download-msg");
             if (!scene || button.disabled) return;
+            const requestId = ++state.datasetDownloadRequestId;
+            const controller = new AbortController();
+            state.datasetDownloadController = controller;
+            const isCurrentDatasetDownload = () => requestId === state.datasetDownloadRequestId;
             const params = new URLSearchParams({ task_type: taskType, scene, include_ref: String(includeRef) });
             button.disabled = true;
             button.textContent = "正在生成...";
             message.textContent = "";
             try {
-                const response = await fetch(`/api/datasets/download?${params.toString()}`);
+                const response = await fetch(`/api/datasets/download?${params.toString()}`, { signal: controller.signal });
+                if (!isCurrentDatasetDownload()) return;
                 if (!response.ok) {
                     const payload = await response.json().catch(() => ({}));
                     throw new Error(payload.detail || "测评集下载失败");
                 }
                 const blob = await response.blob();
+                if (!isCurrentDatasetDownload()) return;
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.href = url;
@@ -923,10 +952,12 @@
                 link.click();
                 link.remove();
                 URL.revokeObjectURL(url);
-                message.textContent = "下载已开始";
+                if (isCurrentDatasetDownload()) message.textContent = "下载已开始";
             } catch (error) {
-                message.textContent = error.message;
+                if (isCurrentDatasetDownload() && error.name !== "AbortError") message.textContent = error.message;
             } finally {
+                if (!isCurrentDatasetDownload()) return;
+                state.datasetDownloadController = null;
                 button.disabled = false;
                 syncDatasetDownloadMode();
             }

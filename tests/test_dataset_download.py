@@ -36,8 +36,8 @@ class DatasetDownloadRouteTests(unittest.TestCase):
             self.assertEqual(main.dataset_list("T2I", user={}), payload)
         service.assert_called_once_with("T2I")
 
-    def test_download_route_builds_file_response_and_cleans_zip_only(self):
-        txt = DatasetArtifact("/tmp/open.txt", "open.txt", "text/plain; charset=utf-8")
+    def test_download_route_builds_file_response_and_cleans_every_artifact(self):
+        txt = DatasetArtifact("/tmp/open.txt", "open.txt", "text/plain; charset=utf-8", "/tmp/txt")
         zip_artifact = DatasetArtifact(
             "/tmp/edit.zip", "edit.zip", "application/zip", "/tmp/archive"
         )
@@ -46,10 +46,25 @@ class DatasetDownloadRouteTests(unittest.TestCase):
         ):
             txt_response = main.download_dataset("T2I", "open", False, user={})
             zip_response = main.download_dataset("TI2I", "edit", True, user={})
-        self.assertIsNone(txt_response.background)
+        self.assertIsNotNone(txt_response.background)
         self.assertIsNotNone(zip_response.background)
         self.assertEqual(txt_response.filename, "open.txt")
         self.assertEqual(zip_response.filename, "edit.zip")
+        self.assertEqual(txt_response.media_type, "text/plain; charset=utf-8")
+        self.assertEqual(zip_response.media_type, "application/zip")
+
+    def test_download_route_background_removes_txt_snapshot(self):
+        with tempfile.TemporaryDirectory() as parent:
+            cleanup = Path(parent) / "snapshot"
+            cleanup.mkdir()
+            path = cleanup / "open.txt"
+            path.write_bytes(b"prompt")
+            artifact = DatasetArtifact(str(path), "open.txt", "text/plain; charset=utf-8", str(cleanup))
+            with patch.object(main, "create_dataset_artifact", return_value=artifact):
+                response = main.download_dataset("T2I", "open", False, user={})
+            import asyncio
+            asyncio.run(response.background())
+            self.assertFalse(cleanup.exists())
 
 
 class DatasetRoots:
@@ -75,7 +90,7 @@ class DatasetRoots:
 @contextmanager
 def configured_dataset_roots():
     with tempfile.TemporaryDirectory() as temp_dir:
-        roots = DatasetRoots(Path(temp_dir))
+        roots = DatasetRoots(Path(temp_dir).resolve())
         task_configs = {
             **config.TASK_CONFIGS,
             **{
@@ -112,7 +127,55 @@ class DatasetMetadataTests(unittest.TestCase):
             self.assertEqual(Path(t2i.path).read_bytes(), b"a\tone\n")
             self.assertEqual(t2i.filename, "open.txt")
             self.assertEqual(ti2i.filename, "edit.txt")
-            self.assertIsNone(t2i.cleanup_dir)
+            self.assertTrue(t2i.cleanup_dir)
+            self.assertTrue(ti2i.cleanup_dir)
+            self.addCleanup(shutil.rmtree, t2i.cleanup_dir, True)
+            self.addCleanup(shutil.rmtree, ti2i.cleanup_dir, True)
+
+    def test_prompt_only_artifact_is_immutable_after_source_mutation(self):
+        with configured_dataset_roots() as roots:
+            roots.write_prompt("T2I", "open", "a\tone\n")
+            artifact = create_dataset_artifact("T2I", "open")
+            self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+            roots.write_prompt("T2I", "open", "b\tchanged\n")
+            self.assertEqual(Path(artifact.path).read_bytes(), b"a\tone\n")
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unsupported")
+    def test_prompt_file_symlink_is_rejected(self):
+        with configured_dataset_roots() as roots, tempfile.TemporaryDirectory() as outside:
+            target = Path(outside) / "secret.txt"
+            target.write_bytes(b"secret")
+            os.symlink(target, roots.prompt_roots["T2I"] / "open.txt")
+            with self.assertRaisesRegex(AppError, "不安全"):
+                create_dataset_artifact("T2I", "open")
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unsupported")
+    def test_prompt_root_symlink_is_rejected(self):
+        with configured_dataset_roots() as roots, tempfile.TemporaryDirectory() as outside:
+            shutil.rmtree(roots.prompt_roots["T2I"])
+            Path(outside, "open.txt").write_bytes(b"secret")
+            os.symlink(outside, roots.prompt_roots["T2I"])
+            with self.assertRaisesRegex(AppError, "不安全"):
+                create_dataset_artifact("T2I", "open")
+
+    def test_prompt_replacement_between_stat_and_open_is_rejected(self):
+        with configured_dataset_roots() as roots:
+            roots.write_prompt("T2I", "open", "a\tone\n")
+            prompt_path = roots.prompt_roots["T2I"] / "open.txt"
+            real_open = os.open
+            replaced = False
+
+            def replace_after_stat(path, flags, *args, **kwargs):
+                nonlocal replaced
+                if path == "open.txt" and kwargs.get("dir_fd") is not None and not replaced:
+                    replaced = True
+                    prompt_path.unlink()
+                    prompt_path.write_bytes(b"secret")
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("app_core.dataset_download_service.os.open", side_effect=replace_after_stat):
+                with self.assertRaisesRegex(AppError, "不安全"):
+                    create_dataset_artifact("T2I", "open")
 
     def test_rejects_unsafe_or_missing_scene_before_reading(self):
         with configured_dataset_roots():
@@ -210,3 +273,35 @@ class DatasetReferenceArchiveTests(unittest.TestCase):
             self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
             with zipfile.ZipFile(artifact.path) as archive:
                 self.assertEqual(archive.read("edit.txt"), b"a\tone\n")
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unsupported")
+    def test_reference_scene_directory_symlink_is_rejected(self):
+        with configured_dataset_roots() as roots, tempfile.TemporaryDirectory() as outside:
+            roots.write_prompt("TI2I", "edit", "a\tone\n")
+            Path(outside, "a.jpg").write_bytes(b"outside")
+            os.symlink(outside, roots.ref_roots["TI2I"] / "edit")
+            with self.assertRaisesRegex(AppError, "不安全"):
+                create_dataset_artifact("TI2I", "edit", include_ref=True)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unsupported")
+    def test_reference_scene_replacement_before_open_is_rejected(self):
+        with configured_dataset_roots() as roots, tempfile.TemporaryDirectory() as outside:
+            roots.write_prompt("TI2I", "edit", "a\tone\n")
+            roots.write_ref("TI2I", "edit", "a.jpg", b"inside")
+            Path(outside, "a.jpg").write_bytes(b"outside")
+            scene_path = roots.ref_roots["TI2I"] / "edit"
+            parked = roots.ref_roots["TI2I"] / "parked"
+            real_open = os.open
+            replaced = False
+
+            def replace_before_scene_open(path, flags, *args, **kwargs):
+                nonlocal replaced
+                if path == "edit" and kwargs.get("dir_fd") is not None and not replaced:
+                    replaced = True
+                    scene_path.rename(parked)
+                    os.symlink(outside, scene_path)
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("app_core.dataset_download_service.os.open", side_effect=replace_before_scene_open):
+                with self.assertRaisesRegex(AppError, "不安全"):
+                    create_dataset_artifact("TI2I", "edit", include_ref=True)
