@@ -70,12 +70,17 @@ class DatasetDownloadRouteTests(unittest.TestCase):
 
 class DatasetRoots:
     def __init__(self, root: Path):
+        self.legacy_prompt_root = root / "prompt"
         self.prompt_roots = {
-            task_type: root / "prompt" / task_type for task_type in ("T2I", "TI2I")
+            task_type: self.legacy_prompt_root / task_type for task_type in ("T2I", "TI2I")
         }
         self.ref_roots = {
             task_type: root / "ref_images" / task_type for task_type in ("T2I", "TI2I")
         }
+
+    def write_legacy_prompt(self, scene: str, content: str) -> None:
+        self.legacy_prompt_root.mkdir(parents=True, exist_ok=True)
+        (self.legacy_prompt_root / f"{scene}.txt").write_text(content, encoding="utf-8")
 
     def write_prompt(self, task_type: str, scene: str, content: str) -> None:
         root = self.prompt_roots[task_type]
@@ -107,7 +112,7 @@ def configured_dataset_roots():
             root.mkdir(parents=True, exist_ok=True)
         with (
             patch.object(config, "TASK_CONFIGS", task_configs),
-            patch.object(storage, "PROMPT_DIR", str(Path(temp_dir) / "prompt")),
+            patch.object(storage, "PROMPT_DIR", str(roots.legacy_prompt_root)),
             patch.object(storage, "REF_IMAGE_DIR", str(Path(temp_dir) / "ref_images")),
         ):
             yield roots
@@ -129,8 +134,8 @@ class DatasetMetadataTests(unittest.TestCase):
                     side_effect=AssertionError("storage must not be accessed"),
                 ),
                 patch.object(
-                    dataset_download_service,
-                    "get_prompt_root",
+                    config,
+                    "get_task_config",
                     side_effect=AssertionError("storage must not be accessed"),
                 ),
             ):
@@ -141,6 +146,57 @@ class DatasetMetadataTests(unittest.TestCase):
         with configured_dataset_roots() as roots:
             roots.write_prompt("T2I", "portrait", "a\tone\nb\ttwo\n")
             self.assertEqual(list_datasets("T2I"), [{"scene": "portrait", "prompt_count": 2}])
+
+    def test_lists_task_specific_and_legacy_root_prompts(self):
+        with configured_dataset_roots() as roots:
+            roots.write_prompt("T2I", "portrait", "a\tone\n")
+            roots.write_legacy_prompt("legacy", "a\tone\nb\ttwo\n")
+            self.assertEqual(
+                list_datasets("T2I"),
+                [
+                    {"scene": "legacy", "prompt_count": 2},
+                    {"scene": "portrait", "prompt_count": 1},
+                ],
+            )
+
+    def test_legacy_prompt_creates_immutable_txt_artifact(self):
+        with configured_dataset_roots() as roots:
+            roots.write_legacy_prompt("legacy", "a\tone\n")
+            artifact = create_dataset_artifact("T2I", "legacy")
+            self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+            roots.write_legacy_prompt("legacy", "b\tchanged\n")
+            self.assertEqual(artifact.filename, "legacy.txt")
+            self.assertEqual(Path(artifact.path).read_bytes(), b"a\tone\n")
+
+    def test_task_specific_prompt_wins_over_duplicate_legacy_scene(self):
+        with configured_dataset_roots() as roots:
+            roots.write_prompt("T2I", "duplicate", "a\ttask-specific\n")
+            roots.write_legacy_prompt("duplicate", "a\tlegacy\nb\tlegacy\n")
+            self.assertEqual(
+                list_datasets("T2I"),
+                [{"scene": "duplicate", "prompt_count": 1}],
+            )
+            artifact = create_dataset_artifact("T2I", "duplicate")
+            self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+            self.assertEqual(Path(artifact.path).read_bytes(), b"a\ttask-specific\n")
+
+    def test_unsafe_task_specific_root_does_not_fall_back_to_legacy(self):
+        with configured_dataset_roots() as roots:
+            roots.write_legacy_prompt("open", "a\tlegacy\n")
+            shutil.rmtree(roots.prompt_roots["T2I"])
+            roots.prompt_roots["T2I"].write_bytes(b"not a directory")
+            with self.assertRaisesRegex(AppError, "不安全"):
+                create_dataset_artifact("T2I", "open")
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unsupported")
+    def test_unsafe_task_specific_prompt_file_does_not_fall_back_to_legacy(self):
+        with configured_dataset_roots() as roots, tempfile.TemporaryDirectory() as outside:
+            roots.write_legacy_prompt("open", "a\tlegacy\n")
+            target = Path(outside) / "secret.txt"
+            target.write_bytes(b"secret")
+            os.symlink(target, roots.prompt_roots["T2I"] / "open.txt")
+            with self.assertRaisesRegex(AppError, "不安全"):
+                create_dataset_artifact("T2I", "open")
 
     def test_t2i_and_prompt_only_ti2i_return_txt_artifacts(self):
         with configured_dataset_roots() as roots:

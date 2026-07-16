@@ -9,11 +9,12 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import config as app_config
+from . import storage
 from .config import IMAGE_EXTENSIONS, normalize_task_type
 from .errors import AppError
 from .storage import (
     get_dataset_scenes,
-    get_prompt_root,
     get_ref_root,
     parse_prompt_file_bytes,
     validate_storage_component,
@@ -76,11 +77,28 @@ def _read_regular_at(directory_fd: int, filename: str, error: str, unsafe_error:
 
 def _prompt_bytes(task_type: str, scene: str) -> bytes:
     error = f"未找到场景 {scene} 的 prompt 文件"
-    root_fd = _open_directory(get_prompt_root(task_type), "prompt 路径不安全")
-    try:
-        return _read_regular_at(root_fd, f"{scene}.txt", error, "prompt 路径不安全")
-    finally:
-        os.close(root_fd)
+    preferred = app_config.get_task_config(task_type)["prompt_root"]
+    roots = dict.fromkeys(
+        os.path.normcase(os.path.abspath(os.fspath(root)))
+        for root in (preferred, storage.PROMPT_DIR)
+    )
+    for root in roots:
+        try:
+            root_fd = _open_directory(root, "prompt 路径不安全")
+        except AppError as exc:
+            if isinstance(exc.__cause__, OSError) and exc.__cause__.errno == errno.ENOENT:
+                continue
+            raise
+        try:
+            try:
+                return _read_regular_at(root_fd, f"{scene}.txt", error, "prompt 路径不安全")
+            except AppError as exc:
+                if isinstance(exc.__cause__, OSError) and exc.__cause__.errno == errno.ENOENT:
+                    continue
+                raise
+        finally:
+            os.close(root_fd)
+    raise AppError(error)
 
 
 def list_datasets(task_type: str) -> list[dict]:
