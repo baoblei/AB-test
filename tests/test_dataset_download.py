@@ -124,3 +124,49 @@ class DatasetReferenceArchiveTests(unittest.TestCase):
             os.symlink(outside_image, scene_root / "a.jpg")
             with self.assertRaisesRegex(AppError, "不安全"):
                 create_dataset_artifact("TI2I", "edit", include_ref=True)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unsupported")
+    def test_reference_replacement_after_validation_does_not_change_archive(self):
+        with configured_dataset_roots() as roots, tempfile.TemporaryDirectory() as outside:
+            roots.write_prompt("TI2I", "edit", "a\tone\n")
+            roots.write_ref("TI2I", "edit", "a.jpg", b"validated-image")
+            ref_path = roots.ref_roots["TI2I"] / "edit" / "a.jpg"
+            replacement = Path(outside) / "replacement.jpg"
+            replacement.write_bytes(b"replacement-image")
+            original_write = zipfile.ZipFile.write
+            replaced = False
+
+            def replace_before_write(archive, filename, *args, **kwargs):
+                nonlocal replaced
+                if not replaced:
+                    replaced = True
+                    ref_path.unlink()
+                    os.symlink(replacement, ref_path)
+                return original_write(archive, filename, *args, **kwargs)
+
+            with patch.object(zipfile.ZipFile, "write", replace_before_write):
+                artifact = create_dataset_artifact("TI2I", "edit", include_ref=True)
+            self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+            with zipfile.ZipFile(artifact.path) as archive:
+                self.assertEqual(archive.read("ref_images/a.jpg"), b"validated-image")
+
+    def test_prompt_replacement_after_validation_does_not_change_archive(self):
+        with configured_dataset_roots() as roots:
+            roots.write_prompt("TI2I", "edit", "a\tone\n")
+            roots.write_ref("TI2I", "edit", "a.jpg", b"a-image")
+            prompt_path = roots.prompt_roots["TI2I"] / "edit.txt"
+            original_write = zipfile.ZipFile.write
+            replaced = False
+
+            def replace_before_write(archive, filename, *args, **kwargs):
+                nonlocal replaced
+                if not replaced:
+                    replaced = True
+                    prompt_path.write_text("b\tchanged\n", encoding="utf-8")
+                return original_write(archive, filename, *args, **kwargs)
+
+            with patch.object(zipfile.ZipFile, "write", replace_before_write):
+                artifact = create_dataset_artifact("TI2I", "edit", include_ref=True)
+            self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+            with zipfile.ZipFile(artifact.path) as archive:
+                self.assertEqual(archive.read("edit.txt"), b"a\tone\n")
