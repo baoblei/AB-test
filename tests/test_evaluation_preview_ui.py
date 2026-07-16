@@ -55,6 +55,265 @@ class EvaluationPreviewUiTests(unittest.TestCase):
             'previewToolButton("help"',
         ):
             self.assertIn(marker, self.html)
+        self.assertNotIn('previewToolButton("compare-left"', self.html)
+        self.assertNotIn('previewToolButton("compare-right"', self.html)
+        self.assertIn("function renderInlineCompareControls(", self.html)
+
+    def test_hold_compare_builds_two_directions_and_three_per_three_image_gap(self):
+        result = self.run_preview_probe(
+            "function buildHoldComparePairs(",
+            "function startHoldCompare(",
+            """
+console.log(JSON.stringify({
+    two: buildHoldComparePairs([
+        { id: "left", label: "候选图 A" },
+        { id: "right", label: "候选图 B" }
+    ]),
+    three: buildHoldComparePairs([
+        { id: "reference", label: "参考图" },
+        { id: "left", label: "候选图 A" },
+        { id: "right", label: "候选图 B" }
+    ])
+}));
+""",
+        )
+        self.assertEqual(
+            result,
+            {
+                "two": [
+                    {
+                        "sourceId": "right",
+                        "targetId": "left",
+                        "label": "候选图 B 覆盖候选图 A",
+                        "slot": "only-upper",
+                        "kind": "adjacent",
+                        "symbol": "←",
+                    },
+                    {
+                        "sourceId": "left",
+                        "targetId": "right",
+                        "label": "候选图 A 覆盖候选图 B",
+                        "slot": "only-lower",
+                        "kind": "adjacent",
+                        "symbol": "→",
+                    }
+                ],
+                "three": [
+                    {
+                        "sourceId": "left",
+                        "targetId": "reference",
+                        "label": "候选图 A 覆盖参考图",
+                        "slot": "left-upper",
+                        "kind": "adjacent",
+                        "symbol": "←",
+                    },
+                    {
+                        "sourceId": "reference",
+                        "targetId": "left",
+                        "label": "参考图 覆盖候选图 A",
+                        "slot": "left-middle",
+                        "kind": "adjacent",
+                        "symbol": "→",
+                    },
+                    {
+                        "sourceId": "right",
+                        "targetId": "reference",
+                        "label": "候选图 B 覆盖参考图",
+                        "slot": "left-lower",
+                        "kind": "folded",
+                        "symbol": "└←",
+                    },
+                    {
+                        "sourceId": "right",
+                        "targetId": "left",
+                        "label": "候选图 B 覆盖候选图 A",
+                        "slot": "right-upper",
+                        "kind": "adjacent",
+                        "symbol": "←",
+                    },
+                    {
+                        "sourceId": "left",
+                        "targetId": "right",
+                        "label": "候选图 A 覆盖候选图 B",
+                        "slot": "right-middle",
+                        "kind": "adjacent",
+                        "symbol": "→",
+                    },
+                    {
+                        "sourceId": "reference",
+                        "targetId": "right",
+                        "label": "参考图 覆盖候选图 B",
+                        "slot": "right-lower",
+                        "kind": "folded",
+                        "symbol": "→┘",
+                    },
+                ],
+            },
+        )
+
+    def test_inline_compare_controls_render_three_buttons_in_each_gap(self):
+        source = self.html[
+            self.html.index("function buildHoldComparePairs(") : self.html.index(
+                "function startHoldCompare("
+            )
+        ]
+        script = f"""
+{source}
+console.log(renderInlineCompareControls("main", [
+    {{ id: "reference", label: "参考图" }},
+    {{ id: "left", label: "候选图 A" }},
+    {{ id: "right", label: "候选图 B" }}
+]));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], check=True, capture_output=True, text=True
+        ).stdout
+        self.assertEqual(result.count('data-hold-compare="true"'), 6)
+        self.assertIn('data-compare-slot="left-upper"', result)
+        self.assertIn('data-compare-slot="left-middle"', result)
+        self.assertIn('data-compare-slot="left-lower"', result)
+        self.assertIn('data-compare-slot="right-upper"', result)
+        self.assertIn('data-compare-slot="right-middle"', result)
+        self.assertIn('data-compare-slot="right-lower"', result)
+        self.assertEqual(result.count('data-compare-kind="folded"'), 2)
+        self.assertIn('class="inline-compare-icon folded"', result)
+        self.assertIn('points="21,18 12,5 4,18"', result)
+        self.assertIn('points="4.5,12.5 4,18 8.8,15.1"', result)
+        self.assertIn('points="3,18 12,5 20,18"', result)
+        self.assertIn('points="15.2,15.1 20,18 19.5,12.5"', result)
+        self.assertNotIn('points="8,14 4,18 8,22"', result)
+        self.assertNotIn('points="16,14 20,18 16,22"', result)
+        self.assertEqual(result.count('class="inline-compare-icon folded"'), 2)
+        self.assertNotIn("<polygon", result)
+        self.assertNotIn("└←", result)
+        self.assertNotIn("→┘", result)
+
+    def test_hold_compare_overlay_uses_explicit_source_target_and_cleans_up(self):
+        source = self.html[
+            self.html.index("function startHoldCompare(") : self.html.index(
+                "function bindLightboxControls"
+            )
+        ]
+        script = f"""
+const makeClassList = () => {{
+    const values = new Set();
+    return {{
+        add: (...names) => names.forEach(name => values.add(name)),
+        remove: (...names) => names.forEach(name => values.delete(name)),
+        contains: name => values.has(name)
+    }};
+}};
+const sourceImage = {{ currentSrc: "b.png", src: "b.png" }};
+const targetImage = {{ style: {{ cssText: "width: 320px; transform: translate(4px, 8px);" }} }};
+const targetChildren = [];
+const sourceContainer = {{
+    dataset: {{ previewPane: "right", previewLabel: "候选图 B" }},
+    querySelector: selector => selector === "img" ? sourceImage : null
+}};
+const targetContainer = {{
+    dataset: {{ previewPane: "left", previewLabel: "候选图 A" }},
+    querySelector: selector => selector === "img" ? targetImage : null,
+    appendChild: child => targetChildren.push(child)
+}};
+const button = {{
+    classList: makeClassList(),
+    attributes: {{}},
+    setAttribute(name, value) {{ this.attributes[name] = value; }}
+}};
+const document = {{
+    querySelectorAll: () => [targetContainer, sourceContainer],
+    createElement: tag => tag === "img"
+        ? {{ style: {{ cssText: "" }}, src: "", alt: "" }}
+        : {{
+            className: "",
+            dataset: {{}},
+            children: [],
+            appendChild(child) {{ this.children.push(child); }},
+            remove() {{ this.removed = true; }}
+        }}
+}};
+const previewController = {{
+    groups: new Map([["main", {{ activePaneId: "left" }}]])
+}};
+let activeHoldCompare = null;
+{source}
+const started = startHoldCompare("main", "right", "left", button);
+const layer = targetChildren[0];
+const overlayImage = layer.children[0];
+const label = layer.children[1];
+const during = {{
+    started,
+    src: overlayImage.src,
+    style: overlayImage.style.cssText,
+    label: label.textContent,
+    active: button.classList.contains("active"),
+    pressed: button.attributes["aria-pressed"]
+}};
+stopHoldCompare();
+console.log(JSON.stringify({{
+    during,
+    removed: layer.removed,
+    activeAfter: button.classList.contains("active"),
+    pressedAfter: button.attributes["aria-pressed"]
+}}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], check=True, capture_output=True, text=True
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "during": {
+                    "started": True,
+                    "src": "b.png",
+                    "style": "width: 320px; transform: translate(4px, 8px);",
+                    "label": "候选图 B → 候选图 A",
+                    "active": True,
+                    "pressed": "true",
+                },
+                "removed": True,
+                "activeAfter": False,
+                "pressedAfter": "false",
+            },
+        )
+
+    def test_hold_compare_controls_release_on_pointer_keyboard_and_window_blur(self):
+        controls = self.html[
+            self.html.index("function bindLightboxControls()") : self.html.index(
+                "let previewSpacePan = false;"
+            )
+        ]
+        for marker in (
+            'button.matches("[data-hold-compare]")',
+            "button.dataset.compareSource",
+            "button.dataset.compareTarget",
+            'document.addEventListener("pointerup", stopHoldCompare)',
+            'document.addEventListener("pointercancel", stopHoldCompare)',
+            'document.addEventListener("keyup"',
+            'window.addEventListener("blur", stopHoldCompare)',
+            'document.addEventListener("visibilitychange"',
+        ):
+            self.assertIn(marker, controls)
+
+    def test_hold_compare_overlay_and_buttons_have_clear_visual_state(self):
+        overlay_rule = self.css_rule(".hold-compare-layer")
+        self.assertIn("position: absolute", overlay_rule)
+        self.assertIn("pointer-events: none", overlay_rule)
+        self.assertIn("z-index:", overlay_rule)
+        button_rule = self.css_rule(".inline-compare-btn")
+        self.assertIn("touch-action: none", button_rule)
+        self.assertIn("position: absolute", button_rule)
+        self.assertIn("width: 26px", button_rule)
+
+    def test_inline_compare_buttons_do_not_change_image_grid_columns(self):
+        self.assertIn("position: relative", self.css_rule(".compare-grid"))
+        self.assertIn("position: relative", self.css_rule(".lightbox-grid"))
+        source = self.html[
+            self.html.index("function renderCompareGrid()") : self.html.index(
+                "function renderImageCard", self.html.index("function renderCompareGrid()")
+            )
+        ]
+        self.assertIn('cards.join("") + renderInlineCompareControls("main", panes)', source)
 
     def test_toolbar_is_collapsible_and_exposes_shortcut_help(self):
         toolbar_start = self.html.index("function renderPreviewToolbar")
@@ -86,7 +345,7 @@ class EvaluationPreviewUiTests(unittest.TestCase):
         self.assertIn('data-collapse-direction="right"', self.html)
         self.assertIn('aria-label="向右收起工具"', self.html)
         self.assertIn('button.dataset.collapseDirection = collapsed ? "left" : "right"', self.html)
-        self.assertIn('arrow.textContent = collapsed ? "←" : "→"', self.html)
+        self.assertIn('arrow.textContent = collapsed ? "《" : "》"', self.html)
 
         lightbox_rule = self.css_rule(".lightbox-dialog.preview-stage")
         self.assertIn("grid-template-columns: minmax(0, 1fr) auto", lightbox_rule)
@@ -117,6 +376,34 @@ class EvaluationPreviewUiTests(unittest.TestCase):
         rule = self.css_rule('.preview-toolbar [data-preview-action="magnifier"] .preview-tool-icon')
         self.assertIn("width: 21px", rule)
         self.assertIn("height: 21px", rule)
+
+    def test_toolbar_prioritizes_magnifier_then_enlarged_reset(self):
+        source = self.html[
+            self.html.index("function renderPreviewToolbar") : self.html.index(
+                "function buildHoldComparePairs"
+            )
+        ]
+        self.assertLess(
+            source.index('previewToolButton("magnifier"'),
+            source.index('previewToolButton("reset"'),
+        )
+        self.assertLess(
+            source.index('previewToolButton("reset"'),
+            source.index('previewToolButton("sync"'),
+        )
+        reset_rule = self.css_rule('.preview-toolbar [data-preview-action="reset"]')
+        self.assertIn("width: 40px", reset_rule)
+        self.assertIn("height: 40px", reset_rule)
+        reset_icon_rule = self.css_rule(
+            '.preview-toolbar [data-preview-action="reset"] .preview-tool-icon'
+        )
+        self.assertIn("width: 23px", reset_icon_rule)
+        self.assertIn("height: 23px", reset_icon_rule)
+
+    def test_collapse_control_uses_double_angle_glyphs(self):
+        self.assertIn('<span class="collapse-arrow" aria-hidden="true">》</span>', self.html)
+        self.assertIn('arrow.textContent = collapsed ? "《" : "》"', self.html)
+        self.assertNotIn('arrow.textContent = collapsed ? "←" : "→"', self.html)
 
     def test_toolbar_zoom_collapse_and_help_actions_delegate_precisely(self):
         source = self.html[
@@ -159,6 +446,9 @@ const document = {{
 }};
 let lightboxBound = false;
 let activeLightboxPane = "left";
+let activeHoldCompare = null;
+const startHoldCompare = () => false;
+const stopHoldCompare = () => null;
 const zoomCalls = [];
 const adjustPreviewZoom = (groupId, delta) => zoomCalls.push({{ groupId, delta }});
 const setPreviewMode = () => null;
@@ -590,6 +880,9 @@ const document = {{
 }};
 let lightboxBound = false;
 let activeLightboxPane = "left";
+let activeHoldCompare = null;
+const startHoldCompare = () => false;
+const stopHoldCompare = () => null;
 const setPreviewMode = () => null;
 const resetPreviewGroup = () => null;
 const togglePreviewBackground = () => null;
@@ -1174,6 +1467,7 @@ const beginPreviewRender = () => ++renderGeneration;
 const isPreviewGenerationCurrent = (groupId, generation) => generation === renderGeneration;
 const addPreviewImageListener = (groupId, image, name, callback, options) => image.addEventListener(name, callback, options);
 const renderImageCard = () => "";
+const renderInlineCompareControls = () => "";
 const renderPreviewToolbar = () => "";
 const createPreviewGroup = () => null;
 const registerPreviewPane = () => null;
@@ -1234,6 +1528,7 @@ const state = {
 const releasePreviewPointers = () => null;
 const hidePreviewMagnifiers = () => null;
 const renderImageCard = () => "";
+const renderInlineCompareControls = () => "";
 const renderPreviewToolbar = () => "";
 const createPreviewGroup = () => null;
 const registered = [];
