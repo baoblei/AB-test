@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -45,6 +46,12 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
             self.assertIn(marker, self.html)
         self.assertLess(self.html.index("publish-card"), self.html.index("dataset-download-card"))
         self.assertLess(self.html.index("dataset-download-card"), self.html.index("statistics-filter-card"))
+
+    def test_checkbox_chip_input_cannot_inherit_viewport_wide_input_width(self):
+        rule = re.search(r"\.checkbox-chip\s+input\s*\{([^}]*)\}", self.html)
+        self.assertIsNotNone(rule)
+        declarations = rule.group(1)
+        self.assertRegex(declarations, r"\bwidth\s*:\s*auto\s*;")
 
     def test_existing_overview_actions_suppression_and_default_collapse_remain(self):
         for marker in ('"统计"', '"坏例详情"', '"导出"', '"明细"', '"坏例"', "renderSuppressionLine(stat)"):
