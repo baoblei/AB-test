@@ -107,6 +107,7 @@ git commit -m "test: add generated dataset validator"
 - Create: `prompt/TI2I/background_style.txt`
 - Create: `tests/fixtures/generated_dataset_expectations.json`
 - Modify: `tests/test_generated_dataset_tools.py`
+- Modify: `tests/test_dataset_download.py`
 
 **Interfaces:**
 - Produces: 36 stable prompt IDs and a manifest with `version`, `image`, `tasks`, and one `{tier, defect}` expectation for every one of the 90 model outputs.
@@ -188,16 +189,20 @@ background_06	Change the kitchen lighting from neutral daylight to warm golden-h
 
 Use keys in path order `task -> model -> scene -> sample_id`. Every expectation is exactly `{"tier": "high|medium|weak", "defect": "observable sentence"}`. For `high`, defect must be `"none"`. For medium/weak outputs, name one intended defect tied to the prompt, such as `right hand has six fingers`, `FRIDAY rendered as FRIDAI`, `yellow cone moved in front`, `unrequested shelf books changed`, or `subject face drifted`. The validator rejects generic descriptions such as `bad quality`, empty text, or tier totals that differ from the global profile.
 
-- [ ] **Step 5: Run the prompt/manifest contract tests and verify GREEN**
+- [ ] **Step 5: Keep repository prompt-only smoke coverage green during image staging**
 
-Run: `python3 -m unittest tests.test_generated_dataset_tools.GeneratedDatasetRepositoryContractTests -v`
+Replace the old `open` fixture assertions in `RepositorySmokeDatasetTests` with exact three-scene lists whose prompt counts are all six. Assert one representative T2I and TI2I prompt-only artifact matches its committed prompt bytes. Defer TI2I ZIP member assertions until Task 6, after the new references are installed.
 
-Expected: all contract tests pass with `check_images=False`.
+- [ ] **Step 6: Run the prompt/manifest contract and repository smoke tests and verify GREEN**
 
-- [ ] **Step 6: Commit the prompt and expectation contract**
+Run: `python3 -m unittest tests.test_generated_dataset_tools.GeneratedDatasetRepositoryContractTests tests.test_dataset_download.RepositorySmokeDatasetTests -v`
+
+Expected: all contract and prompt-only smoke tests pass with `check_images=False`.
+
+- [ ] **Step 7: Commit the prompt and expectation contract**
 
 ```bash
-git add prompt/T2I prompt/TI2I tests/fixtures/generated_dataset_expectations.json tests/test_generated_dataset_tools.py
+git add prompt/T2I prompt/TI2I tests/fixtures/generated_dataset_expectations.json tests/test_generated_dataset_tools.py tests/test_dataset_download.py
 git commit -m "data: define controlled evaluation prompts"
 ```
 
