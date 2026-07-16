@@ -324,13 +324,23 @@ async def upload_dataset_data(
 @app.post("/api/upload")
 async def upload_data(
     task_type: str = Form(...),
+    class_name: str = Form(...),
+    model_name: str = Form(...),
     version: str = Form(...),
     scene: str = Form(...),
     file: UploadFile = File(...),
     auto_rename: bool = Form(False),
     admin: dict = Depends(require_admin),
 ):
-    return upload_result_zip(task_type, version, scene, file, auto_rename=auto_rename)
+    return upload_result_zip(
+        task_type,
+        class_name,
+        model_name,
+        version,
+        scene,
+        file,
+        auto_rename=auto_rename,
+    )
 
 
 @app.post("/api/upload_ref")

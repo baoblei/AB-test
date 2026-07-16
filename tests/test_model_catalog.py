@@ -1,10 +1,13 @@
+import io
 import os
 import sqlite3
 import tempfile
 import unittest
+import zipfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from app_core import model_catalog, storage
+from app_core import config, model_catalog, storage
 from app_core.errors import AppError
 from app_core.model_catalog import compose_model_name, parse_model_name, validate_model_component
 
@@ -106,6 +109,60 @@ class ModelCatalogRouteTests(unittest.TestCase):
 
         routes = {route.path: route for route in main.app.routes}
         self.assertIn("/api/model_catalog", routes)
+
+
+def image_zip(name: str) -> bytes:
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w") as archive:
+        archive.writestr(name, b"image")
+    return data.getvalue()
+
+
+class StructuredUploadTests(unittest.TestCase):
+    def test_upload_builds_trusted_full_name_and_returns_it(self):
+        upload = SimpleNamespace(file=io.BytesIO(image_zip("img.png")))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            task_configs = {
+                **config.TASK_CONFIGS,
+                "T2I": {
+                    **config.TASK_CONFIGS["T2I"],
+                    "result_root": os.path.join(temp_dir, "results", "T2I"),
+                },
+            }
+            with patch.object(config, "TASK_CONFIGS", task_configs), patch.object(
+                storage,
+                "validate_result_zip",
+                return_value={"status": "exact", "rename_map": {}, "image_count": 1},
+            ):
+                result = storage.upload_result_zip(
+                    "T2I", "test", "Atlas", "default", "scene", upload
+                )
+
+            expected = os.path.join(
+                task_configs["T2I"]["result_root"],
+                "test_Atlas_default",
+                "scene",
+                "img.png",
+            )
+            self.assertTrue(os.path.exists(expected))
+            self.assertEqual(result["full_name"], "test_Atlas_default")
+
+    def test_upload_rejects_underscore_before_writing(self):
+        upload = SimpleNamespace(file=io.BytesIO(image_zip("img.png")))
+        with self.assertRaises(AppError):
+            storage.upload_result_zip(
+                "T2I", "bad_class", "Atlas", "default", "scene", upload
+            )
+
+
+class StructuredUploadRouteTests(unittest.TestCase):
+    def test_upload_route_accepts_separate_name_components(self):
+        import main
+
+        route = next(route for route in main.app.routes if route.path == "/api/upload")
+        body_names = {field.name for field in route.dependant.body_params}
+        self.assertTrue({"class_name", "model_name", "version"}.issubset(body_names))
+        self.assertNotIn("full_name", body_names)
 
 
 if __name__ == "__main__":
