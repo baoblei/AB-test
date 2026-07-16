@@ -183,6 +183,7 @@
             transition: width 0.25s ease;
         }
         .compare-grid {
+            position: relative;
             display: grid;
             gap: 18px;
             margin-bottom: 16px;
@@ -272,6 +273,95 @@
         .preview-tool-icon { width: 17px; height: 17px; pointer-events: none; }
         .preview-toolbar [data-preview-action="magnifier"] .preview-tool-icon { width: 21px; height: 21px; }
         .preview-toolbar [data-preview-action="magnifier"] .preview-tool-icon text { font-size: 19px; }
+        .preview-toolbar [data-preview-action="reset"] {
+            width: 40px;
+            height: 40px;
+            box-shadow: 0 5px 14px rgba(78, 55, 37, 0.18);
+        }
+        .preview-toolbar [data-preview-action="reset"] .preview-tool-icon { width: 23px; height: 23px; }
+        .preview-toolbar [data-preview-action="reset"] .preview-tool-icon text { font-size: 20px; }
+        .inline-compare-btn {
+            position: absolute;
+            z-index: 18;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(201, 95, 64, 0.38);
+            border-radius: 8px;
+            color: var(--primary-strong);
+            background: rgba(255, 253, 248, 0.96);
+            box-shadow: 0 4px 12px rgba(78, 55, 37, 0.16);
+            font-size: 0.8rem;
+            font-weight: 900;
+            cursor: pointer;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .inline-compare-btn.active {
+            color: white;
+            background: var(--primary);
+            border-color: var(--primary-strong);
+            box-shadow: 0 5px 14px rgba(169, 77, 49, 0.42);
+        }
+        .inline-compare-icon {
+            width: 20px;
+            height: 20px;
+            display: block;
+            overflow: visible;
+            pointer-events: none;
+        }
+        .inline-compare-icon polyline {
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .inline-compare-icon .arrow-head { stroke-width: 2.4; }
+        .inline-compare-btn[data-compare-slot="only-upper"] {
+            left: 50%;
+            top: calc(50% - 17px);
+            transform: translate(-50%, -50%);
+        }
+        .inline-compare-btn[data-compare-slot="only-lower"] {
+            left: 50%;
+            top: calc(50% + 17px);
+            transform: translate(-50%, -50%);
+        }
+        .inline-compare-btn[data-compare-slot="left-upper"] {
+            left: calc(33.333% - 3px);
+            top: calc(50% - 34px);
+            transform: translate(-50%, -50%);
+        }
+        .inline-compare-btn[data-compare-slot="left-middle"] {
+            left: calc(33.333% - 3px);
+            top: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .inline-compare-btn[data-compare-slot="left-lower"] {
+            left: calc(33.333% - 3px);
+            top: calc(50% + 34px);
+            transform: translate(-50%, -50%);
+        }
+        .inline-compare-btn[data-compare-slot="right-upper"] {
+            left: calc(66.667% + 3px);
+            top: calc(50% - 34px);
+            transform: translate(-50%, -50%);
+        }
+        .inline-compare-btn[data-compare-slot="right-middle"] {
+            left: calc(66.667% + 3px);
+            top: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .inline-compare-btn[data-compare-slot="right-lower"] {
+            left: calc(66.667% + 3px);
+            top: calc(50% + 34px);
+            transform: translate(-50%, -50%);
+        }
         .preview-toolbar .lightbox-btn.active {
             color: #fffdf8;
             background: linear-gradient(145deg, var(--primary), var(--primary-strong));
@@ -279,7 +369,7 @@
             box-shadow: 0 4px 11px rgba(169, 77, 49, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.3);
             transform: translateY(-1px);
         }
-        .collapse-arrow { font-size: 1rem; line-height: 1; }
+        .collapse-arrow { font-size: 1.18rem; font-weight: 900; line-height: 1; }
         .visually-hidden {
             position: absolute !important;
             width: 1px !important;
@@ -379,6 +469,39 @@
             background-repeat: no-repeat;
         }
         .magnifier-layer.visible { display: block; }
+        .hold-compare-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 11;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            pointer-events: none;
+            border-radius: inherit;
+            background: inherit;
+            box-shadow: inset 0 0 0 2px rgba(201, 95, 64, 0.9);
+        }
+        .hold-compare-layer > img {
+            pointer-events: none;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+        .hold-compare-label {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            z-index: 2;
+            transform: translateX(-50%);
+            padding: 5px 10px;
+            border-radius: 999px;
+            color: white;
+            background: rgba(39, 30, 23, 0.78);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
+            font-size: 0.72rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
         .badcase-toolbar {
             display: flex;
             justify-content: center;
@@ -576,6 +699,7 @@
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
         .lightbox-grid {
+            position: relative;
             flex: 1;
             display: grid;
             gap: 1px;
@@ -686,6 +810,18 @@
                 flex-direction: row;
                 align-items: center;
             }
+            .inline-compare-btn[data-compare-slot] {
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+            .inline-compare-btn[data-compare-slot="only-upper"] { top: calc(50% - 17px); }
+            .inline-compare-btn[data-compare-slot="only-lower"] { top: calc(50% + 17px); }
+            .inline-compare-btn[data-compare-slot="left-upper"] { top: calc(33.333% - 34px); }
+            .inline-compare-btn[data-compare-slot="left-middle"] { top: 33.333%; }
+            .inline-compare-btn[data-compare-slot="left-lower"] { top: calc(33.333% + 34px); }
+            .inline-compare-btn[data-compare-slot="right-upper"] { top: calc(66.667% - 34px); }
+            .inline-compare-btn[data-compare-slot="right-middle"] { top: 66.667%; }
+            .inline-compare-btn[data-compare-slot="right-lower"] { top: calc(66.667% + 34px); }
             .preview-shortcut-help {
                 flex: 0 0 240px;
             }
@@ -1257,8 +1393,10 @@
         function renderPreviewToolbar(groupId, compact) {
             return `
                 <div class="preview-toolbar${compact ? " compact" : ""}" data-preview-group="${groupId}">
-                    <button type="button" class="lightbox-btn" data-preview-action="collapse" data-collapse-direction="right" aria-expanded="true" aria-label="向右收起工具" title="向右收起工具"><span class="collapse-arrow" aria-hidden="true">→</span><span class="preview-tool-label visually-hidden">向右收起工具</span></button>
+                    <button type="button" class="lightbox-btn" data-preview-action="collapse" data-collapse-direction="right" aria-expanded="true" aria-label="向右收起工具" title="向右收起工具"><span class="collapse-arrow" aria-hidden="true">》</span><span class="preview-tool-label visually-hidden">向右收起工具</span></button>
                     <div class="preview-toolbar-content">
+                        ${previewToolButton("magnifier", "放大镜关", "🔍", { pressed: false })}
+                        ${previewToolButton("reset", "重置", "↺")}
                         ${previewToolButton("sync", "同步开", "🔗", { pressed: true, active: true })}
                         ${previewToolButton("fit", "适应窗口", "▣")}
                         ${previewToolButton("fit-width", "适应宽度", "↔")}
@@ -1266,16 +1404,106 @@
                         ${previewToolButton("actual", "原始尺寸", "1:1")}
                         ${previewToolButton("zoom-out", "缩小（-）", "−")}
                         ${previewToolButton("zoom-in", "放大（+）", "+")}
-                        ${previewToolButton("magnifier", "放大镜关", "🔍", { pressed: false })}
-                        ${previewToolButton("reset", "重置", "↺")}
                         ${previewToolButton("background", "深色背景", "◐", { pressed: true, active: true })}
                         ${previewToolButton("fullscreen", "全屏", "⛶")}
                         ${previewToolButton("help", "快捷键帮助", "?", { extra: 'aria-expanded="false"' })}
-                        <span class="preview-shortcut-help hidden" data-preview-help="${groupId}">滚轮缩放；触屏双指缩放；拖动平移；+ / - 缩放；空格临时平移；Esc 关闭高清预览。</span>
+                        <span class="preview-shortcut-help hidden" data-preview-help="${groupId}">滚轮缩放；触屏双指缩放；拖动平移；按住图间按钮覆盖比较；+ / - 缩放；空格临时平移；Esc 关闭高清预览。</span>
                         <span class="preview-info" data-preview-info="${groupId}">自然尺寸 - · 渲染比例 - · 适应倍率 100% · 模式 适应</span>
                     </div>
                 </div>
             `;
+        }
+
+        function buildHoldComparePairs(panes) {
+            if (panes.length === 2) {
+                return [
+                    {
+                        sourceId: panes[1].id,
+                        targetId: panes[0].id,
+                        label: `${panes[1].label} 覆盖${panes[0].label}`,
+                        slot: "only-upper",
+                        kind: "adjacent",
+                        symbol: "←"
+                    },
+                    {
+                        sourceId: panes[0].id,
+                        targetId: panes[1].id,
+                        label: `${panes[0].label} 覆盖${panes[1].label}`,
+                        slot: "only-lower",
+                        kind: "adjacent",
+                        symbol: "→"
+                    }
+                ];
+            }
+            if (panes.length === 3) {
+                return [
+                    {
+                        sourceId: panes[1].id,
+                        targetId: panes[0].id,
+                        label: `${panes[1].label} 覆盖${panes[0].label}`,
+                        slot: "left-upper",
+                        kind: "adjacent",
+                        symbol: "←"
+                    },
+                    {
+                        sourceId: panes[0].id,
+                        targetId: panes[1].id,
+                        label: `${panes[0].label} 覆盖${panes[1].label}`,
+                        slot: "left-middle",
+                        kind: "adjacent",
+                        symbol: "→"
+                    },
+                    {
+                        sourceId: panes[2].id,
+                        targetId: panes[0].id,
+                        label: `${panes[2].label} 覆盖${panes[0].label}`,
+                        slot: "left-lower",
+                        kind: "folded",
+                        symbol: "└←"
+                    },
+                    {
+                        sourceId: panes[2].id,
+                        targetId: panes[1].id,
+                        label: `${panes[2].label} 覆盖${panes[1].label}`,
+                        slot: "right-upper",
+                        kind: "adjacent",
+                        symbol: "←"
+                    },
+                    {
+                        sourceId: panes[1].id,
+                        targetId: panes[2].id,
+                        label: `${panes[1].label} 覆盖${panes[2].label}`,
+                        slot: "right-middle",
+                        kind: "adjacent",
+                        symbol: "→"
+                    },
+                    {
+                        sourceId: panes[0].id,
+                        targetId: panes[2].id,
+                        label: `${panes[0].label} 覆盖${panes[2].label}`,
+                        slot: "right-lower",
+                        kind: "folded",
+                        symbol: "→┘"
+                    }
+                ];
+            }
+            return [];
+        }
+
+        function renderInlineCompareControls(groupId, panes) {
+            return buildHoldComparePairs(panes).map(pair => {
+                const symbol = pair.kind === "folded"
+                    ? foldedCompareIcon(pair.symbol === "└←" ? "left" : "right")
+                    : pair.symbol;
+                return `<button type="button" class="inline-compare-btn" data-hold-compare="true" data-preview-group-id="${groupId}" data-compare-source="${pair.sourceId}" data-compare-target="${pair.targetId}" data-compare-slot="${pair.slot}" data-compare-kind="${pair.kind}" aria-pressed="false" aria-label="按住：${pair.label}" title="按住：${pair.label}">${symbol}</button>`;
+            }).join("");
+        }
+
+        function foldedCompareIcon(direction) {
+            const path = direction === "left"
+                ? '<polyline points="21,18 12,5 4,18"></polyline><polyline class="arrow-head" points="4.5,12.5 4,18 8.8,15.1"></polyline>'
+                : '<polyline points="3,18 12,5 20,18"></polyline><polyline class="arrow-head" points="15.2,15.1 20,18 19.5,12.5"></polyline>';
+            return `<svg class="inline-compare-icon folded" viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
         }
 
         const previewRenderGenerations = new Map();
@@ -1305,19 +1533,23 @@
         }
 
         function renderCompareGrid() {
+            if (typeof stopHoldCompare === "function") stopHoldCompare();
             releasePreviewPointers("main");
             hidePreviewMagnifiers();
             const generation = beginPreviewRender("main");
             const task = state.currentTask;
             const cards = [];
+            const panes = [];
             if (state.config.show_ref) {
                 cards.push(renderImageCard("reference", "参考图", task.ref_img, true));
+                panes.push({ id: "reference", label: "参考图" });
             }
             cards.push(renderImageCard("left", "候选图 A", task.left_img, true));
             cards.push(renderImageCard("right", "候选图 B", task.right_img, true));
+            panes.push({ id: "left", label: "候选图 A" }, { id: "right", label: "候选图 B" });
             const grid = document.getElementById("compare-grid");
             grid.className = `compare-grid ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
-            grid.innerHTML = cards.join("");
+            grid.innerHTML = cards.join("") + renderInlineCompareControls("main", panes);
             document.getElementById("main-preview-toolbar").innerHTML = renderPreviewToolbar("main", false);
             createPreviewGroup("main");
             grid.querySelectorAll('[data-preview-group-pane="main"]').forEach(container => {
@@ -1341,7 +1573,7 @@
                         <strong>${title}</strong>
                         ${previewable ? `<button class="preview-btn" onclick="openLightbox('${key}')">高清预览</button>` : ""}
                     </div>
-                    <div class="image-shell loading" data-preview-group-pane="main" data-preview-pane="${key}">
+                    <div class="image-shell loading" data-preview-group-pane="main" data-preview-pane="${key}" data-preview-label="${title}">
                         <img src="${src || ""}" alt="${title}" ${previewable ? `onclick="handlePreviewImageClick(event, '${key}')"` : ""}>
                         <span class="image-loading">图片加载中…</span>
                         <span class="image-error-message">图片加载失败</span>
@@ -1649,6 +1881,7 @@
         }
 
         function renderLightbox() {
+            if (typeof stopHoldCompare === "function") stopHoldCompare();
             releasePreviewPointers("lightbox");
             const generation = beginPreviewRender("lightbox");
             const panes = [];
@@ -1659,7 +1892,8 @@
             panes.push({ side: "right", label: "候选图 B", src: state.currentTask.right_img });
             const grid = document.getElementById("lightbox-grid");
             grid.className = `lightbox-grid preview-viewport ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
-            grid.innerHTML = panes.map(item => renderLightboxPane(item.side, item.label, item.src)).join("");
+            grid.innerHTML = panes.map(item => renderLightboxPane(item.side, item.label, item.src)).join("")
+                + renderInlineCompareControls("lightbox", panes.map(item => ({ id: item.side, label: item.label })));
             document.getElementById("lightbox-preview-toolbar").innerHTML = renderPreviewToolbar("lightbox", true);
             createPreviewGroup("lightbox");
             activeLightboxPane = "";
@@ -1675,7 +1909,7 @@
             return `
                 <div class="pane">
                     <div class="pane-head">${label}</div>
-                    <div class="pane-body loading" data-pane="${side}" data-preview-group-pane="lightbox" data-preview-pane="${side}">
+                    <div class="pane-body loading" data-pane="${side}" data-preview-group-pane="lightbox" data-preview-pane="${side}" data-preview-label="${label}">
                         <img id="lightbox-img-${side}" src="${src || ""}" alt="${label}">
                         <span class="preview-loading">图片加载中…</span>
                         <span class="image-error-message">图片加载失败</span>
@@ -1733,6 +1967,7 @@
         }
 
         function closeLightbox() {
+            if (typeof stopHoldCompare === "function") stopHoldCompare();
             setPreviewMagnifierState("lightbox", false);
             hidePreviewMagnifiers();
             if (typeof setPreviewSpacePan === "function") setPreviewSpacePan(false);
@@ -1974,9 +2209,94 @@
             return true;
         }
 
+        let activeHoldCompare = null;
+
+        function startHoldCompare(groupId, sourceId, targetId, button) {
+            stopHoldCompare();
+            const group = previewController.groups.get(groupId);
+            if (!group) return false;
+            const containers = [...document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`)];
+            const sourceContainer = containers.find(container => container.dataset.previewPane === sourceId);
+            const targetContainer = containers.find(container => container.dataset.previewPane === targetId);
+            const sourcePane = group.panes && group.panes.get(sourceId);
+            const targetPane = group.panes && group.panes.get(targetId);
+            if (!sourceContainer || !targetContainer || sourcePane?.failed || targetPane?.failed) return false;
+            const sourceImage = sourceContainer.querySelector("img");
+            const targetImage = targetContainer.querySelector("img");
+            if (!sourceImage || !targetImage) return false;
+
+            const layer = document.createElement("div");
+            layer.className = "hold-compare-layer";
+            layer.dataset.sourcePane = sourceId;
+            layer.dataset.targetPane = targetId;
+            const overlayImage = document.createElement("img");
+            overlayImage.src = sourceImage.currentSrc || sourceImage.src;
+            overlayImage.alt = sourceImage.alt || "";
+            overlayImage.draggable = false;
+            overlayImage.style.cssText = targetImage.style.cssText;
+            const label = document.createElement("span");
+            label.className = "hold-compare-label";
+            const sourceLabel = sourceContainer.dataset.previewLabel || sourceId;
+            const targetLabel = targetContainer.dataset.previewLabel || targetId;
+            label.textContent = `${sourceLabel} → ${targetLabel}`;
+            layer.appendChild(overlayImage);
+            layer.appendChild(label);
+            targetContainer.appendChild(layer);
+            button.classList.add("active", "holding");
+            button.setAttribute("aria-pressed", "true");
+            activeHoldCompare = { groupId, button, layer };
+            return true;
+        }
+
+        function stopHoldCompare() {
+            if (!activeHoldCompare) return;
+            activeHoldCompare.layer.remove();
+            activeHoldCompare.button.classList.remove("active", "holding");
+            activeHoldCompare.button.setAttribute("aria-pressed", "false");
+            activeHoldCompare = null;
+        }
+
         function bindLightboxControls() {
             if (lightboxBound) return;
             lightboxBound = true;
+            document.addEventListener("pointerdown", event => {
+                const button = event.target.closest("[data-hold-compare]");
+                if (!button) return;
+                if (!button.matches("[data-hold-compare]")) return;
+                const groupId = button.dataset.previewGroupId;
+                if (!groupId) return;
+                if (startHoldCompare(groupId, button.dataset.compareSource, button.dataset.compareTarget, button)) {
+                    event.preventDefault();
+                }
+            });
+            document.addEventListener("pointerup", stopHoldCompare);
+            document.addEventListener("pointercancel", stopHoldCompare);
+            document.addEventListener("pointerout", event => {
+                const button = event.target.closest && event.target.closest("[data-hold-compare]");
+                if (button && activeHoldCompare?.button === button && !button.contains(event.relatedTarget)) {
+                    stopHoldCompare();
+                }
+            });
+            document.addEventListener("keydown", event => {
+                const button = event.target.closest && event.target.closest("[data-hold-compare]");
+                if (!button || ![" ", "Enter"].includes(event.key)) return;
+                if (!event.repeat) {
+                    startHoldCompare(
+                        button.dataset.previewGroupId,
+                        button.dataset.compareSource,
+                        button.dataset.compareTarget,
+                        button
+                    );
+                }
+                event.preventDefault();
+            });
+            document.addEventListener("keyup", event => {
+                if (activeHoldCompare && [" ", "Enter"].includes(event.key)) stopHoldCompare();
+            });
+            if (typeof window !== "undefined") window.addEventListener("blur", stopHoldCompare);
+            document.addEventListener("visibilitychange", () => {
+                if (document.hidden) stopHoldCompare();
+            });
             document.addEventListener("click", event => {
                 const button = event.target.closest("[data-preview-action]");
                 if (!button) return;
@@ -2005,7 +2325,7 @@
                     const helpButton = toolbar.querySelector('[data-preview-action="help"]');
                     if (helpButton) helpButton.setAttribute("aria-expanded", "false");
                     const arrow = button.querySelector ? button.querySelector(".collapse-arrow") : null;
-                    if (arrow) arrow.textContent = collapsed ? "←" : "→";
+                    if (arrow) arrow.textContent = collapsed ? "《" : "》";
                     const labelNode = button.querySelector ? button.querySelector(".preview-tool-label") : null;
                     if (labelNode) labelNode.textContent = label;
                     else button.textContent = collapsed ? "展开工具" : "收起工具";
@@ -2053,6 +2373,12 @@
                 let startY = 0;
                 let startCenter = { x: 0.5, y: 0.5 };
                 const img = container.querySelector("img");
+                container.addEventListener("pointerenter", () => {
+                    const currentGroup = previewController.groups.get(groupId);
+                    if (!currentGroup) return;
+                    currentGroup.activePaneId = side;
+                    activeLightboxPane = side;
+                });
                 if (typeof bindPreviewImageState === "function") {
                     bindPreviewImageState(groupId, side, container, img, generation);
                 } else {
