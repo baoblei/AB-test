@@ -361,3 +361,28 @@ class RepositorySmokeDatasetTests(unittest.TestCase):
                 artifact = create_dataset_artifact(task, scene, include_ref=False)
                 self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
                 self.assertEqual(Path(artifact.path).read_bytes(), prompt)
+
+    def test_object_edit_reference_archive_has_deterministic_members(self):
+        prompt = Path("prompt/TI2I/object_edit.txt")
+        references = [
+            Path(f"ref_images/TI2I/object_edit/object_edit_{index:02d}.jpg")
+            for index in range(1, 7)
+        ]
+
+        artifact = create_dataset_artifact("TI2I", "object_edit", include_ref=True)
+        self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+
+        with zipfile.ZipFile(artifact.path) as archive:
+            self.assertEqual(
+                archive.namelist(),
+                [
+                    "object_edit.txt",
+                    *(f"ref_images/{reference.name}" for reference in references),
+                ],
+            )
+            self.assertEqual(archive.read("object_edit.txt"), prompt.read_bytes())
+            for reference in references:
+                self.assertEqual(
+                    archive.read(f"ref_images/{reference.name}"),
+                    reference.read_bytes(),
+                )
