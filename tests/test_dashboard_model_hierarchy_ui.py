@@ -230,6 +230,20 @@ class DashboardModelHierarchyUiTests(unittest.TestCase):
         self.assertEqual(payload["models"], ["Atlas", "Beacon"])
         self.assertEqual(payload["versions"], ["default", "v2"])
 
+    def test_each_upload_block_has_two_rows(self):
+        for marker in (
+            'class="upload-row dataset-upload-primary"',
+            'class="upload-row dataset-upload-files"',
+            'class="upload-row result-upload-primary"',
+            'class="upload-row result-upload-files"',
+        ):
+            self.assertIn(marker, self.html)
+
+    def test_mobile_upload_rows_collapse_to_one_column(self):
+        mobile = self.html[self.html.index("@media (max-width: 720px)") :]
+        self.assertIn(".upload-row", mobile)
+        self.assertIn("grid-template-columns: 1fr", mobile)
+
 
 if __name__ == "__main__":
     unittest.main()
