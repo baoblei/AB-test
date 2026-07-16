@@ -329,3 +329,21 @@ class DatasetReferenceArchiveTests(unittest.TestCase):
             with patch("app_core.dataset_download_service.os.open", side_effect=replace_before_scene_open):
                 with self.assertRaisesRegex(AppError, "不安全"):
                     create_dataset_artifact("TI2I", "edit", include_ref=True)
+
+
+class RepositorySmokeDatasetTests(unittest.TestCase):
+    def test_open_dataset_is_task_specific_and_ti2i_zip_matches_real_references(self):
+        t2i_prompt = Path("prompt/T2I/open.txt").read_bytes()
+        ti2i_prompt = Path("prompt/TI2I/open.txt").read_bytes()
+        self.assertNotEqual(t2i_prompt, ti2i_prompt)
+        self.assertEqual(list_datasets("T2I"), [{"scene": "open", "prompt_count": 5}])
+        self.assertEqual(list_datasets("TI2I"), [{"scene": "open", "prompt_count": 2}])
+
+        artifact = create_dataset_artifact("TI2I", "open", include_ref=True)
+        self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+        with zipfile.ZipFile(artifact.path) as archive:
+            self.assertEqual(
+                archive.namelist(),
+                ["open.txt", "ref_images/scene1.jpg", "ref_images/scene2.jpg"],
+            )
+            self.assertEqual(archive.read("open.txt"), ti2i_prompt)

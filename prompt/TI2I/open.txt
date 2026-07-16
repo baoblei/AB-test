@@ -1,0 +1,2 @@
+scene1	Transform the reference image while preserving its core subject and composition
+scene2	Apply a polished edit to the reference image while retaining recognizable details

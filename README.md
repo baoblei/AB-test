@@ -115,6 +115,7 @@ ab_test/
 - `results/TI2I` 保存编辑模型输出
 - `prompt/T2I`、`prompt/TI2I` 分别保存对应任务的 prompt
 - `ref_images/TI2I` 保存编辑任务参考图
+- 仓库自带的 `open` smoke 数据也按任务拆分：T2I prompt 可独立使用，TI2I prompt ID 与 `ref_images/TI2I/open` 严格一一对应。
 - `ref_images/T2I` 当前不是必须目录，但系统已预留
 - `main.py` 只保留 FastAPI 应用、路由和页面入口
 - `app_core/config.py` 维护任务类型、评测维度和坏例标签

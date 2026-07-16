@@ -64,9 +64,10 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
 
     def run_mode_sync(self, task_type, checked):
         script = f"""
+            const chip = {{ classList: {{ selected: false, toggle(name, enabled) {{ if (name === "selected") this.selected = enabled; }} }} }};
             const elements = {{
                 "dataset-download-task-type": {{ value: {json.dumps(task_type)} }},
-                "dataset-include-ref": {{ checked: {str(checked).lower()}, disabled: false }},
+                "dataset-include-ref": {{ checked: {str(checked).lower()}, disabled: false, closest: () => chip }},
                 "dataset-download-button": {{ textContent: "" }}
             }};
             const document = {{ getElementById: id => elements[id] }};
@@ -75,7 +76,8 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
             console.log(JSON.stringify({{
                 checked: elements["dataset-include-ref"].checked,
                 disabled: elements["dataset-include-ref"].disabled,
-                button: elements["dataset-download-button"].textContent
+                button: elements["dataset-download-button"].textContent,
+                selected: chip.classList.selected
             }}));
         """
         return json.loads(subprocess.check_output(["node", "-e", script], text=True))
@@ -83,11 +85,17 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
     def test_ti2i_reference_default_and_t2i_mode(self):
         self.assertEqual(
             self.run_mode_sync("T2I", checked=True),
-            {"checked": False, "disabled": True, "button": "下载 TXT"},
+            {"checked": False, "disabled": True, "button": "下载 TXT", "selected": False},
         )
         self.assertEqual(
             self.run_mode_sync("TI2I", checked=False),
-            {"checked": False, "disabled": False, "button": "下载 TXT"},
+            {"checked": False, "disabled": False, "button": "下载 TXT", "selected": False},
+        )
+
+    def test_reference_chip_selected_class_tracks_checked_state(self):
+        self.assertEqual(
+            self.run_mode_sync("TI2I", checked=True),
+            {"checked": True, "disabled": False, "button": "下载 ZIP", "selected": True},
         )
 
     def test_search_filters_loaded_datasets_without_api_call(self):

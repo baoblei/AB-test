@@ -58,6 +58,7 @@
 - T2I 忽略或拒绝不适用的参考图请求，并返回 prompt TXT。
 - TI2I 且 `include_ref=false` 时返回 prompt TXT。
 - TI2I 且 `include_ref=true` 时，在临时目录中生成 ZIP；根目录放置 prompt TXT，参考图放入 `ref_images/`。
+- smoke 数据同样使用 `prompt/<task_type>/<scene>.txt`；TI2I smoke prompt ID 必须与 `ref_images/TI2I/<scene>` 完整对应，不能复用 T2I prompt。
 - 文件名使用安全、可预测的场景名称，并通过 `Content-Disposition` 返回 UTF-8 下载名。
 - ZIP 响应结束后清理临时文件。
 

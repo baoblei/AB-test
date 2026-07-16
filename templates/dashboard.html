@@ -896,6 +896,7 @@
             const includeRef = document.getElementById("dataset-include-ref");
             if (taskType === "T2I") includeRef.checked = false;
             includeRef.disabled = taskType !== "TI2I";
+            includeRef.closest?.(".checkbox-chip")?.classList.toggle("selected", includeRef.checked);
             document.getElementById("dataset-download-button").textContent =
                 taskType === "TI2I" && includeRef.checked ? "下载 ZIP" : "下载 TXT";
         }
