@@ -149,17 +149,17 @@ def build_review_fix_wave(root: Path, fix_root: Path) -> list[dict]:
         fix_root / "bases/lane1/portrait_05-high-base.png"
     )
     portrait_paths = {
-        "Atlas": "results/T2I/Atlas/portrait_anatomy/portrait_05.jpg",
-        "Beacon": "results/T2I/Beacon/portrait_anatomy/portrait_05.jpg",
-        "Cipher": "results/T2I/Cipher/portrait_anatomy/portrait_05.jpg",
+        "test_Atlas_default": "results/T2I/test_Atlas_default/portrait_anatomy/portrait_05.jpg",
+        "test_Beacon_default": "results/T2I/test_Beacon_default/portrait_anatomy/portrait_05.jpg",
+        "test_Cipher_default": "results/T2I/test_Cipher_default/portrait_anatomy/portrait_05.jpg",
     }
-    _write(fix_root, portrait_paths["Atlas"], portrait_base, records, "new compliant base")
+    _write(fix_root, portrait_paths["test_Atlas_default"], portrait_base, records, "new compliant base")
     portrait_medium = clone_region(
         portrait_base, (480, 420, 505, 452), (463, 434, 488, 472)
     )
     _write(
         fix_root,
-        portrait_paths["Beacon"],
+        portrait_paths["test_Beacon_default"],
         portrait_medium,
         records,
         "small soil patch obscures one seedling-hand finger",
@@ -169,7 +169,7 @@ def build_review_fix_wave(root: Path, fix_root: Path) -> list[dict]:
     )
     _write(
         fix_root,
-        portrait_paths["Cipher"],
+        portrait_paths["test_Cipher_default"],
         portrait_weak,
         records,
         "large soil patch obscures several seedling-hand fingers",
@@ -177,69 +177,69 @@ def build_review_fix_wave(root: Path, fix_root: Path) -> list[dict]:
 
     spatial_base = _open_normalized(fix_root / "bases/lane1/spatial_03-high-base.png")
     spatial_paths = {
-        "Atlas": "results/T2I/Atlas/spatial_composition/spatial_03.jpg",
-        "Beacon": "results/T2I/Beacon/spatial_composition/spatial_03.jpg",
-        "Cipher": "results/T2I/Cipher/spatial_composition/spatial_03.jpg",
+        "test_Atlas_default": "results/T2I/test_Atlas_default/spatial_composition/spatial_03.jpg",
+        "test_Beacon_default": "results/T2I/test_Beacon_default/spatial_composition/spatial_03.jpg",
+        "test_Cipher_default": "results/T2I/test_Cipher_default/spatial_composition/spatial_03.jpg",
     }
-    _write(fix_root, spatial_paths["Atlas"], spatial_base, records, "new compliant base")
+    _write(fix_root, spatial_paths["test_Atlas_default"], spatial_base, records, "new compliant base")
     spatial_medium = _open_normalized(
-        root / "results/T2I/Beacon/spatial_composition/spatial_03.jpg"
+        root / "results/T2I/test_Beacon_default/spatial_composition/spatial_03.jpg"
     )
     _write(
         fix_root,
-        spatial_paths["Beacon"],
+        spatial_paths["test_Beacon_default"],
         spatial_medium,
         records,
         "mailbox moved left of bench",
     )
     spatial_weak_source = _open_normalized(
-        root / "results/T2I/Cipher/spatial_composition/spatial_03.jpg"
+        root / "results/T2I/test_Cipher_default/spatial_composition/spatial_03.jpg"
     )
     spatial_weak = warp_region(
         spatial_weak_source, (28, 372, 148, 616), x_scale=0.58, y_shift=7
     )
     _write(
         fix_root,
-        spatial_paths["Cipher"],
+        spatial_paths["test_Cipher_default"],
         spatial_weak,
         records,
         "mailbox moved left and strongly distorted",
     )
 
     spatial_04_medium = _open_normalized(
-        root / "results/T2I/Beacon/spatial_composition/spatial_04.jpg"
+        root / "results/T2I/test_Beacon_default/spatial_composition/spatial_04.jpg"
     )
     spatial_04_weak = clone_region(
         spatial_04_medium, (156, 112, 214, 360), (382, 112, 440, 360)
     )
     _write(
         fix_root,
-        "results/T2I/Cipher/spatial_composition/spatial_04.jpg",
+        "results/T2I/test_Cipher_default/spatial_composition/spatial_04.jpg",
         spatial_04_weak,
         records,
         "second extra book duplicated beside clock",
     )
 
     spatial_05_medium = _open_normalized(
-        root / "results/T2I/Beacon/spatial_composition/spatial_05.jpg"
+        root / "results/T2I/test_Beacon_default/spatial_composition/spatial_05.jpg"
     )
     spatial_05_weak = clone_region(
         spatial_05_medium, (610, 110, 765, 310), (590, 300, 768, 585)
     )
     _write(
         fix_root,
-        "results/T2I/Cipher/spatial_composition/spatial_05.jpg",
+        "results/T2I/test_Cipher_default/spatial_composition/spatial_05.jpg",
         spatial_05_weak,
         records,
         "right table area removed with severe reconstruction",
     )
 
     spatial_06_source = _open_normalized(
-        root / "results/T2I/Atlas/spatial_composition/spatial_06.jpg"
+        root / "results/T2I/test_Atlas_default/spatial_composition/spatial_06.jpg"
     )
     _write(
         fix_root,
-        "results/T2I/Atlas/spatial_composition/spatial_06.jpg",
+        "results/T2I/test_Atlas_default/spatial_composition/spatial_06.jpg",
         spatial_06_source,
         records,
         "clean four-stool medium",
@@ -249,7 +249,7 @@ def build_review_fix_wave(root: Path, fix_root: Path) -> list[dict]:
     )
     _write(
         fix_root,
-        "results/T2I/Beacon/spatial_composition/spatial_06.jpg",
+        "results/T2I/test_Beacon_default/spatial_composition/spatial_06.jpg",
         spatial_06_beacon,
         records,
         "four stools with one warped stool",
@@ -262,7 +262,7 @@ def build_review_fix_wave(root: Path, fix_root: Path) -> list[dict]:
     )
     _write(
         fix_root,
-        "results/T2I/Cipher/spatial_composition/spatial_06.jpg",
+        "results/T2I/test_Cipher_default/spatial_composition/spatial_06.jpg",
         spatial_06_cipher,
         records,
         "four stools with two strongly warped stools",
@@ -275,23 +275,23 @@ def build_review_fix_wave(root: Path, fix_root: Path) -> list[dict]:
     }
     for sample_id, (box, scale, shift) in text_warps.items():
         source = _open_normalized(
-            root / f"results/T2I/Cipher/text_product/{sample_id}.jpg"
+            root / f"results/T2I/test_Cipher_default/text_product/{sample_id}.jpg"
         )
         weak = warp_region(source, box, x_scale=scale, y_shift=shift)
         _write(
             fix_root,
-            f"results/T2I/Cipher/text_product/{sample_id}.jpg",
+            f"results/T2I/test_Cipher_default/text_product/{sample_id}.jpg",
             weak,
             records,
             f"strong local typography warp for {sample_id}",
         )
 
     text_06_source = _open_normalized(
-        root / "results/T2I/Atlas/text_product/text_06.jpg"
+        root / "results/T2I/test_Atlas_default/text_product/text_06.jpg"
     )
     _write(
         fix_root,
-        "results/T2I/Atlas/text_product/text_06.jpg",
+        "results/T2I/test_Atlas_default/text_product/text_06.jpg",
         text_06_source,
         records,
         "crisp 2AH medium",
@@ -301,7 +301,7 @@ def build_review_fix_wave(root: Path, fix_root: Path) -> list[dict]:
     )
     _write(
         fix_root,
-        "results/T2I/Beacon/text_product/text_06.jpg",
+        "results/T2I/test_Beacon_default/text_product/text_06.jpg",
         text_06_beacon,
         records,
         "2AH with uneven compact typography",
@@ -311,21 +311,21 @@ def build_review_fix_wave(root: Path, fix_root: Path) -> list[dict]:
     )
     _write(
         fix_root,
-        "results/T2I/Cipher/text_product/text_06.jpg",
+        "results/T2I/test_Cipher_default/text_product/text_06.jpg",
         text_06_cipher,
         records,
         "2AH with severe typography compression",
     )
 
     object_02_source = _open_normalized(
-        root / "results/TI2I/Prism/object_edit/object_edit_02.jpg"
+        root / "results/TI2I/test_Prism_default/object_edit/object_edit_02.jpg"
     )
     object_02_changed = tint_region(
         object_02_source, (126, 275, 158, 490), (176, 38, 34), 0.78
     )
     _write(
         fix_root,
-        "results/TI2I/Prism/object_edit/object_edit_02.jpg",
+        "results/TI2I/test_Prism_default/object_edit/object_edit_02.jpg",
         object_02_changed,
         records,
         "one shelf book changed to red",

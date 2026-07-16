@@ -23,6 +23,7 @@ from app_core.database import init_db, reset_working_tasks
 from app_core.dataset_download_service import create_dataset_artifact, list_datasets
 from app_core.errors import AppError
 from app_core.export_service import create_export_artifact, get_export_options, preview_export
+from app_core.model_catalog import get_model_catalog
 from app_core.schemas import ExportRequest, PasswordChange, UserLogin, UserRegister, VoteSubmit
 from app_core.storage import compare_scene_resolution_stats, get_common_scenes, get_dataset_scenes, get_prompt_text, get_versions_for_type, upload_dataset, upload_ref_zip, upload_result_zip
 from app_core.task_service import get_eval_mode_status as get_eval_mode_status_service
@@ -118,6 +119,11 @@ def api_task_config(task_type: str):
 @app.get("/api/versions")
 def get_versions(task_type: str):
     return get_versions_for_type(normalize_task_type(task_type))
+
+
+@app.get("/api/model_catalog")
+def model_catalog(task_type: str):
+    return get_model_catalog(task_type)
 
 
 @app.get("/api/scenes")
@@ -318,13 +324,23 @@ async def upload_dataset_data(
 @app.post("/api/upload")
 async def upload_data(
     task_type: str = Form(...),
+    class_name: str = Form(...),
+    model_name: str = Form(...),
     version: str = Form(...),
     scene: str = Form(...),
     file: UploadFile = File(...),
     auto_rename: bool = Form(False),
     admin: dict = Depends(require_admin),
 ):
-    return upload_result_zip(task_type, version, scene, file, auto_rename=auto_rename)
+    return upload_result_zip(
+        task_type,
+        class_name,
+        model_name,
+        version,
+        scene,
+        file,
+        auto_rename=auto_rename,
+    )
 
 
 @app.post("/api/upload_ref")

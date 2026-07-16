@@ -23,15 +23,15 @@ class GeneratedDatasetToolTests(unittest.TestCase):
         "TI2I": ("object_edit", "appearance_edit", "background_style"),
     }
     MODELS = {
-        "T2I": ("Atlas", "Beacon", "Cipher"),
-        "TI2I": ("Mosaic", "Prism"),
+        "T2I": ("test_Atlas_default", "test_Beacon_default", "test_Cipher_default"),
+        "TI2I": ("test_Mosaic_default", "test_Prism_default"),
     }
     TIERS = {
-        "Atlas": ("high", "high", "high", "high", "high", "medium"),
-        "Beacon": ("high", "high", "medium", "medium", "medium", "weak"),
-        "Cipher": ("medium", "weak", "weak", "weak", "weak", "weak"),
-        "Mosaic": ("high", "high", "high", "high", "high", "medium"),
-        "Prism": ("medium", "medium", "weak", "weak", "weak", "weak"),
+        "test_Atlas_default": ("high", "high", "high", "high", "high", "medium"),
+        "test_Beacon_default": ("high", "high", "medium", "medium", "medium", "weak"),
+        "test_Cipher_default": ("medium", "weak", "weak", "weak", "weak", "weak"),
+        "test_Mosaic_default": ("high", "high", "high", "high", "high", "medium"),
+        "test_Prism_default": ("medium", "medium", "weak", "weak", "weak", "weak"),
     }
 
     def setUp(self):
@@ -45,6 +45,14 @@ class GeneratedDatasetToolTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary_directory.cleanup()
+
+    def test_mock_models_use_three_part_names(self):
+        for models in self.MODELS.values():
+            for model in models:
+                class_name, model_name, version = model.split("_")
+                self.assertEqual(class_name, "test")
+                self.assertTrue(model_name)
+                self.assertEqual(version, "default")
 
     def write_image(
         self,
@@ -165,24 +173,24 @@ class GeneratedDatasetToolTests(unittest.TestCase):
 
     def test_validator_reports_missing_result_by_relative_path(self):
         manifest = self.build_valid_fixture()
-        missing = self.root / "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg"
+        missing = self.root / "results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg"
         missing.unlink()
 
         errors = validate_dataset(self.root, manifest)
 
         self.assertIn(
-            "missing results/T2I/Atlas/portrait_anatomy/portrait_01.jpg",
+            "missing results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg",
             errors,
         )
 
     def test_validator_reports_unexpected_result_by_relative_path(self):
         manifest = self.build_valid_fixture()
-        self.write_image("results/T2I/Atlas/portrait_anatomy/portrait_07.jpg")
+        self.write_image("results/T2I/test_Atlas_default/portrait_anatomy/portrait_07.jpg")
 
         errors = validate_dataset(self.root, manifest)
 
         self.assertIn(
-            "unexpected results/T2I/Atlas/portrait_anatomy/portrait_07.jpg",
+            "unexpected results/T2I/test_Atlas_default/portrait_anatomy/portrait_07.jpg",
             errors,
         )
 
@@ -207,30 +215,30 @@ class GeneratedDatasetToolTests(unittest.TestCase):
 
     def test_validator_reports_wrong_size_and_non_rgb_images(self):
         manifest = self.build_valid_fixture()
-        wrong_size = self.root / "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg"
+        wrong_size = self.root / "results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg"
         Image.new("RGB", (640, 768), "red").save(wrong_size, format="JPEG")
-        non_rgb = self.root / "results/TI2I/Mosaic/object_edit/object_edit_01.jpg"
+        non_rgb = self.root / "results/TI2I/test_Mosaic_default/object_edit/object_edit_01.jpg"
         Image.new("L", (768, 768), 128).save(non_rgb, format="PNG")
 
         errors = validate_dataset(self.root, manifest)
 
         self.assertIn(
-            "invalid results/T2I/Atlas/portrait_anatomy/portrait_01.jpg: size 640x768, expected 768x768",
+            "invalid results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg: size 640x768, expected 768x768",
             errors,
         )
         self.assertIn(
-            "invalid results/TI2I/Mosaic/object_edit/object_edit_01.jpg: format PNG, expected JPEG",
+            "invalid results/TI2I/test_Mosaic_default/object_edit/object_edit_01.jpg: format PNG, expected JPEG",
             errors,
         )
         self.assertIn(
-            "invalid results/TI2I/Mosaic/object_edit/object_edit_01.jpg: mode L, expected RGB",
+            "invalid results/TI2I/test_Mosaic_default/object_edit/object_edit_01.jpg: mode L, expected RGB",
             errors,
         )
 
     def test_validator_reports_malformed_expectation_with_manifest_path(self):
         manifest_path = self.build_valid_fixture()
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["tasks"]["T2I"]["Atlas"]["portrait_anatomy"]["portrait_01"] = {
+        manifest["tasks"]["T2I"]["test_Atlas_default"]["portrait_anatomy"]["portrait_01"] = {
             "tier": "excellent",
             "defect": "",
         }
@@ -239,7 +247,7 @@ class GeneratedDatasetToolTests(unittest.TestCase):
         errors = validate_dataset(self.root, manifest_path)
 
         self.assertIn(
-            "malformed expectation tasks/T2I/Atlas/portrait_anatomy/portrait_01",
+            "malformed expectation tasks/T2I/test_Atlas_default/portrait_anatomy/portrait_01",
             errors,
         )
 
@@ -256,20 +264,20 @@ class GeneratedDatasetToolTests(unittest.TestCase):
     def test_validator_enforces_canonical_models_scenes_and_totals(self):
         manifest_path = self.build_valid_fixture()
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["tasks"]["T2I"]["Rogue"] = manifest["tasks"]["T2I"].pop("Atlas")
-        manifest["tasks"]["TI2I"]["Mosaic"]["rogue_scene"] = (
-            manifest["tasks"]["TI2I"]["Mosaic"].pop("background_style")
+        manifest["tasks"]["T2I"]["Rogue"] = manifest["tasks"]["T2I"].pop("test_Atlas_default")
+        manifest["tasks"]["TI2I"]["test_Mosaic_default"]["rogue_scene"] = (
+            manifest["tasks"]["TI2I"]["test_Mosaic_default"].pop("background_style")
         )
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
         errors = validate_dataset(self.root, manifest_path, check_images=False)
 
         self.assertIn(
-            "invalid models tasks/T2I: expected Atlas, Beacon, Cipher; got Beacon, Cipher, Rogue",
+            "invalid models tasks/T2I: expected test_Atlas_default, test_Beacon_default, test_Cipher_default; got Rogue, test_Beacon_default, test_Cipher_default",
             errors,
         )
         self.assertIn(
-            "invalid scenes tasks/TI2I/Mosaic: expected appearance_edit, background_style, object_edit; "
+            "invalid scenes tasks/TI2I/test_Mosaic_default: expected appearance_edit, background_style, object_edit; "
             "got appearance_edit, object_edit, rogue_scene",
             errors,
         )
@@ -277,7 +285,7 @@ class GeneratedDatasetToolTests(unittest.TestCase):
     def test_validator_enforces_final_dataset_totals(self):
         manifest_path = self.build_valid_fixture()
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        del manifest["tasks"]["T2I"]["Atlas"]["portrait_anatomy"]["portrait_01"]
+        del manifest["tasks"]["T2I"]["test_Atlas_default"]["portrait_anatomy"]["portrait_01"]
         for model in self.MODELS["TI2I"]:
             del manifest["tasks"]["TI2I"][model]["object_edit"]["object_edit_01"]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -300,22 +308,22 @@ class GeneratedDatasetToolTests(unittest.TestCase):
 
     def test_validator_rejects_jpeg_not_encoded_at_quality_85(self):
         manifest = self.build_valid_fixture()
-        path = self.root / "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg"
+        path = self.root / "results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg"
         Image.new("RGB", (768, 768), "red").save(path, format="JPEG", quality=75)
 
         errors = validate_dataset(self.root, manifest)
 
         self.assertIn(
-            "invalid results/T2I/Atlas/portrait_anatomy/portrait_01.jpg: "
+            "invalid results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg: "
             "JPEG quantization does not match quality 85",
             errors,
         )
 
     def test_validator_rejects_all_pillow_image_metadata(self):
         manifest = self.build_valid_fixture()
-        path = self.root / "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg"
+        path = self.root / "results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg"
         self.write_image(
-            "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg",
+            "results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg",
             icc_profile=b"fake-icc",
             xmp=b"<x:xmpmeta/>",
             comment=b"generated fixture",
@@ -324,7 +332,7 @@ class GeneratedDatasetToolTests(unittest.TestCase):
         errors = validate_dataset(self.root, manifest)
 
         self.assertIn(
-            "invalid results/T2I/Atlas/portrait_anatomy/portrait_01.jpg: "
+            "invalid results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg: "
             "metadata present (comment, icc_profile, xmp)",
             errors,
         )
@@ -350,7 +358,7 @@ class GeneratedDatasetToolTests(unittest.TestCase):
 
     def test_validator_rejects_dpi_and_progressive_jpeg_attributes(self):
         manifest = self.build_valid_fixture()
-        relative_path = "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg"
+        relative_path = "results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg"
         cases = {
             "dpi": ({"dpi": (300, 300)}, "metadata present (dpi)"),
             "progressive": (
@@ -418,8 +426,8 @@ class GeneratedDatasetToolTests(unittest.TestCase):
     def test_short_contact_sheet_labels_keep_review_identity(self):
         self.assertTrue(hasattr(generated_dataset, "_short_contact_sheet_label"))
         cases = {
-            "results/TI2I/Prism/object_edit/object_edit_01.jpg": (
-                "Prism/object_edit/object_edit_01.jpg"
+            "results/TI2I/test_Prism_default/object_edit/object_edit_01.jpg": (
+                "test_Prism_default/object_edit/object_edit_01.jpg"
             ),
             "ref_images/TI2I/object_edit/object_edit_01.jpg": (
                 "reference/object_edit/object_edit_01.jpg"
@@ -481,15 +489,15 @@ class GeneratedDatasetRepositoryContractTests(unittest.TestCase):
             "background_style": {f"background_{index:02d}" for index in range(1, 7)},
         }
         expected_profiles = {
-            "Atlas": Counter({"high": 5, "medium": 1}),
-            "Beacon": Counter({"high": 2, "medium": 3, "weak": 1}),
-            "Cipher": Counter({"medium": 1, "weak": 5}),
-            "Mosaic": Counter({"high": 5, "medium": 1}),
-            "Prism": Counter({"medium": 2, "weak": 4}),
+            "test_Atlas_default": Counter({"high": 5, "medium": 1}),
+            "test_Beacon_default": Counter({"high": 2, "medium": 3, "weak": 1}),
+            "test_Cipher_default": Counter({"medium": 1, "weak": 5}),
+            "test_Mosaic_default": Counter({"high": 5, "medium": 1}),
+            "test_Prism_default": Counter({"medium": 2, "weak": 4}),
         }
         self.assertEqual(set(manifest["tasks"]), {"T2I", "TI2I"})
-        self.assertEqual(set(manifest["tasks"]["T2I"]), {"Atlas", "Beacon", "Cipher"})
-        self.assertEqual(set(manifest["tasks"]["TI2I"]), {"Mosaic", "Prism"})
+        self.assertEqual(set(manifest["tasks"]["T2I"]), {"test_Atlas_default", "test_Beacon_default", "test_Cipher_default"})
+        self.assertEqual(set(manifest["tasks"]["TI2I"]), {"test_Mosaic_default", "test_Prism_default"})
         for task, models in manifest["tasks"].items():
             for model, scenes in models.items():
                 with self.subTest(task=task, model=model):

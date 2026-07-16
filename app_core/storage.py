@@ -42,7 +42,7 @@ def get_ref_root(task_type: str) -> str:
     return REF_IMAGE_DIR
 
 
-def get_versions_for_type(task_type: str) -> List[str]:
+def get_filesystem_model_names(task_type: str) -> List[str]:
     preferred = get_result_root(task_type)
     task_type_names = {normalize_task_type(name) for name in app_config.TASK_CONFIGS}
     task_roots = {
@@ -62,6 +62,10 @@ def get_versions_for_type(task_type: str) -> List[str]:
             and normalize_task_type(name) not in task_type_names
         )
     return sorted(versions)
+
+
+def get_versions_for_type(task_type: str) -> List[str]:
+    return get_filesystem_model_names(task_type)
 
 
 def get_scene_path(task_type: str, version: str, scene: str) -> str:
@@ -677,17 +681,32 @@ def save_zip_images(target_path: str, zip_bytes: bytes, rename_map: Optional[dic
                 shutil.copyfileobj(src, dst)
 
 
-def upload_result_zip(task_type: str, version: str, scene: str, upload_file, auto_rename: bool = False) -> dict:
+def upload_result_zip(
+    task_type: str,
+    class_name: str,
+    model_name: str,
+    version: str,
+    scene: str,
+    upload_file,
+    auto_rename: bool = False,
+) -> dict:
+    from .model_catalog import compose_model_name
+
     task_type = normalize_task_type(task_type)
-    version = validate_storage_component(version, "模型版本")
+    full_name = compose_model_name(class_name, model_name, version)
     scene = validate_storage_component(scene, "场景")
     zip_bytes = read_upload_bytes(upload_file)
     validation = validate_result_zip(task_type, scene, zip_bytes, auto_rename=auto_rename)
     if validation["status"] == "requires_rename_confirmation":
         return validation
     result_root = get_task_config(task_type)["result_root"]
-    save_zip_images(os.path.join(result_root, version, scene), zip_bytes, validation.get("rename_map"))
-    return {"message": "Success", "status": validation["status"], "image_count": validation["image_count"]}
+    save_zip_images(os.path.join(result_root, full_name, scene), zip_bytes, validation.get("rename_map"))
+    return {
+        "message": "Success",
+        "status": validation["status"],
+        "image_count": validation["image_count"],
+        "full_name": full_name,
+    }
 
 
 def save_uploaded_zip(target_path: str, upload_file):

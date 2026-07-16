@@ -11,7 +11,7 @@
   },
   "tasks": {
     "T2I": {
-      "Atlas": {
+      "test_Atlas_default": {
         "portrait_anatomy": {
           "portrait_01": {
             "tier": "high",
@@ -91,7 +91,7 @@
           }
         }
       },
-      "Beacon": {
+      "test_Beacon_default": {
         "portrait_anatomy": {
           "portrait_01": {
             "tier": "high",
@@ -171,7 +171,7 @@
           }
         }
       },
-      "Cipher": {
+      "test_Cipher_default": {
         "portrait_anatomy": {
           "portrait_01": {
             "tier": "medium",
@@ -253,7 +253,7 @@
       }
     },
     "TI2I": {
-      "Mosaic": {
+      "test_Mosaic_default": {
         "object_edit": {
           "object_edit_01": {
             "tier": "high",
@@ -333,7 +333,7 @@
           }
         }
       },
-      "Prism": {
+      "test_Prism_default": {
         "object_edit": {
           "object_edit_01": {
             "tier": "medium",

@@ -103,10 +103,10 @@ class ResultRootResolutionTests(unittest.TestCase):
             "validate_result_zip",
             return_value={"status": "exact", "rename_map": {}, "image_count": 1},
         ):
-            storage.upload_result_zip("T2I", "new-version", "new-scene", upload)
+            storage.upload_result_zip("T2I", "new", "model", "version", "new-scene", upload)
 
-        self.assertTrue(os.path.exists(os.path.join(self.configured_root, "new-version", "new-scene", "img_001.png")))
-        self.assertFalse(os.path.exists(os.path.join(self.result_root, "new-version", "new-scene", "img_001.png")))
+        self.assertTrue(os.path.exists(os.path.join(self.configured_root, "new_model_version", "new-scene", "img_001.png")))
+        self.assertFalse(os.path.exists(os.path.join(self.result_root, "new_model_version", "new-scene", "img_001.png")))
 
 
 class UploadValidationTests(unittest.TestCase):
@@ -132,7 +132,7 @@ class UploadValidationTests(unittest.TestCase):
                     return_value={"status": "exact", "rename_map": {}, "image_count": 1},
                 ):
                     with self.assertRaises(AppError):
-                        storage.upload_result_zip("T2I", "../escape", "scene", result_upload)
+                        storage.upload_result_zip("T2I", "../escape", "model", "v1", "scene", result_upload)
 
     def test_storage_component_validator_rejects_all_unsafe_leaf_values(self):
         for value in ("", "   ", ".", "..", "/absolute", "nested/path", "nested\\path"):
