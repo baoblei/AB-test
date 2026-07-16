@@ -20,6 +20,7 @@ from app_core.dashboard_service import export_results
 from app_core.dashboard_service import ranking as ranking_service
 from app_core.dashboard_service import worker_stats as worker_stats_service
 from app_core.database import init_db, reset_working_tasks
+from app_core.dataset_download_service import create_dataset_artifact, list_datasets
 from app_core.errors import AppError
 from app_core.export_service import create_export_artifact, get_export_options, preview_export
 from app_core.schemas import ExportRequest, PasswordChange, UserLogin, UserRegister, VoteSubmit
@@ -127,6 +128,32 @@ def get_scenes(task_type: str, v1: str, v2: str):
 @app.get("/api/dataset_scenes")
 def get_dataset_scene_options(task_type: str):
     return get_dataset_scenes(normalize_task_type(task_type))
+
+
+@app.get("/api/datasets")
+def dataset_list(task_type: str, user: dict = Depends(require_login)):
+    return list_datasets(task_type)
+
+
+@app.get("/api/datasets/download")
+def download_dataset(
+    task_type: str,
+    scene: str,
+    include_ref: bool = False,
+    user: dict = Depends(require_login),
+):
+    artifact = create_dataset_artifact(task_type, scene, include_ref)
+    background = (
+        BackgroundTask(shutil.rmtree, artifact.cleanup_dir, ignore_errors=True)
+        if artifact.cleanup_dir
+        else None
+    )
+    return FileResponse(
+        artifact.path,
+        filename=artifact.filename,
+        media_type=artifact.media_type,
+        background=background,
+    )
 
 
 @app.get("/api/scene_resolution_stats")

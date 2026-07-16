@@ -7,9 +7,49 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+import main
 from app_core import config, storage
-from app_core.dataset_download_service import create_dataset_artifact, list_datasets
+from app_core.dataset_download_service import (
+    DatasetArtifact,
+    create_dataset_artifact,
+    list_datasets,
+)
 from app_core.errors import AppError
+
+
+class DatasetDownloadRouteTests(unittest.TestCase):
+    def test_routes_require_login(self):
+        protected = {"/api/datasets", "/api/datasets/download"}
+        routes = {
+            route.path: route for route in main.app.routes if route.path in protected
+        }
+        self.assertEqual(set(routes), protected)
+        for route in routes.values():
+            self.assertIn(
+                main.require_login,
+                [dependency.call for dependency in route.dependant.dependencies],
+            )
+
+    def test_list_route_returns_service_payload(self):
+        payload = [{"scene": "open", "prompt_count": 2}]
+        with patch.object(main, "list_datasets", return_value=payload) as service:
+            self.assertEqual(main.dataset_list("T2I", user={}), payload)
+        service.assert_called_once_with("T2I")
+
+    def test_download_route_builds_file_response_and_cleans_zip_only(self):
+        txt = DatasetArtifact("/tmp/open.txt", "open.txt", "text/plain; charset=utf-8")
+        zip_artifact = DatasetArtifact(
+            "/tmp/edit.zip", "edit.zip", "application/zip", "/tmp/archive"
+        )
+        with patch.object(
+            main, "create_dataset_artifact", side_effect=[txt, zip_artifact]
+        ):
+            txt_response = main.download_dataset("T2I", "open", False, user={})
+            zip_response = main.download_dataset("TI2I", "edit", True, user={})
+        self.assertIsNone(txt_response.background)
+        self.assertIsNotNone(zip_response.background)
+        self.assertEqual(txt_response.filename, "open.txt")
+        self.assertEqual(zip_response.filename, "edit.zip")
 
 
 class DatasetRoots:
