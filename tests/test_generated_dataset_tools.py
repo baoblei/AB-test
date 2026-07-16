@@ -1,4 +1,5 @@
 import json
+from io import BytesIO
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,9 +15,30 @@ from scripts.generated_dataset import (
 
 
 class GeneratedDatasetToolTests(unittest.TestCase):
+    SCENES = {
+        "T2I": ("portrait_anatomy", "text_product", "spatial_composition"),
+        "TI2I": ("object_edit", "appearance_edit", "background_style"),
+    }
+    MODELS = {
+        "T2I": ("Atlas", "Beacon", "Cipher"),
+        "TI2I": ("Mosaic", "Prism"),
+    }
+    TIERS = {
+        "Atlas": ("high", "high", "high", "high", "high", "medium"),
+        "Beacon": ("high", "high", "medium", "medium", "medium", "weak"),
+        "Cipher": ("medium", "weak", "weak", "weak", "weak", "weak"),
+        "Mosaic": ("high", "high", "high", "high", "high", "medium"),
+        "Prism": ("medium", "medium", "weak", "weak", "weak", "weak"),
+    }
+
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
+        buffer = BytesIO()
+        Image.new("RGB", (768, 768), (20, 80, 140)).save(
+            buffer, format="JPEG", quality=85, optimize=True
+        )
+        self.valid_jpeg = buffer.getvalue()
 
     def tearDown(self):
         self.temporary_directory.cleanup()
@@ -28,47 +50,70 @@ class GeneratedDatasetToolTests(unittest.TestCase):
         size: tuple[int, int] = (768, 768),
         mode: str = "RGB",
         image_format: str = "JPEG",
+        quality: int = 85,
+        **save_options,
     ) -> Path:
         path = self.root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         color = (20, 80, 140) if mode == "RGB" else 128
-        Image.new(mode, size, color).save(path, format=image_format)
+        Image.new(mode, size, color).save(
+            path, format=image_format, quality=quality, **save_options
+        )
+        return path
+
+    def write_valid_image(self, relative_path: str) -> Path:
+        path = self.root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(self.valid_jpeg)
         return path
 
     def build_valid_fixture(self) -> Path:
-        prompt_files = {
-            "prompt/T2I/portrait_anatomy.txt": "portrait_01\tA ceramic artist holding a mug.\n",
-            "prompt/TI2I/object_edit.txt": "object_edit_01\tAdd one apple to the plate.\n",
-        }
-        for relative_path, contents in prompt_files.items():
-            path = self.root / relative_path
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(contents, encoding="utf-8")
-
-        self.write_image("results/T2I/Atlas/portrait_anatomy/portrait_01.jpg")
-        self.write_image("ref_images/TI2I/object_edit/object_edit_01.jpg")
-        self.write_image("results/TI2I/Mosaic/object_edit/object_edit_01.jpg")
-
         manifest = {
             "version": 1,
-            "image": {"format": "JPEG", "mode": "RGB", "size": [768, 768]},
-            "tasks": {
-                "T2I": {
-                    "Atlas": {
-                        "portrait_anatomy": {
-                            "portrait_01": {"tier": "high", "defect": "none"}
-                        }
-                    }
-                },
-                "TI2I": {
-                    "Mosaic": {
-                        "object_edit": {
-                            "object_edit_01": {"tier": "high", "defect": "none"}
-                        }
-                    }
-                },
+            "image": {
+                "format": "JPEG",
+                "mode": "RGB",
+                "size": [768, 768],
+                "quality": 85,
             },
+            "tasks": {"T2I": {}, "TI2I": {}},
         }
+        for task, scenes in self.SCENES.items():
+            scene_ids = {}
+            for scene in scenes:
+                prefix = {
+                    "portrait_anatomy": "portrait",
+                    "text_product": "text",
+                    "spatial_composition": "spatial",
+                    "object_edit": "object_edit",
+                    "appearance_edit": "appearance",
+                    "background_style": "background",
+                }[scene]
+                sample_ids = tuple(f"{prefix}_{index:02d}" for index in range(1, 7))
+                scene_ids[scene] = sample_ids
+                prompt = self.root / f"prompt/{task}/{scene}.txt"
+                prompt.parent.mkdir(parents=True, exist_ok=True)
+                prompt.write_text(
+                    "".join(f"{sample_id}\tPrompt for {sample_id}.\n" for sample_id in sample_ids),
+                    encoding="utf-8",
+                )
+                if task == "TI2I":
+                    for sample_id in sample_ids:
+                        self.write_valid_image(f"ref_images/TI2I/{scene}/{sample_id}.jpg")
+
+            for model in self.MODELS[task]:
+                manifest["tasks"][task][model] = {}
+                for scene, sample_ids in scene_ids.items():
+                    manifest["tasks"][task][model][scene] = {}
+                    for sample_id, tier in zip(sample_ids, self.TIERS[model]):
+                        manifest["tasks"][task][model][scene][sample_id] = {
+                            "tier": tier,
+                            "defect": "none" if tier == "high" else "localized detail defect",
+                        }
+                        self.write_valid_image(
+                            f"results/{task}/{model}/{scene}/{sample_id}.jpg"
+                        )
+
         manifest_path = self.root / "expectations.json"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         return manifest_path
@@ -129,24 +174,31 @@ class GeneratedDatasetToolTests(unittest.TestCase):
 
     def test_validator_reports_unexpected_result_by_relative_path(self):
         manifest = self.build_valid_fixture()
-        self.write_image("results/T2I/Atlas/portrait_anatomy/portrait_02.jpg")
+        self.write_image("results/T2I/Atlas/portrait_anatomy/portrait_07.jpg")
 
         errors = validate_dataset(self.root, manifest)
 
         self.assertIn(
-            "unexpected results/T2I/Atlas/portrait_anatomy/portrait_02.jpg",
+            "unexpected results/T2I/Atlas/portrait_anatomy/portrait_07.jpg",
             errors,
         )
 
     def test_validator_reports_prompt_and_image_id_mismatch(self):
         manifest = self.build_valid_fixture()
         prompt = self.root / "prompt/T2I/portrait_anatomy.txt"
-        prompt.write_text("portrait_02\tA different ID.\n", encoding="utf-8")
+        prompt.write_text(
+            "portrait_07\tA different ID.\n"
+            + "".join(
+                f"portrait_{index:02d}\tPrompt for portrait_{index:02d}.\n"
+                for index in range(2, 7)
+            ),
+            encoding="utf-8",
+        )
 
         errors = validate_dataset(self.root, manifest)
 
         self.assertIn(
-            "ID mismatch prompt/T2I/portrait_anatomy.txt: missing portrait_01; unexpected portrait_02",
+            "ID mismatch prompt/T2I/portrait_anatomy.txt: missing portrait_01; unexpected portrait_07",
             errors,
         )
 
@@ -197,6 +249,99 @@ class GeneratedDatasetToolTests(unittest.TestCase):
         errors = validate_dataset(self.root, manifest_path)
 
         self.assertIn("malformed manifest image contract", errors)
+
+    def test_validator_enforces_canonical_models_scenes_and_totals(self):
+        manifest_path = self.build_valid_fixture()
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["tasks"]["T2I"]["Rogue"] = manifest["tasks"]["T2I"].pop("Atlas")
+        manifest["tasks"]["TI2I"]["Mosaic"]["rogue_scene"] = (
+            manifest["tasks"]["TI2I"]["Mosaic"].pop("background_style")
+        )
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        errors = validate_dataset(self.root, manifest_path, check_images=False)
+
+        self.assertIn(
+            "invalid models tasks/T2I: expected Atlas, Beacon, Cipher; got Beacon, Cipher, Rogue",
+            errors,
+        )
+        self.assertIn(
+            "invalid scenes tasks/TI2I/Mosaic: expected appearance_edit, background_style, object_edit; "
+            "got appearance_edit, object_edit, rogue_scene",
+            errors,
+        )
+
+    def test_validator_enforces_final_dataset_totals(self):
+        manifest_path = self.build_valid_fixture()
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        del manifest["tasks"]["T2I"]["Atlas"]["portrait_anatomy"]["portrait_01"]
+        for model in self.MODELS["TI2I"]:
+            del manifest["tasks"]["TI2I"][model]["object_edit"]["object_edit_01"]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        errors = validate_dataset(self.root, manifest_path, check_images=False)
+
+        self.assertIn("invalid output total tasks/T2I: expected 54, got 53", errors)
+        self.assertIn("invalid reference total tasks/TI2I: expected 18, got 17", errors)
+        self.assertIn("invalid output total tasks/TI2I: expected 36, got 34", errors)
+
+    def test_validator_enforces_manifest_quality_85(self):
+        manifest_path = self.build_valid_fixture()
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["image"]["quality"] = 75
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        errors = validate_dataset(self.root, manifest_path, check_images=False)
+
+        self.assertIn("malformed manifest image contract", errors)
+
+    def test_validator_rejects_jpeg_not_encoded_at_quality_85(self):
+        manifest = self.build_valid_fixture()
+        path = self.root / "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg"
+        Image.new("RGB", (768, 768), "red").save(path, format="JPEG", quality=75)
+
+        errors = validate_dataset(self.root, manifest)
+
+        self.assertIn(
+            "invalid results/T2I/Atlas/portrait_anatomy/portrait_01.jpg: "
+            "JPEG quantization does not match quality 85",
+            errors,
+        )
+
+    def test_validator_rejects_all_pillow_image_metadata(self):
+        manifest = self.build_valid_fixture()
+        path = self.root / "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg"
+        self.write_image(
+            "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg",
+            icc_profile=b"fake-icc",
+            xmp=b"<x:xmpmeta/>",
+            comment=b"generated fixture",
+        )
+
+        errors = validate_dataset(self.root, manifest)
+
+        self.assertIn(
+            "invalid results/T2I/Atlas/portrait_anatomy/portrait_01.jpg: "
+            "metadata present (comment, icc_profile, xmp)",
+            errors,
+        )
+
+    def test_validator_recursively_rejects_every_unexpected_prompt_tree_file(self):
+        manifest = self.build_valid_fixture()
+        unexpected = (
+            "prompt/T2I/nested/rogue.txt",
+            "prompt/TI2I/notes.md",
+        )
+        for relative_path in unexpected:
+            path = self.root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("unexpected", encoding="utf-8")
+
+        errors = validate_dataset(self.root, manifest, check_images=False)
+
+        for relative_path in unexpected:
+            with self.subTest(relative_path=relative_path):
+                self.assertIn(f"unexpected {relative_path}", errors)
 
     def test_validator_uses_separate_prompt_root_without_checking_images(self):
         manifest = self.build_valid_fixture()

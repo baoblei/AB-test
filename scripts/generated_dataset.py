@@ -5,6 +5,7 @@ import json
 import re
 import sys
 from collections import Counter
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -12,6 +13,7 @@ from PIL import Image, ImageDraw, ImageOps
 
 
 IMAGE_SIZE = (768, 768)
+IMAGE_QUALITY = 85
 SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 VALID_TIERS = {"high", "medium", "weak"}
 SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -27,6 +29,32 @@ QUALITY_PROFILES = {
         "Prism": Counter({"medium": 2, "weak": 4}),
     },
 }
+CANONICAL_SCENES = {
+    "T2I": ("portrait_anatomy", "text_product", "spatial_composition"),
+    "TI2I": ("object_edit", "appearance_edit", "background_style"),
+}
+EXPECTED_OUTPUT_TOTALS = {"T2I": 54, "TI2I": 36}
+EXPECTED_REFERENCE_TOTAL = 18
+JPEG_STRUCTURAL_INFO = {
+    "jfif",
+    "jfif_version",
+    "jfif_unit",
+    "jfif_density",
+    "dpi",
+    "progressive",
+    "progression",
+}
+
+
+def _quality_85_quantization() -> dict[int, tuple[int, ...]]:
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8)).save(buffer, "JPEG", quality=IMAGE_QUALITY)
+    buffer.seek(0)
+    with Image.open(buffer) as image:
+        return {table_id: tuple(values) for table_id, values in image.quantization.items()}
+
+
+QUALITY_85_QUANTIZATION = _quality_85_quantization()
 
 
 def load_prompt(path: Path) -> dict[str, str]:
@@ -56,7 +84,7 @@ def normalize_jpeg(source: Path, destination: Path) -> None:
             IMAGE_SIZE,
             method=Image.Resampling.LANCZOS,
         )
-        image.save(destination, "JPEG", quality=85, optimize=True, exif=b"")
+        image.save(destination, "JPEG", quality=IMAGE_QUALITY, optimize=True, exif=b"")
 
 
 def _relative(path: Path, root: Path) -> str:
@@ -71,6 +99,7 @@ def _expected_image_contract(manifest: dict[str, Any], errors: list[str]) -> tup
     image_format = image.get("format")
     mode = image.get("mode")
     size = image.get("size")
+    quality = image.get("quality")
     if size is None and isinstance(image.get("width"), int) and isinstance(image.get("height"), int):
         size = [image["width"], image["height"]]
     if (
@@ -82,6 +111,7 @@ def _expected_image_contract(manifest: dict[str, Any], errors: list[str]) -> tup
         or image_format.upper() != "JPEG"
         or mode != "RGB"
         or size != list(IMAGE_SIZE)
+        or quality != IMAGE_QUALITY
     ):
         errors.append("malformed manifest image contract")
         return "JPEG", "RGB", IMAGE_SIZE
@@ -184,7 +214,7 @@ def _validate_prompt_contract(
     for task in ("T2I", "TI2I"):
         expected_scenes = _scene_ids(parsed.get(task, {}))
         task_prompt_root = prompt_root / "prompt" / task
-        actual_prompt_files = set(task_prompt_root.glob("*.txt")) if task_prompt_root.is_dir() else set()
+        actual_prompt_files = _all_files(task_prompt_root)
         expected_prompt_files = {task_prompt_root / f"{scene}.txt" for scene in expected_scenes}
         for path in sorted(expected_prompt_files - actual_prompt_files):
             errors.append(f"missing {_relative(path, prompt_root)}")
@@ -245,6 +275,52 @@ def _validate_quality_profiles(
                     )
 
 
+def _validate_canonical_shape(
+    parsed: dict[str, dict[str, dict[str, dict[str, dict[str, str]]]]],
+    errors: list[str],
+) -> None:
+    for task in ("T2I", "TI2I"):
+        models = parsed.get(task, {})
+        expected_models = set(QUALITY_PROFILES[task])
+        actual_models = set(models)
+        if actual_models != expected_models:
+            errors.append(
+                f"invalid models tasks/{task}: expected {', '.join(sorted(expected_models))}; "
+                f"got {', '.join(sorted(actual_models))}"
+            )
+
+        expected_scenes = set(CANONICAL_SCENES[task])
+        for model, scenes in models.items():
+            actual_scenes = set(scenes)
+            if actual_scenes != expected_scenes:
+                errors.append(
+                    f"invalid scenes tasks/{task}/{model}: "
+                    f"expected {', '.join(sorted(expected_scenes))}; "
+                    f"got {', '.join(sorted(actual_scenes))}"
+                )
+
+        output_total = sum(
+            len(samples)
+            for scenes in models.values()
+            for samples in scenes.values()
+        )
+        expected_output_total = EXPECTED_OUTPUT_TOTALS[task]
+        if output_total != expected_output_total:
+            errors.append(
+                f"invalid output total tasks/{task}: expected {expected_output_total}, "
+                f"got {output_total}"
+            )
+
+    reference_total = sum(
+        len(sample_ids) for sample_ids in _scene_ids(parsed.get("TI2I", {})).values()
+    )
+    if reference_total != EXPECTED_REFERENCE_TOTAL:
+        errors.append(
+            f"invalid reference total tasks/TI2I: expected {EXPECTED_REFERENCE_TOTAL}, "
+            f"got {reference_total}"
+        )
+
+
 def _all_files(root: Path) -> set[Path]:
     return {path for path in root.rglob("*") if path.is_file()} if root.is_dir() else set()
 
@@ -265,6 +341,19 @@ def _validate_image(path: Path, relative_path: str, contract: tuple[str, str, tu
                 )
             if image.getexif():
                 errors.append(f"invalid {relative_path}: EXIF metadata present")
+            metadata_keys = sorted(set(image.info) - JPEG_STRUCTURAL_INFO)
+            if metadata_keys:
+                errors.append(
+                    f"invalid {relative_path}: metadata present ({', '.join(metadata_keys)})"
+                )
+            quantization = {
+                table_id: tuple(values)
+                for table_id, values in getattr(image, "quantization", {}).items()
+            }
+            if image.format == "JPEG" and quantization != QUALITY_85_QUANTIZATION:
+                errors.append(
+                    f"invalid {relative_path}: JPEG quantization does not match quality 85"
+                )
     except (OSError, ValueError) as exc:
         errors.append(f"invalid {relative_path}: unreadable image ({exc})")
 
@@ -284,6 +373,7 @@ def validate_dataset(
         return errors
     image_contract = _expected_image_contract(manifest, errors)
     parsed, expected_results = _parse_expectations(manifest, errors)
+    _validate_canonical_shape(parsed, errors)
     _validate_prompt_contract(prompt_root, parsed, errors)
     _validate_quality_profiles(parsed, errors)
     if not check_images:
