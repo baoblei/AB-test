@@ -1,0 +1,6 @@
+background_01	Replace the plain studio background with a soft sunset beach while preserving the potted cactus exactly in shape, scale, position, and lighting direction.
+background_02	Change the daytime city background to a rainy evening with wet reflections. Preserve the adult cyclist, bicycle, pose, clothing, and framing.
+background_03	Replace the indoor wall behind the red sneaker with a clean pale-blue paper backdrop. Preserve the sneaker, pedestal, shadows, and product details.
+background_04	Change the forest background to a snowy winter forest. Preserve the wooden bench exactly, including its shape, position, texture, and camera angle.
+background_05	Restyle the background as a flat pastel illustration while keeping the foreground glass perfume bottle photorealistic and unchanged.
+background_06	Change the kitchen lighting from neutral daylight to warm golden-hour light. Preserve every object, material, geometry, and camera position.

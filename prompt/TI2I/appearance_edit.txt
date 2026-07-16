@@ -1,0 +1,6 @@
+appearance_01	Change only the armchair upholstery from beige fabric to deep-blue velvet. Preserve its shape, seams, room, floor, and lighting.
+appearance_02	Change only the handbag material from brown leather to woven natural straw. Preserve its silhouette, handles, table, and background.
+appearance_03	Change only the jacket from gray to bright red. Preserve the adult subject's face, pose, body, jeans, street, and lighting.
+appearance_04	Change only the ceramic teapot from glossy white to matte forest green. Preserve its exact shape, cup, table, and shadows.
+appearance_05	Turn only the silver bicycle frame pastel pink. Preserve the wheels, handlebars, basket, street, and all geometry.
+appearance_06	Change only the kitchen cabinet doors from white paint to light oak wood. Preserve handles, countertop, appliances, layout, and lighting.

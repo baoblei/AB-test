@@ -332,18 +332,32 @@ class DatasetReferenceArchiveTests(unittest.TestCase):
 
 
 class RepositorySmokeDatasetTests(unittest.TestCase):
-    def test_open_dataset_is_task_specific_and_ti2i_zip_matches_real_references(self):
-        t2i_prompt = Path("prompt/T2I/open.txt").read_bytes()
-        ti2i_prompt = Path("prompt/TI2I/open.txt").read_bytes()
-        self.assertNotEqual(t2i_prompt, ti2i_prompt)
-        self.assertEqual(list_datasets("T2I"), [{"scene": "open", "prompt_count": 5}])
-        self.assertEqual(list_datasets("TI2I"), [{"scene": "open", "prompt_count": 2}])
+    def test_controlled_datasets_expose_three_six_prompt_scenes_per_task(self):
+        self.assertEqual(
+            list_datasets("T2I"),
+            [
+                {"scene": "portrait_anatomy", "prompt_count": 6},
+                {"scene": "spatial_composition", "prompt_count": 6},
+                {"scene": "text_product", "prompt_count": 6},
+            ],
+        )
+        self.assertEqual(
+            list_datasets("TI2I"),
+            [
+                {"scene": "appearance_edit", "prompt_count": 6},
+                {"scene": "background_style", "prompt_count": 6},
+                {"scene": "object_edit", "prompt_count": 6},
+            ],
+        )
 
-        artifact = create_dataset_artifact("TI2I", "open", include_ref=True)
-        self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
-        with zipfile.ZipFile(artifact.path) as archive:
-            self.assertEqual(
-                archive.namelist(),
-                ["open.txt", "ref_images/scene1.jpg", "ref_images/scene2.jpg"],
-            )
-            self.assertEqual(archive.read("open.txt"), ti2i_prompt)
+    def test_prompt_only_artifacts_match_committed_prompt_bytes(self):
+        cases = (
+            ("T2I", "portrait_anatomy"),
+            ("TI2I", "object_edit"),
+        )
+        for task, scene in cases:
+            with self.subTest(task=task, scene=scene):
+                prompt = Path(f"prompt/{task}/{scene}.txt").read_bytes()
+                artifact = create_dataset_artifact(task, scene, include_ref=False)
+                self.addCleanup(shutil.rmtree, artifact.cleanup_dir, True)
+                self.assertEqual(Path(artifact.path).read_bytes(), prompt)

@@ -1,0 +1,418 @@
+{
+  "version": 1,
+  "image": {
+    "format": "JPEG",
+    "mode": "RGB",
+    "size": [
+      768,
+      768
+    ],
+    "quality": 85
+  },
+  "tasks": {
+    "T2I": {
+      "Atlas": {
+        "portrait_anatomy": {
+          "portrait_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "portrait_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "portrait_03": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "portrait_04": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "portrait_05": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "portrait_06": {
+            "tier": "medium",
+            "defect": "drummer's right hand merges with the drumstick"
+          }
+        },
+        "text_product": {
+          "text_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "text_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "text_03": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "text_04": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "text_05": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "text_06": {
+            "tier": "medium",
+            "defect": "24H rendered as 2AH"
+          }
+        },
+        "spatial_composition": {
+          "spatial_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "spatial_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "spatial_03": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "spatial_04": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "spatial_05": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "spatial_06": {
+            "tier": "medium",
+            "defect": "a fourth red stool was added"
+          }
+        }
+      },
+      "Beacon": {
+        "portrait_anatomy": {
+          "portrait_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "portrait_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "portrait_03": {
+            "tier": "medium",
+            "defect": "extended right leg bends unnaturally"
+          },
+          "portrait_04": {
+            "tier": "medium",
+            "defect": "lid-supporting hand has fused fingers"
+          },
+          "portrait_05": {
+            "tier": "medium",
+            "defect": "left hand holding the seedling is missing a finger"
+          },
+          "portrait_06": {
+            "tier": "weak",
+            "defect": "drummer's right hand merges with the drumstick"
+          }
+        },
+        "text_product": {
+          "text_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "text_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "text_03": {
+            "tier": "medium",
+            "defect": "BAKE LAB rendered as BAKE LAR"
+          },
+          "text_04": {
+            "tier": "medium",
+            "defect": "ROAST rendered as ROASI"
+          },
+          "text_05": {
+            "tier": "medium",
+            "defect": "CLOUD rendered as CLCUD"
+          },
+          "text_06": {
+            "tier": "weak",
+            "defect": "24H rendered as 2AH"
+          }
+        },
+        "spatial_composition": {
+          "spatial_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "spatial_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "spatial_03": {
+            "tier": "medium",
+            "defect": "red mailbox moved to the left of the bench"
+          },
+          "spatial_04": {
+            "tier": "medium",
+            "defect": "an extra book was added to the top shelf"
+          },
+          "spatial_05": {
+            "tier": "medium",
+            "defect": "right bedside table is missing"
+          },
+          "spatial_06": {
+            "tier": "weak",
+            "defect": "a fourth red stool was added"
+          }
+        }
+      },
+      "Cipher": {
+        "portrait_anatomy": {
+          "portrait_01": {
+            "tier": "medium",
+            "defect": "right hand has six fingers"
+          },
+          "portrait_02": {
+            "tier": "weak",
+            "defect": "scarf-tying hand merges with the other person's neck"
+          },
+          "portrait_03": {
+            "tier": "weak",
+            "defect": "extended right leg bends unnaturally"
+          },
+          "portrait_04": {
+            "tier": "weak",
+            "defect": "lid-supporting hand has fused fingers"
+          },
+          "portrait_05": {
+            "tier": "weak",
+            "defect": "left hand holding the seedling is missing a finger"
+          },
+          "portrait_06": {
+            "tier": "weak",
+            "defect": "drummer's right hand merges with the drumstick"
+          }
+        },
+        "text_product": {
+          "text_01": {
+            "tier": "medium",
+            "defect": "FRESH & CALM rendered as FRESH & CALN"
+          },
+          "text_02": {
+            "tier": "weak",
+            "defect": "FRIDAY rendered as FRIDAI"
+          },
+          "text_03": {
+            "tier": "weak",
+            "defect": "BAKE LAB rendered as BAKE LAR"
+          },
+          "text_04": {
+            "tier": "weak",
+            "defect": "ROAST rendered as ROASI"
+          },
+          "text_05": {
+            "tier": "weak",
+            "defect": "CLOUD rendered as CLCUD"
+          },
+          "text_06": {
+            "tier": "weak",
+            "defect": "24H rendered as 2AH"
+          }
+        },
+        "spatial_composition": {
+          "spatial_01": {
+            "tier": "medium",
+            "defect": "yellow cone moved in front of the cube and sphere"
+          },
+          "spatial_02": {
+            "tier": "weak",
+            "defect": "a fifth wooden chair was added"
+          },
+          "spatial_03": {
+            "tier": "weak",
+            "defect": "red mailbox moved to the left of the bench"
+          },
+          "spatial_04": {
+            "tier": "weak",
+            "defect": "an extra book was added to the top shelf"
+          },
+          "spatial_05": {
+            "tier": "weak",
+            "defect": "right bedside table is missing"
+          },
+          "spatial_06": {
+            "tier": "weak",
+            "defect": "a fourth red stool was added"
+          }
+        }
+      }
+    },
+    "TI2I": {
+      "Mosaic": {
+        "object_edit": {
+          "object_edit_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "object_edit_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "object_edit_03": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "object_edit_04": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "object_edit_05": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "object_edit_06": {
+            "tier": "medium",
+            "defect": "tray shape changed"
+          }
+        },
+        "appearance_edit": {
+          "appearance_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "appearance_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "appearance_03": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "appearance_04": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "appearance_05": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "appearance_06": {
+            "tier": "medium",
+            "defect": "countertop color changed"
+          }
+        },
+        "background_style": {
+          "background_01": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "background_02": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "background_03": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "background_04": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "background_05": {
+            "tier": "high",
+            "defect": "none"
+          },
+          "background_06": {
+            "tier": "medium",
+            "defect": "cabinet geometry shifted"
+          }
+        }
+      },
+      "Prism": {
+        "object_edit": {
+          "object_edit_01": {
+            "tier": "medium",
+            "defect": "unrequested cup color changed"
+          },
+          "object_edit_02": {
+            "tier": "medium",
+            "defect": "unrequested shelf books changed"
+          },
+          "object_edit_03": {
+            "tier": "weak",
+            "defect": "notebook moved from its original position"
+          },
+          "object_edit_04": {
+            "tier": "weak",
+            "defect": "faucet reflection changed"
+          },
+          "object_edit_05": {
+            "tier": "weak",
+            "defect": "bicycle basket was removed"
+          },
+          "object_edit_06": {
+            "tier": "weak",
+            "defect": "tray shape changed"
+          }
+        },
+        "appearance_edit": {
+          "appearance_01": {
+            "tier": "medium",
+            "defect": "armchair seams changed"
+          },
+          "appearance_02": {
+            "tier": "medium",
+            "defect": "handbag handles became shorter"
+          },
+          "appearance_03": {
+            "tier": "weak",
+            "defect": "subject face drifted"
+          },
+          "appearance_04": {
+            "tier": "weak",
+            "defect": "teapot handle shape changed"
+          },
+          "appearance_05": {
+            "tier": "weak",
+            "defect": "bicycle front wheel warped"
+          },
+          "appearance_06": {
+            "tier": "weak",
+            "defect": "countertop color changed"
+          }
+        },
+        "background_style": {
+          "background_01": {
+            "tier": "medium",
+            "defect": "cactus scale increased"
+          },
+          "background_02": {
+            "tier": "medium",
+            "defect": "cyclist clothing changed"
+          },
+          "background_03": {
+            "tier": "weak",
+            "defect": "sneaker shadow disappeared"
+          },
+          "background_04": {
+            "tier": "weak",
+            "defect": "bench texture changed"
+          },
+          "background_05": {
+            "tier": "weak",
+            "defect": "perfume bottle became illustrated"
+          },
+          "background_06": {
+            "tier": "weak",
+            "defect": "cabinet geometry shifted"
+          }
+        }
+      }
+    }
+  }
+}

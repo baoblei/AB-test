@@ -1,0 +1,6 @@
+spatial_01	On a white tabletop, place one red cube to the left of one blue sphere, with a small yellow cone centered behind both objects; exactly three objects, soft studio shadows.
+spatial_02	Bright dining room with exactly four wooden chairs around a round table; a green vase is centered on the table and a pendant lamp hangs directly above it, realistic interior photograph.
+spatial_03	Quiet city sidewalk where a blue bicycle stands behind a wooden bench, a red mailbox is to the right of the bench, and one tree is to the left; all objects fully visible.
+spatial_04	White wall shelf with exactly two levels: three books and one clock on the top level, two ceramic bowls on the bottom level; front-facing catalog photograph.
+spatial_05	Calm bedroom with a bed centered between two identical bedside tables; one lamp on each table, a framed mountain print above the bed, symmetrical composition.
+spatial_06	Cozy cafe counter scene: a glass pastry case in front of the barista, an espresso machine behind the barista, and exactly three red stools aligned along the counter.

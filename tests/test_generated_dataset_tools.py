@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from io import BytesIO
 import tempfile
 import unittest
@@ -394,6 +395,48 @@ class GeneratedDatasetToolTests(unittest.TestCase):
             self.assertEqual(image.mode, "RGB")
             self.assertEqual(image.width, 480)
             self.assertGreater(image.height, 240)
+
+
+class GeneratedDatasetRepositoryContractTests(unittest.TestCase):
+    def test_repository_manifest_has_expected_shape(self):
+        manifest_path = Path("tests/fixtures/generated_dataset_expectations.json")
+        errors = validate_dataset(Path("."), manifest_path, check_images=False)
+        self.assertEqual(errors, [])
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        expected_scenes = {
+            "T2I": {"portrait_anatomy", "text_product", "spatial_composition"},
+            "TI2I": {"object_edit", "appearance_edit", "background_style"},
+        }
+        expected_ids = {
+            "portrait_anatomy": {f"portrait_{index:02d}" for index in range(1, 7)},
+            "text_product": {f"text_{index:02d}" for index in range(1, 7)},
+            "spatial_composition": {f"spatial_{index:02d}" for index in range(1, 7)},
+            "object_edit": {f"object_edit_{index:02d}" for index in range(1, 7)},
+            "appearance_edit": {f"appearance_{index:02d}" for index in range(1, 7)},
+            "background_style": {f"background_{index:02d}" for index in range(1, 7)},
+        }
+        expected_profiles = {
+            "Atlas": Counter({"high": 5, "medium": 1}),
+            "Beacon": Counter({"high": 2, "medium": 3, "weak": 1}),
+            "Cipher": Counter({"medium": 1, "weak": 5}),
+            "Mosaic": Counter({"high": 5, "medium": 1}),
+            "Prism": Counter({"medium": 2, "weak": 4}),
+        }
+        self.assertEqual(set(manifest["tasks"]), {"T2I", "TI2I"})
+        self.assertEqual(set(manifest["tasks"]["T2I"]), {"Atlas", "Beacon", "Cipher"})
+        self.assertEqual(set(manifest["tasks"]["TI2I"]), {"Mosaic", "Prism"})
+        for task, models in manifest["tasks"].items():
+            for model, scenes in models.items():
+                with self.subTest(task=task, model=model):
+                    self.assertEqual(set(scenes), expected_scenes[task])
+                for scene, samples in scenes.items():
+                    with self.subTest(task=task, model=model, scene=scene):
+                        self.assertEqual(set(samples), expected_ids[scene])
+                        self.assertEqual(
+                            Counter(expectation["tier"] for expectation in samples.values()),
+                            expected_profiles[model],
+                        )
 
 
 if __name__ == "__main__":

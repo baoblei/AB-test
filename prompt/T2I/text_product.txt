@@ -1,0 +1,6 @@
+text_01	Minimal mint-green beverage carton on a cream pedestal. The front shows exactly the large words "MINT DAY" and the small line "FRESH & CALM" in clean dark-green type; no other text, realistic product photograph.
+text_02	Night market poster pinned to a brick wall, with exactly three readable lines: "NIGHT MARKET", "FRIDAY", and "8 PM"; orange and navy geometric design, straight-on photograph.
+text_03	Small modern bakery storefront at morning. Above the door is one clearly readable sign saying exactly "BAKE LAB"; no other words or logos, realistic street photograph.
+text_04	Matte black coffee bag standing upright on a wooden counter. The label contains exactly "NORTH" on the first line and "ROAST" on the second line; simple white typography, product photograph.
+text_05	Transparent sparkling-water bottle with a pale-blue label reading exactly "CLOUD"; silver cap, water droplets, blue gradient background, no additional text.
+text_06	A clean transit ticket on a white table, printed with exactly "CITY PASS" and "24H" plus a simple blue arrow icon; crisp overhead product photograph.

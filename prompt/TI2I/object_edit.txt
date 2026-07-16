@@ -1,0 +1,6 @@
+object_edit_01	Add one small red apple on the empty white plate. Preserve the plate, table, cup, lighting, framing, and every other object exactly.
+object_edit_02	Remove the blue vase from the shelf and reconstruct the wall behind it. Preserve all books, the plant, shelf geometry, and lighting.
+object_edit_03	Replace only the yellow desk lamp with a matte-black lamp of the same size and position. Preserve the desk, notebook, chair, and room.
+object_edit_04	Add a folded green towel to the right side of the bathroom sink. Preserve the mirror, faucet, soap bottle, tiles, and reflections.
+object_edit_05	Remove the orange traffic cone beside the bicycle. Preserve the bicycle, pavement, wall, shadows, and camera framing.
+object_edit_06	Replace the white mug on the tray with a clear glass tumbler in the same position. Preserve the tray, book, sofa, and lighting.
