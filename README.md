@@ -115,7 +115,7 @@ ab_test/
 - `results/TI2I` 保存编辑模型输出
 - `prompt/T2I`、`prompt/TI2I` 分别保存对应任务的 prompt
 - `ref_images/TI2I` 保存编辑任务参考图
-- 仓库自带的 `open` smoke 数据也按任务拆分：T2I prompt 可独立使用，TI2I prompt ID 与 `ref_images/TI2I/open` 严格一一对应。
+- 仓库自带的示例数据也按任务拆分：T2I 使用 `Atlas`、`Beacon`、`Cipher` 三个模型和 `portrait_anatomy`、`spatial_composition`、`text_product` 三个场景；TI2I 使用 `Mosaic`、`Prism` 两个模型和 `appearance_edit`、`background_style`、`object_edit` 三个场景。TI2I prompt ID 与对应场景的 `ref_images/TI2I/<scene>` 严格一一对应。
 - `ref_images/T2I` 当前不是必须目录，但系统已预留
 - `main.py` 只保留 FastAPI 应用、路由和页面入口
 - `app_core/config.py` 维护任务类型、评测维度和坏例标签
@@ -130,28 +130,32 @@ ab_test/
 
 ```text
 results/T2I/
-├── A/
-│   └── open/
-│       ├── scene1.jpg
-│       └── scene2.jpg
-└── B/
-    └── open/
-        ├── scene1.jpg
-        └── scene2.jpg
+├── Atlas/
+│   └── portrait_anatomy/
+│       ├── portrait_01.jpg
+│       └── portrait_02.jpg
+├── Beacon/
+│   └── spatial_composition/
+│       ├── spatial_01.jpg
+│       └── spatial_02.jpg
+└── Cipher/
+    └── text_product/
+        ├── text_01.jpg
+        └── text_02.jpg
 ```
 
 ### 2. TI2I 结果目录
 
 ```text
 results/TI2I/
-├── D/
-│   └── open/
-│       ├── scene1.jpg
-│       └── scene2.jpg
-└── E/
-    └── open/
-        ├── scene1.jpg
-        └── scene2.jpg
+├── Mosaic/
+│   └── object_edit/
+│       ├── object_edit_01.jpg
+│       └── object_edit_02.jpg
+└── Prism/
+    └── appearance_edit/
+        ├── appearance_01.jpg
+        └── appearance_02.jpg
 ```
 
 ### 3. Prompt 文件
@@ -161,15 +165,15 @@ Prompt 文件按场景存储，一个场景一个 `.txt` 文件。
 示例：
 
 ```text
-prompt/T2I/open.txt
-prompt/TI2I/open.txt
+prompt/T2I/portrait_anatomy.txt
+prompt/TI2I/object_edit.txt
 ```
 
 文件内容格式：
 
 ```text
-scene1    这里是 scene1 对应的 prompt
-scene2    这里是 scene2 对应的 prompt
+portrait_01    这里是 portrait_01 对应的 prompt
+portrait_02    这里是 portrait_02 对应的 prompt
 ```
 
 要求：
@@ -178,15 +182,15 @@ scene2    这里是 scene2 对应的 prompt
 - 第二列为 prompt 文本
 - 使用制表符 `\t` 分隔
 
-例如图片是 `scene1.jpg`，系统会用 `scene1` 去匹配 prompt。
+例如图片是 `portrait_01.jpg`，系统会用 `portrait_01` 去匹配 prompt。
 
 ### 4. TI2I 参考图目录
 
 ```text
 ref_images/TI2I/
-└── open/
-    ├── scene1.jpg
-    └── scene2.jpg
+└── object_edit/
+    ├── object_edit_01.jpg
+    └── object_edit_02.jpg
 ```
 
 参考图文件名需要和结果图文件名一致，这样评测页和看板才能正确关联展示。
