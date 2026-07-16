@@ -129,18 +129,43 @@ class DashboardExportUiTests(unittest.TestCase):
                 children: [],
                 replaceChildren(...children) {{ this.children = children; }}
             }};
+            const classFilter = {{
+                value: "",
+                replaceChildren(...children) {{ this.children = children; }}
+            }};
+            const modelFilter = {{
+                value: "",
+                replaceChildren(...children) {{ this.children = children; }}
+            }};
             const status = {{ textContent: "" }};
             const document = {{
-                getElementById(id) {{ return id === "ranking-scene" ? select : status; }},
+                getElementById(id) {{
+                    if (id === "ranking-scene") return select;
+                    if (id === "filter-class") return classFilter;
+                    if (id === "filter-model") return modelFilter;
+                    return status;
+                }},
                 createElement(tag) {{ return {{ tag, value: "", textContent: "" }}; }}
             }};
-            const state = {{ taskType: "T2I", overview: null, pairs: [] }};
+            const state = {{
+                taskType: "T2I",
+                overview: null,
+                pairs: [],
+                modelCatalogs: {{ T2I: [] }}
+            }};
             const api = async () => ({{ json: async () => ({{
-                pairs: [{{ scenes: [{{ scene: {json.dumps(malicious_scene)} }}] }}]
+                pairs: [{{
+                    v_a: "legacy-a",
+                    v_b: "legacy-b",
+                    scenes: [{{ scene: {json.dumps(malicious_scene)} }}]
+                }}]
             }}) }});
             const applyFilters = () => {{}};
             const formatBeijingNow = () => "now";
             {self.function_source("replaceSelectOptions")}
+            {self.function_source("uniqueSorted")}
+            {self.function_source("catalogEntryFor")}
+            {self.function_source("syncOverviewModelFilters")}
             async {self.function_source("loadDashboard")}
             loadDashboard().then(() => console.log(JSON.stringify(select.children)));
         """

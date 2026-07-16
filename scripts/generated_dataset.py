@@ -20,13 +20,13 @@ SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 GENERIC_DEFECTS = {"bad", "bad quality", "low quality", "none"}
 QUALITY_PROFILES = {
     "T2I": {
-        "Atlas": Counter({"high": 5, "medium": 1}),
-        "Beacon": Counter({"high": 2, "medium": 3, "weak": 1}),
-        "Cipher": Counter({"medium": 1, "weak": 5}),
+        "test_Atlas_default": Counter({"high": 5, "medium": 1}),
+        "test_Beacon_default": Counter({"high": 2, "medium": 3, "weak": 1}),
+        "test_Cipher_default": Counter({"medium": 1, "weak": 5}),
     },
     "TI2I": {
-        "Mosaic": Counter({"high": 5, "medium": 1}),
-        "Prism": Counter({"medium": 2, "weak": 4}),
+        "test_Mosaic_default": Counter({"high": 5, "medium": 1}),
+        "test_Prism_default": Counter({"medium": 2, "weak": 4}),
     },
 }
 CANONICAL_SCENES = {

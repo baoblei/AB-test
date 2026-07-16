@@ -115,7 +115,8 @@ ab_test/
 - `results/TI2I` 保存编辑模型输出
 - `prompt/T2I`、`prompt/TI2I` 分别保存对应任务的 prompt
 - `ref_images/TI2I` 保存编辑任务参考图
-- 仓库自带的示例数据也按任务拆分：T2I 使用 `Atlas`、`Beacon`、`Cipher` 三个模型和 `portrait_anatomy`、`spatial_composition`、`text_product` 三个场景；TI2I 使用 `Mosaic`、`Prism` 两个模型和 `appearance_edit`、`background_style`、`object_edit` 三个场景。TI2I prompt ID 与对应场景的 `ref_images/TI2I/<scene>` 严格一一对应。
+- 仓库自带的示例数据也按任务拆分：T2I 使用 `test_Atlas_default`、`test_Beacon_default`、`test_Cipher_default` 三个模型和 `portrait_anatomy`、`spatial_composition`、`text_product` 三个场景；TI2I 使用 `test_Mosaic_default`、`test_Prism_default` 两个模型和 `appearance_edit`、`background_style`、`object_edit` 三个场景。TI2I prompt ID 与对应场景的 `ref_images/TI2I/<scene>` 严格一一对应。
+- 模型结果目录统一采用 `<class>_<model>_<version>`。例如 `test_Atlas_default` 在界面中拆分为 `class=test`、`model=Atlas`、`version=default`；三个字段自身均不能包含下划线。
 - `ref_images/T2I` 当前不是必须目录，但系统已预留
 - `main.py` 只保留 FastAPI 应用、路由和页面入口
 - `app_core/config.py` 维护任务类型、评测维度和坏例标签
@@ -130,7 +131,7 @@ ab_test/
 
 ```text
 results/T2I/
-└── <Atlas|Beacon|Cipher>/
+└── <test_Atlas_default|test_Beacon_default|test_Cipher_default>/
     ├── portrait_anatomy/
     │   └── portrait_01.jpg ... portrait_06.jpg
     ├── spatial_composition/
@@ -139,13 +140,13 @@ results/T2I/
         └── text_01.jpg ... text_06.jpg
 ```
 
-`Atlas`、`Beacon`、`Cipher` 每个模型目录都包含上述三个完整场景。
+`test_Atlas_default`、`test_Beacon_default`、`test_Cipher_default` 每个模型目录都包含上述三个完整场景。
 
 ### 2. TI2I 结果目录
 
 ```text
 results/TI2I/
-└── <Mosaic|Prism>/
+└── <test_Mosaic_default|test_Prism_default>/
     ├── appearance_edit/
     │   └── appearance_01.jpg ... appearance_06.jpg
     ├── background_style/
@@ -154,7 +155,7 @@ results/TI2I/
         └── object_edit_01.jpg ... object_edit_06.jpg
 ```
 
-`Mosaic`、`Prism` 每个模型目录都包含上述三个完整场景。
+`test_Mosaic_default`、`test_Prism_default` 每个模型目录都包含上述三个完整场景。
 
 ### 3. Prompt 文件
 
@@ -349,7 +350,9 @@ Prompt 格式：
 表单字段：
 
 - `task_type`：`T2I` 或 `TI2I`
-- `version`：模型版本名
+- `class_name`：模型类别，不允许包含下划线
+- `model_name`：模型名称，不允许包含下划线
+- `version`：模型版本，不允许包含下划线
 - `scene`：从已上传测评集场景中下拉选择
 - `file`：结果图 zip
 - `auto_rename`：是否允许按 prompt 图片名前缀自动格式化文件名
