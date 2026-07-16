@@ -331,6 +331,8 @@ class GeneratedDatasetToolTests(unittest.TestCase):
         unexpected = (
             "prompt/T2I/nested/rogue.txt",
             "prompt/TI2I/notes.md",
+            "prompt/rogue.txt",
+            "prompt/Unknown/rogue.txt",
         )
         for relative_path in unexpected:
             path = self.root / relative_path
@@ -342,6 +344,25 @@ class GeneratedDatasetToolTests(unittest.TestCase):
         for relative_path in unexpected:
             with self.subTest(relative_path=relative_path):
                 self.assertIn(f"unexpected {relative_path}", errors)
+
+    def test_validator_rejects_dpi_and_progressive_jpeg_attributes(self):
+        manifest = self.build_valid_fixture()
+        relative_path = "results/T2I/Atlas/portrait_anatomy/portrait_01.jpg"
+        cases = {
+            "dpi": ({"dpi": (300, 300)}, "metadata present (dpi)"),
+            "progressive": (
+                {"progressive": True},
+                "metadata present (progression, progressive)",
+            ),
+        }
+        for name, (save_options, expected) in cases.items():
+            with self.subTest(name=name):
+                self.write_image(relative_path, **save_options)
+
+                errors = validate_dataset(self.root, manifest)
+
+                self.assertIn(f"invalid {relative_path}: {expected}", errors)
+                self.write_valid_image(relative_path)
 
     def test_validator_uses_separate_prompt_root_without_checking_images(self):
         manifest = self.build_valid_fixture()

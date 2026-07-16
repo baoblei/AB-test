@@ -40,9 +40,6 @@ JPEG_STRUCTURAL_INFO = {
     "jfif_version",
     "jfif_unit",
     "jfif_density",
-    "dpi",
-    "progressive",
-    "progression",
 }
 
 
@@ -211,16 +208,24 @@ def _validate_prompt_contract(
     parsed: dict[str, dict[str, dict[str, dict[str, dict[str, str]]]]],
     errors: list[str],
 ) -> None:
+    prompt_tree_root = prompt_root / "prompt"
+    actual_prompt_files = _all_files(prompt_tree_root)
+    expected_prompt_files_by_task = {
+        task: {
+            prompt_tree_root / task / f"{scene}.txt"
+            for scene in _scene_ids(parsed.get(task, {}))
+        }
+        for task in ("T2I", "TI2I")
+    }
+    expected_prompt_files = set().union(*expected_prompt_files_by_task.values())
+    for path in sorted(expected_prompt_files - actual_prompt_files):
+        errors.append(f"missing {_relative(path, prompt_root)}")
+    for path in sorted(actual_prompt_files - expected_prompt_files):
+        errors.append(f"unexpected {_relative(path, prompt_root)}")
+
     for task in ("T2I", "TI2I"):
         expected_scenes = _scene_ids(parsed.get(task, {}))
-        task_prompt_root = prompt_root / "prompt" / task
-        actual_prompt_files = _all_files(task_prompt_root)
-        expected_prompt_files = {task_prompt_root / f"{scene}.txt" for scene in expected_scenes}
-        for path in sorted(expected_prompt_files - actual_prompt_files):
-            errors.append(f"missing {_relative(path, prompt_root)}")
-        for path in sorted(actual_prompt_files - expected_prompt_files):
-            errors.append(f"unexpected {_relative(path, prompt_root)}")
-        for path in sorted(actual_prompt_files & expected_prompt_files):
+        for path in sorted(actual_prompt_files & expected_prompt_files_by_task[task]):
             try:
                 prompt_ids = set(load_prompt(path))
             except (OSError, UnicodeError, ValueError) as exc:
