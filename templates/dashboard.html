@@ -753,7 +753,8 @@
             downloadRequestId: 0,
             exportPairs: [],
             datasets: [],
-            filteredDatasets: []
+            filteredDatasets: [],
+            datasetListRequestId: 0
         };
 
         async function api(url, options) {
@@ -834,14 +835,18 @@
         }
 
         async function loadDatasets(selectedScene = "") {
+            const requestId = ++state.datasetListRequestId;
             const taskType = document.getElementById("dataset-download-task-type").value;
             const message = document.getElementById("dataset-download-msg");
             message.textContent = "正在加载测评集...";
             try {
-                state.datasets = await api(`/api/datasets?task_type=${encodeURIComponent(taskType)}`).then(r => r.json());
+                const datasets = await api(`/api/datasets?task_type=${encodeURIComponent(taskType)}`).then(r => r.json());
+                if (requestId !== state.datasetListRequestId) return;
+                state.datasets = datasets;
                 filterDatasets(selectedScene);
                 message.textContent = state.datasets.length ? "" : "当前任务类型暂无可下载测评集";
             } catch (error) {
+                if (requestId !== state.datasetListRequestId) return;
                 state.datasets = [];
                 filterDatasets();
                 message.textContent = error.message;
@@ -872,6 +877,22 @@
                 taskType === "TI2I" && includeRef.checked ? "下载 ZIP" : "下载 TXT";
         }
 
+        function extractDatasetDownloadFilename(contentDisposition, scene, includeRef) {
+            const fallbackScene = scene.replace(/[\\/:*?"<>|]/g, "_") || "测评集";
+            const fallback = `${fallbackScene}.${includeRef ? "zip" : "txt"}`;
+            if (!contentDisposition) return fallback;
+            const extended = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+            if (extended) {
+                try {
+                    return decodeURIComponent(extended[1].trim().replace(/^"|"$/g, ""));
+                } catch (_) {
+                    return fallback;
+                }
+            }
+            const quotedFilename = contentDisposition.match(/(?:^|;)\s*filename\s*=\s*"((?:\\.|[^"\\])*)"/i);
+            return quotedFilename ? quotedFilename[1].replace(/\\(.)/g, "$1") : fallback;
+        }
+
         async function downloadDataset() {
             const taskType = document.getElementById("dataset-download-task-type").value;
             const scene = document.getElementById("dataset-download-scene").value;
@@ -893,7 +914,11 @@
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.href = url;
-                link.download = extractDownloadFilename(response.headers.get("Content-Disposition"), includeRef);
+                link.download = extractDatasetDownloadFilename(
+                    response.headers.get("Content-Disposition"),
+                    scene,
+                    includeRef
+                );
                 document.body.append(link);
                 link.click();
                 link.remove();

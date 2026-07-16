@@ -119,6 +119,65 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
         self.assertEqual(result["apiCalls"], 0)
         self.assertEqual(result["filtered"], [datasets[1]])
 
+    def test_load_datasets_ignores_out_of_order_responses_and_pending_mode_change(self):
+        script = f"""
+            const select = {{ value: "", children: [], replaceChildren(...nodes) {{ this.children = nodes; }} }};
+            const elements = {{
+                "dataset-download-task-type": {{ value: "T2I" }},
+                "dataset-download-msg": {{ textContent: "" }},
+                "dataset-search": {{ value: "" }},
+                "dataset-download-scene": select,
+                "dataset-include-ref": {{ checked: true, disabled: false }},
+                "dataset-download-button": {{ textContent: "" }}
+            }};
+            const document = {{
+                getElementById: id => elements[id],
+                createElement: tag => ({{ tag, value: "", textContent: "" }})
+            }};
+            const state = {{ datasets: [], filteredDatasets: [], datasetListRequestId: 0 }};
+            const pending = {{}};
+            const api = url => new Promise(resolve => {{ pending[url] = resolve; }});
+            {self.function_source("replaceSelectOptions")}
+            {self.function_source("syncDatasetDownloadMode")}
+            {self.function_source("filterDatasets")}
+            {self.function_source("loadDatasets")}
+            const first = loadDatasets("old");
+            elements["dataset-download-task-type"].value = "TI2I";
+            const second = loadDatasets("new");
+            pending["/api/datasets?task_type=TI2I"]({{ json: async () => [{{ scene: "new", prompt_count: 2 }}] }});
+            second.then(async () => {{
+                pending["/api/datasets?task_type=T2I"]({{ json: async () => [{{ scene: "old", prompt_count: 1 }}] }});
+                await first;
+                console.log(JSON.stringify({{
+                    datasets: state.datasets,
+                    options: select.children.map(node => node.value),
+                    selected: select.value,
+                    includeRefDisabled: elements["dataset-include-ref"].disabled,
+                    message: elements["dataset-download-msg"].textContent
+                }}));
+            }});
+        """
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result["datasets"], [{"scene": "new", "prompt_count": 2}])
+        self.assertEqual(result["options"], ["", "new"])
+        self.assertEqual(result["selected"], "new")
+        self.assertFalse(result["includeRefDisabled"])
+        self.assertEqual(result["message"], "")
+
+    def test_dataset_filename_parses_supported_headers_and_uses_scene_fallback(self):
+        cases = (
+            ("attachment; filename=plain.txt; filename*=UTF-8''%E4%BA%BA%E5%83%8F.txt", "人物", False, "人像.txt"),
+            (r'attachment; filename="商品编辑.zip"', "ignored", True, "商品编辑.zip"),
+            ("", "人物写真", False, "人物写真.txt"),
+            ("attachment; filename*=UTF-8''%ZZ", "商品/编辑", True, "商品_编辑.zip"),
+        )
+        source = self.function_source("extractDatasetDownloadFilename")
+        for header, scene, include_ref, expected in cases:
+            with self.subTest(header=header, include_ref=include_ref):
+                script = f"{source}\nconsole.log(JSON.stringify(extractDatasetDownloadFilename(...{json.dumps([header, scene, include_ref], ensure_ascii=False)})));"
+                actual = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+                self.assertEqual(actual, expected)
+
     def test_download_uses_zip_only_for_checked_ti2i(self):
         script = f"""
             const elements = {{
