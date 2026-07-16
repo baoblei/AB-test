@@ -443,14 +443,25 @@
                     <form id="result-form" class="result-upload-grid">
                         <div class="input-group">
                             <label>任务类型</label>
-                            <select id="result-task-type" onchange="syncResultScenes()">
+                            <select id="result-task-type" onchange="handleResultTaskTypeChange()">
                                 <option value="T2I">T2I</option>
                                 <option value="TI2I">TI2I</option>
                             </select>
                         </div>
                         <div class="input-group">
-                            <label>模型版本</label>
-                            <input type="text" id="result-version" placeholder="如 model_v1" required>
+                            <label>Class</label>
+                            <input id="result-class" list="result-class-options" placeholder="如 test" required oninput="syncResultModelChoices()">
+                            <datalist id="result-class-options"></datalist>
+                        </div>
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input id="result-model" list="result-model-options" placeholder="如 Atlas" required oninput="syncResultModelChoices()">
+                            <datalist id="result-model-options"></datalist>
+                        </div>
+                        <div class="input-group">
+                            <label>Version</label>
+                            <input id="result-version" list="result-version-options" placeholder="如 default" required>
+                            <datalist id="result-version-options"></datalist>
                         </div>
                         <div class="input-group">
                             <label>场景</label>
@@ -512,6 +523,18 @@
                     <select id="task-type-select" onchange="handleTaskTypeChange()">
                         <option value="T2I">T2I</option>
                         <option value="TI2I">TI2I</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Class</label>
+                    <select id="filter-class" onchange="syncOverviewModelFilters(); applyFilters()">
+                        <option value="">全部 class</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Model</label>
+                    <select id="filter-model" onchange="applyFilters()">
+                        <option value="">全部 model</option>
                     </select>
                 </div>
                 <div class="input-group">
@@ -756,7 +779,9 @@
             filteredDatasets: [],
             datasetListRequestId: 0,
             datasetDownloadRequestId: 0,
-            datasetDownloadController: null
+            datasetDownloadController: null,
+            modelCatalogs: {},
+            modelCatalogErrors: {}
         };
 
         async function api(url, options) {
@@ -796,7 +821,7 @@
         async function init() {
             await handleTaskTypeChange();
             syncDatasetUploadMode();
-            await syncResultScenes();
+            await handleResultTaskTypeChange();
             bindUploadForms();
             bindExportEvents();
         }
@@ -806,6 +831,7 @@
             document.getElementById("dataset-download-task-type").value = state.taskType;
             invalidateDatasetDownload();
             state.config = await api(`/api/task_config?task_type=${state.taskType}`).then(r => r.json());
+            await loadModelCatalog(state.taskType);
             document.getElementById("overview-title").textContent = `${state.taskType} 看板总览`;
             document.getElementById("overview-desc").textContent = state.taskType === "TI2I"
                 ? "TI2I 看板额外展示保真度维度和参考图预览。"
@@ -854,6 +880,92 @@
                 return option;
             });
             select.replaceChildren(...nodes);
+        }
+
+        function replaceDatalistOptions(list, values) {
+            const nodes = values.map(value => {
+                const option = document.createElement("option");
+                option.value = value;
+                return option;
+            });
+            list.replaceChildren(...nodes);
+        }
+
+        async function loadModelCatalog(taskType) {
+            try {
+                const catalog = await api(
+                    `/api/model_catalog?task_type=${encodeURIComponent(taskType)}`
+                ).then(response => response.json());
+                state.modelCatalogs[taskType] = catalog.models;
+                state.modelCatalogErrors[taskType] = "";
+            } catch (error) {
+                state.modelCatalogs[taskType] = [];
+                state.modelCatalogErrors[taskType] = error.message;
+            }
+        }
+
+        function currentResultCatalog() {
+            const taskType = document.getElementById("result-task-type").value;
+            return state.modelCatalogs[taskType] || [];
+        }
+
+        function uniqueSorted(values) {
+            return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        }
+
+        function syncResultModelChoices() {
+            const className = document.getElementById("result-class").value.trim();
+            const modelName = document.getElementById("result-model").value.trim();
+            const standard = currentResultCatalog().filter(item => item.class_name && item.model_name);
+            replaceDatalistOptions(
+                document.getElementById("result-class-options"),
+                uniqueSorted(standard.map(item => item.class_name))
+            );
+            const classModels = standard.filter(item => item.class_name === className);
+            replaceDatalistOptions(
+                document.getElementById("result-model-options"),
+                uniqueSorted(classModels.map(item => item.model_name))
+            );
+            replaceDatalistOptions(
+                document.getElementById("result-version-options"),
+                uniqueSorted(
+                    classModels
+                        .filter(item => item.model_name === modelName)
+                        .map(item => item.version)
+                )
+            );
+        }
+
+        function validateModelInput(value, label) {
+            const normalized = value.trim();
+            if (!normalized) throw new Error(`请输入 ${label}`);
+            if (normalized.includes("_")) throw new Error(`${label} 不能包含下划线 _`);
+            if (normalized === "." || normalized === ".." || /[\\/]/.test(normalized)) {
+                throw new Error(`${label} 包含不安全字符`);
+            }
+            return normalized;
+        }
+
+        function confirmNewModelHierarchy() {
+            const classInput = document.getElementById("result-class");
+            const modelInput = document.getElementById("result-model");
+            const className = validateModelInput(classInput.value, "class");
+            const modelName = validateModelInput(modelInput.value, "model");
+            validateModelInput(document.getElementById("result-version").value, "version");
+            const standard = currentResultCatalog().filter(item => item.class_name && item.model_name);
+            const classExists = standard.some(item => item.class_name === className);
+            if (!classExists && !confirm(`class “${className}” 尚不存在，是否新建？`)) {
+                classInput.focus();
+                return false;
+            }
+            const modelExists = standard.some(
+                item => item.class_name === className && item.model_name === modelName
+            );
+            if (!modelExists && !confirm(`model “${modelName}” 尚不存在，是否在 class “${className}” 下新建？`)) {
+                modelInput.focus();
+                return false;
+            }
+            return true;
         }
 
         async function loadDatasets(selectedScene = "") {
@@ -988,6 +1100,17 @@
             return node;
         }
 
+        async function handleResultTaskTypeChange(selectedScene = "") {
+            const taskType = document.getElementById("result-task-type").value;
+            await Promise.all([loadModelCatalog(taskType), syncResultScenes(selectedScene)]);
+            syncResultModelChoices();
+            const error = state.modelCatalogErrors[taskType];
+            if (error) {
+                document.getElementById("upload-msg").textContent =
+                    `模型目录加载失败，仍可手动输入：${error}`;
+            }
+        }
+
         async function syncResultScenes(selectedScene = "") {
             const taskType = document.getElementById("result-task-type").value;
             const select = document.getElementById("result-scene");
@@ -1004,10 +1127,57 @@
             }
         }
 
+        function catalogEntryFor(fullName) {
+            const catalog = state.modelCatalogs[state.taskType] || [];
+            return catalog.find(item => item.full_name === fullName) || {
+                class_name: null,
+                model_name: null,
+                version: fullName,
+                full_name: fullName
+            };
+        }
+
+        function pairMatchesHierarchy(pair, className, modelName) {
+            if (!className && !modelName) return true;
+            return [pair.v_a_meta, pair.v_b_meta].some(meta => {
+                if (className && meta.class_name !== className) return false;
+                if (modelName && meta.model_name !== modelName) return false;
+                return true;
+            });
+        }
+
+        function syncOverviewModelFilters() {
+            const classSelect = document.getElementById("filter-class");
+            const modelSelect = document.getElementById("filter-model");
+            const selectedClass = classSelect.value;
+            const selectedModel = modelSelect.value;
+            const standard = (state.modelCatalogs[state.taskType] || [])
+                .filter(item => item.class_name && item.model_name);
+            replaceSelectOptions(
+                classSelect,
+                [["", "全部 class"], ...uniqueSorted(standard.map(item => item.class_name))
+                    .map(value => [value, value])]
+            );
+            classSelect.value = selectedClass;
+            const models = standard
+                .filter(item => !classSelect.value || item.class_name === classSelect.value)
+                .map(item => item.model_name);
+            replaceSelectOptions(
+                modelSelect,
+                [["", "全部 model"], ...uniqueSorted(models).map(value => [value, value])]
+            );
+            if (models.includes(selectedModel)) modelSelect.value = selectedModel;
+        }
+
         async function loadDashboard() {
             const data = await api(`/api/dashboard_overview?task_type=${state.taskType}`).then(r => r.json());
             state.overview = data;
-            state.pairs = data.pairs;
+            state.pairs = data.pairs.map(pair => ({
+                ...pair,
+                v_a_meta: catalogEntryFor(pair.v_a),
+                v_b_meta: catalogEntryFor(pair.v_b)
+            }));
+            syncOverviewModelFilters();
             const scenes = [...new Set(data.pairs.flatMap(pair => pair.scenes.map(scene => scene.scene)))];
             replaceSelectOptions(
                 document.getElementById("ranking-scene"),
@@ -1021,9 +1191,12 @@
             const v1 = document.getElementById("search-v1").value.trim().toLowerCase();
             const v2 = document.getElementById("search-v2").value.trim().toLowerCase();
             const scene = document.getElementById("search-scene").value.trim().toLowerCase();
+            const className = document.getElementById("filter-class").value;
+            const modelName = document.getElementById("filter-model").value;
             const filtered = state.pairs.filter(pair => {
                 const a = pair.v_a.toLowerCase();
                 const b = pair.v_b.toLowerCase();
+                if (!pairMatchesHierarchy(pair, className, modelName)) return false;
                 if (v1 && !a.includes(v1) && !b.includes(v1)) return false;
                 if (v2 && !a.includes(v2) && !b.includes(v2)) return false;
                 if (scene && !pair.scenes.some(item => item.scene.toLowerCase().includes(scene))) return false;
@@ -1237,6 +1410,9 @@
         }
 
         function resetFilters() {
+            document.getElementById("filter-class").value = "";
+            syncOverviewModelFilters();
+            document.getElementById("filter-model").value = "";
             document.getElementById("search-v1").value = "";
             document.getElementById("search-v2").value = "";
             document.getElementById("search-scene").value = "";
@@ -1939,7 +2115,7 @@
                     const result = await api("/api/upload_dataset", { method: "POST", body: formData }).then(r => r.json());
                     msg.textContent = `测评集上传成功：${result.scene}，prompt ${result.prompt_count} 条`;
                     document.getElementById("result-task-type").value = taskType;
-                    await syncResultScenes(scene);
+                    await handleResultTaskTypeChange(scene);
                 } catch (error) {
                     msg.textContent = error.message;
                 }
@@ -1952,23 +2128,37 @@
 
         async function uploadResultZip(autoRename) {
             const msg = document.getElementById("upload-msg");
-            const formData = new FormData();
             const taskType = document.getElementById("result-task-type").value;
-            const file = document.getElementById("result-file").files[0];
-            formData.append("task_type", taskType);
-            formData.append("version", document.getElementById("result-version").value.trim());
-            formData.append("scene", document.getElementById("result-scene").value);
-            formData.append("file", file);
-            formData.append("auto_rename", autoRename ? "true" : "false");
-            msg.textContent = autoRename ? "正在自动格式化名称并上传..." : "检查结果图 zip 中...";
             try {
+                if (!autoRename && !confirmNewModelHierarchy()) {
+                    msg.textContent = "已取消上传";
+                    return;
+                }
+                const formData = new FormData();
+                const file = document.getElementById("result-file").files[0];
+                formData.append("task_type", taskType);
+                formData.append("class_name", validateModelInput(
+                    document.getElementById("result-class").value, "class"
+                ));
+                formData.append("model_name", validateModelInput(
+                    document.getElementById("result-model").value, "model"
+                ));
+                formData.append("version", validateModelInput(
+                    document.getElementById("result-version").value, "version"
+                ));
+                formData.append("scene", document.getElementById("result-scene").value);
+                formData.append("file", file);
+                formData.append("auto_rename", autoRename ? "true" : "false");
+                msg.textContent = autoRename ? "正在自动格式化名称并上传..." : "检查结果图 zip 中...";
                 const result = await api("/api/upload", { method: "POST", body: formData }).then(r => r.json());
                 if (result.status === "requires_rename_confirmation") {
                     if (confirm(result.message)) return uploadResultZip(true);
                     msg.textContent = "已取消上传";
                     return;
                 }
-                msg.textContent = `结果图上传成功：${result.image_count || 0} 张`;
+                msg.textContent = `结果图上传成功：${result.full_name}，${result.image_count || 0} 张`;
+                await loadModelCatalog(taskType);
+                syncResultModelChoices();
                 if (taskType === state.taskType) await loadDashboard();
             } catch (error) {
                 msg.textContent = error.message;
