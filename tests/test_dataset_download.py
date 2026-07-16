@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import main
 from app_core import config, storage
+from app_core import dataset_download_service
 from app_core.dataset_download_service import (
     DatasetArtifact,
     create_dataset_artifact,
@@ -113,6 +114,29 @@ def configured_dataset_roots():
 
 
 class DatasetMetadataTests(unittest.TestCase):
+    def test_missing_secure_open_flag_fails_closed_before_storage_access(self):
+        entry_points = (
+            (list_datasets, ("T2I",)),
+            (create_dataset_artifact, ("T2I", "open")),
+        )
+        for entry_point, arguments in entry_points:
+            with (
+                self.subTest(entry_point=entry_point.__name__),
+                patch.object(dataset_download_service.os, "O_NOFOLLOW", None),
+                patch.object(
+                    dataset_download_service,
+                    "get_dataset_scenes",
+                    side_effect=AssertionError("storage must not be accessed"),
+                ),
+                patch.object(
+                    dataset_download_service,
+                    "get_prompt_root",
+                    side_effect=AssertionError("storage must not be accessed"),
+                ),
+            ):
+                with self.assertRaisesRegex(AppError, "平台.*安全"):
+                    entry_point(*arguments)
+
     def test_lists_scenes_with_prompt_counts(self):
         with configured_dataset_roots() as roots:
             roots.write_prompt("T2I", "portrait", "a\tone\nb\ttwo\n")

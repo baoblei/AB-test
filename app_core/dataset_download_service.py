@@ -33,6 +33,12 @@ class DatasetArtifact:
     cleanup_dir: str | None = None
 
 
+def _require_secure_open_flags() -> None:
+    required_flags = (getattr(os, "O_DIRECTORY", None), getattr(os, "O_NOFOLLOW", None))
+    if not all(isinstance(flag, int) and flag for flag in required_flags):
+        raise AppError("当前平台不支持安全的测评集文件访问")
+
+
 def _open_directory(path: str | Path, error: str) -> int:
     """Open every path component without following symlinks."""
     absolute = Path(path).absolute()
@@ -78,6 +84,7 @@ def _prompt_bytes(task_type: str, scene: str) -> bytes:
 
 
 def list_datasets(task_type: str) -> list[dict]:
+    _require_secure_open_flags()
     task_type = normalize_task_type(task_type)
     datasets = []
     for scene in get_dataset_scenes(task_type):
@@ -144,6 +151,7 @@ def _create_ti2i_archive(scene: str, prompt_bytes: bytes, scene_fd: int, ref_nam
 
 
 def create_dataset_artifact(task_type: str, scene: str, include_ref: bool = False) -> DatasetArtifact:
+    _require_secure_open_flags()
     task_type = normalize_task_type(task_type)
     scene = validate_storage_component(scene, "场景")
     prompt_bytes = _prompt_bytes(task_type, scene)
