@@ -130,33 +130,31 @@ ab_test/
 
 ```text
 results/T2I/
-├── Atlas/
-│   └── portrait_anatomy/
-│       ├── portrait_01.jpg
-│       └── portrait_02.jpg
-├── Beacon/
-│   └── spatial_composition/
-│       ├── spatial_01.jpg
-│       └── spatial_02.jpg
-└── Cipher/
+└── <Atlas|Beacon|Cipher>/
+    ├── portrait_anatomy/
+    │   └── portrait_01.jpg ... portrait_06.jpg
+    ├── spatial_composition/
+    │   └── spatial_01.jpg ... spatial_06.jpg
     └── text_product/
-        ├── text_01.jpg
-        └── text_02.jpg
+        └── text_01.jpg ... text_06.jpg
 ```
+
+`Atlas`、`Beacon`、`Cipher` 每个模型目录都包含上述三个完整场景。
 
 ### 2. TI2I 结果目录
 
 ```text
 results/TI2I/
-├── Mosaic/
-│   └── object_edit/
-│       ├── object_edit_01.jpg
-│       └── object_edit_02.jpg
-└── Prism/
-    └── appearance_edit/
-        ├── appearance_01.jpg
-        └── appearance_02.jpg
+└── <Mosaic|Prism>/
+    ├── appearance_edit/
+    │   └── appearance_01.jpg ... appearance_06.jpg
+    ├── background_style/
+    │   └── background_01.jpg ... background_06.jpg
+    └── object_edit/
+        └── object_edit_01.jpg ... object_edit_06.jpg
 ```
+
+`Mosaic`、`Prism` 每个模型目录都包含上述三个完整场景。
 
 ### 3. Prompt 文件
 
