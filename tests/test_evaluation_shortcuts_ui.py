@@ -28,7 +28,6 @@ const dims = [
 ];
 const context = {{
     state: {{ config: {{}} }},
-    currentDimIndex: 0,
     getActiveEvalDims: () => dims,
     submitVote: () => {{}},
     document: {{
