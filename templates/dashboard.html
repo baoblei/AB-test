@@ -13,6 +13,8 @@
             --muted: #647487;
             --primary: #1664c0;
             --primary-soft: rgba(22, 100, 192, 0.08);
+            --success: #2e7d32;
+            --danger: #c62828;
             --green: #2e7d32;
             --blue: #1976d2;
             --tie: #9aa7b4;
@@ -297,6 +299,8 @@
         }
         .checkbox-chip input { position: absolute; width: auto; opacity: 0; pointer-events: none; }
         .btn-export { background: #f6b73c; color: #26364c; }
+        .status-success { color: var(--success) !important; }
+        .status-error { color: var(--danger) !important; }
         .export-modal-content { width: min(920px, 100%); }
         .export-fixed-info {
             display: grid;
@@ -812,6 +816,20 @@
                 throw new Error(message);
             }
             return res;
+        }
+
+        function setUploadMessage(message, status) {
+            const element = document.getElementById("upload-msg");
+            element.classList.remove("status-success", "status-error");
+            if (status) element.classList.add(`status-${status}`);
+            element.textContent = message;
+        }
+
+        function setExportMessage(message, status) {
+            const element = document.getElementById("export-message");
+            element.classList.remove("status-success", "status-error");
+            if (status) element.classList.add(`status-${status}`);
+            element.textContent = message;
         }
 
         function formatBusinessTime(value) {
@@ -1883,7 +1901,7 @@
             document.getElementById("export-v1").textContent = v1;
             document.getElementById("export-v2").textContent = v2;
             document.getElementById("export-preview-count").textContent = "正在加载导出选项...";
-            document.getElementById("export-message").textContent = "";
+            setExportMessage("");
             const button = document.getElementById("export-download");
             button.textContent = "下载导出";
             button.disabled = true;
@@ -1908,7 +1926,7 @@
             } catch (error) {
                 if (requestId !== state.exportOpenRequestId) return;
                 document.getElementById("export-preview-count").textContent = "无法加载导出选项";
-                document.getElementById("export-message").textContent = error.message;
+                setExportMessage(error.message, "error");
             }
         }
 
@@ -1946,7 +1964,12 @@
         function renderInvalidExportSelection(message) {
             state.exportPair.previewOverall = 0;
             renderExportPreview({ overall: 0, dimensions: {}, unique_images: 0 });
-            document.getElementById("export-message").textContent = message;
+            const messageElement = document.getElementById("export-message");
+            if (messageElement.classList) {
+                messageElement.classList.remove("status-success", "status-error");
+                messageElement.classList.add("status-error");
+            }
+            messageElement.textContent = message;
             if (state.exportPair.downloading) return;
             const exportButton = document.getElementById("export-download");
             exportButton.disabled = true;
@@ -1995,7 +2018,7 @@
             }
             const controller = new AbortController();
             state.exportPair.previewController = controller;
-            if (!state.exportPair.downloading) document.getElementById("export-message").textContent = "正在更新预计数量...";
+            if (!state.exportPair.downloading) setExportMessage("正在更新预计数量...");
             try {
                 const preview = await api("/api/export/preview", {
                     method: "POST",
@@ -2009,14 +2032,14 @@
                 if (!state.exportPair.downloading) {
                     const exportButton = document.getElementById("export-download");
                     exportButton.disabled = preview.overall === 0;
-                    document.getElementById("export-message").textContent = preview.overall === 0 ? "当前筛选没有可导出的评测记录" : "";
+                    setExportMessage(preview.overall === 0 ? "当前筛选没有可导出的评测记录" : "");
                 }
             } catch (error) {
                 if (error.name === "AbortError" || requestId !== state.exportPreviewRequestId || !isCurrentExportSession(sessionId)) return;
                 state.exportPair.previewOverall = 0;
                 if (!state.exportPair.downloading) {
                     document.getElementById("export-download").disabled = true;
-                    document.getElementById("export-message").textContent = error.message;
+                    setExportMessage(error.message, "error");
                 }
             } finally {
                 if (requestId === state.exportPreviewRequestId && isCurrentExportSession(sessionId)) state.exportPair.previewController = null;
@@ -2055,7 +2078,7 @@
             state.exportPair.downloadRequestId = requestId;
             button.disabled = true;
             button.textContent = "正在生成...";
-            document.getElementById("export-message").textContent = "正在生成下载文件...";
+            setExportMessage("正在生成下载文件...");
             try {
                 const response = await fetch("/api/export", {
                     method: "POST",
@@ -2081,9 +2104,9 @@
                 link.click();
                 link.remove();
                 URL.revokeObjectURL(url);
-                if (isCurrentExportDownload(sessionId, requestId)) document.getElementById("export-message").textContent = "下载已开始";
+                if (isCurrentExportDownload(sessionId, requestId)) setExportMessage("下载已开始", "success");
             } catch (error) {
-                if (isCurrentExportDownload(sessionId, requestId)) document.getElementById("export-message").textContent = error.message;
+                if (isCurrentExportDownload(sessionId, requestId)) setExportMessage(error.message, "error");
             } finally {
                 if (!isCurrentExportDownload(sessionId, requestId)) return;
                 state.exportPair.downloading = false;
@@ -2117,7 +2140,6 @@
         function bindUploadForms() {
             document.getElementById("dataset-form").onsubmit = async event => {
                 event.preventDefault();
-                const msg = document.getElementById("upload-msg");
                 const formData = new FormData();
                 const taskType = document.getElementById("dataset-task-type").value;
                 const scene = document.getElementById("dataset-scene").value.trim();
@@ -2127,14 +2149,14 @@
                 formData.append("scene", scene);
                 formData.append("prompt_file", promptFile);
                 if (refFile) formData.append("ref_file", refFile);
-                msg.textContent = "上传测评集中...";
+                setUploadMessage("上传测评集中...");
                 try {
-                    const result = await api("/api/upload_dataset", { method: "POST", body: formData }).then(r => r.json());
-                    msg.textContent = `测评集上传成功：${result.scene}，prompt ${result.prompt_count} 条`;
+                    const data = await api("/api/upload_dataset", { method: "POST", body: formData }).then(r => r.json());
+                    setUploadMessage(data.message || "上传成功", "success");
                     document.getElementById("result-task-type").value = taskType;
                     await handleResultTaskTypeChange(scene);
                 } catch (error) {
-                    msg.textContent = error.message;
+                    setUploadMessage(error.message, "error");
                 }
             };
             document.getElementById("result-form").onsubmit = async event => {
@@ -2144,11 +2166,10 @@
         }
 
         async function uploadResultZip(autoRename) {
-            const msg = document.getElementById("upload-msg");
             const taskType = document.getElementById("result-task-type").value;
             try {
                 if (!autoRename && !confirmNewModelHierarchy()) {
-                    msg.textContent = "已取消上传";
+                    setUploadMessage("已取消上传");
                     return;
                 }
                 const formData = new FormData();
@@ -2166,19 +2187,19 @@
                 formData.append("scene", document.getElementById("result-scene").value);
                 formData.append("file", file);
                 formData.append("auto_rename", autoRename ? "true" : "false");
-                msg.textContent = autoRename ? "正在自动格式化名称并上传..." : "检查结果图 zip 中...";
+                setUploadMessage(autoRename ? "正在自动格式化名称并上传..." : "检查结果图 zip 中...");
                 const result = await api("/api/upload", { method: "POST", body: formData }).then(r => r.json());
                 if (result.status === "requires_rename_confirmation") {
                     if (confirm(result.message)) return uploadResultZip(true);
-                    msg.textContent = "已取消上传";
+                    setUploadMessage("已取消上传");
                     return;
                 }
-                msg.textContent = `结果图上传成功：${result.full_name}，${result.image_count || 0} 张`;
+                setUploadMessage(`结果图上传成功：${result.full_name}，${result.image_count || 0} 张`, "success");
                 await loadModelCatalog(taskType);
                 syncResultModelChoices();
                 if (taskType === state.taskType) await loadDashboard();
             } catch (error) {
-                msg.textContent = error.message;
+                setUploadMessage(error.message, "error");
             }
         }
 
