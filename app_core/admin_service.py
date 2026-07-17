@@ -27,6 +27,9 @@ def get_users() -> list[dict]:
 
 
 def update_user_status(user_id: int, is_active: int, admin_id: int) -> dict:
+    if is_active not in {0, 1}:
+        raise AppError("无效的用户状态")
+
     conn = connect()
     try:
         conn.execute("BEGIN IMMEDIATE")

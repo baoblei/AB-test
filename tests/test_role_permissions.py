@@ -182,6 +182,11 @@ class RoleMutationTests(unittest.TestCase):
             admin_service.update_user_status(self.admin_id, 0, self.other_admin_id)
         self.assertEqual(self.active_of(self.admin_id), 1)
 
+    def test_nonbinary_status_is_rejected_without_database_change(self):
+        with self.assertRaises(AppError):
+            admin_service.update_user_status(self.target_id, 2, self.admin_id)
+        self.assertEqual(self.active_of(self.target_id), 1)
+
     def test_status_update_is_persisted_and_logged(self):
         self.assertEqual(
             admin_service.update_user_status(self.target_id, 0, self.admin_id),
