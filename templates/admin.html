@@ -311,9 +311,12 @@
 
             const tbody = document.getElementById('users-body');
             tbody.innerHTML = data.map(u => {
-                const roleBadge = u.role === 'admin' ?
-                    '<span class="badge badge-admin">管理员</span>' :
-                    '<span class="badge badge-evaluator">评测员</span>';
+                const roleSelector = `
+                    <select onchange="updateUserRole(${u.id}, this.value)">
+                        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>超级管理员</option>
+                        <option value="manager" ${u.role === 'manager' ? 'selected' : ''}>管理员</option>
+                        <option value="evaluator" ${u.role === 'evaluator' ? 'selected' : ''}>评测员</option>
+                    </select>`;
                 const statusBadge = u.is_active ?
                     '<span class="badge badge-active">正常</span>' :
                     '<span class="badge badge-inactive">禁用</span>';
@@ -326,7 +329,7 @@
                         <td>${u.id}</td>
                         <td>${u.username}</td>
                         <td>${u.email || '-'}</td>
-                        <td>${roleBadge}</td>
+                        <td>${roleSelector}</td>
                         <td>${formatBusinessTime(u.created_at)}</td>
                         <td>${formatBusinessTime(u.last_login)}</td>
                         <td>${statusBadge}</td>
@@ -336,6 +339,28 @@
             }).join('');
         } catch (e) {
             console.error('加载用户失败', e);
+        }
+    }
+
+    // 更新用户角色
+    async function updateUserRole(userId, role) {
+        try {
+            const res = await fetch(
+                `/api/admin/users/${userId}/role?role=${encodeURIComponent(role)}`,
+                {method: 'PUT'}
+            );
+
+            if (!res.ok) {
+                const error = await res.json();
+                alert(error.detail);
+                loadUsers();
+                return;
+            }
+
+            loadUsers();
+        } catch (e) {
+            alert('网络错误');
+            loadUsers();
         }
     }
 
