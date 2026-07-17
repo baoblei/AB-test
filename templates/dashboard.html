@@ -1141,8 +1141,7 @@
             syncResultModelChoices();
             const error = state.modelCatalogErrors[taskType];
             if (error) {
-                document.getElementById("upload-msg").textContent =
-                    `模型目录加载失败，仍可手动输入：${error}`;
+                setUploadMessage(`模型目录加载失败，仍可手动输入：${error}`, "error");
             }
         }
 

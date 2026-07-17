@@ -49,6 +49,14 @@ class DashboardPermissionFeedbackTests(unittest.TestCase):
         self.assertIn('setUploadMessage(error.message, "error")', bind)
         self.assertIn('setUploadMessage(error.message, "error")', result_upload)
 
+    def test_model_catalog_error_replaces_stale_upload_success_state(self):
+        source = self.function_source("handleResultTaskTypeChange")
+        self.assertIn(
+            'setUploadMessage(`模型目录加载失败，仍可手动输入：${error}`, "error")',
+            source,
+        )
+        self.assertNotIn('getElementById("upload-msg").textContent', source)
+
     def test_export_failures_use_normalized_api_detail_and_red_feedback(self):
         api = self.function_source("api")
         self.assertIn("data.detail || data.message || message", api)
