@@ -185,11 +185,11 @@ class ReferenceUploadValidationTests(unittest.TestCase):
 
 
 class UploadRouteAuthorizationTests(unittest.TestCase):
-    def test_all_upload_routes_require_admin(self):
+    def test_all_upload_routes_require_data_manager(self):
         protected_paths = {"/api/upload_dataset", "/api/upload", "/api/upload_ref"}
         routes = {route.path: route for route in main.app.routes if route.path in protected_paths}
 
         self.assertEqual(set(routes), protected_paths)
         for path, route in routes.items():
             with self.subTest(path=path):
-                self.assertIn(main.require_admin, [dependency.call for dependency in route.dependant.dependencies])
+                self.assertIn(main.require_data_manager, [dependency.call for dependency in route.dependant.dependencies])

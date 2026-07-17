@@ -407,7 +407,7 @@ class ExportApiTests(unittest.TestCase):
                     with patch.object(main, "preview_export", return_value={"overall": 1}) as preview:
                         with patch.object(main, "create_export_artifact", return_value=artifact) as create:
                             client = TestClient(main.app)
-                            self.assertEqual(client.get("/api/export", params={"format": "json"}).status_code, 200)
+                            self.assertEqual(client.get("/api/export", params={"format": "json"}).status_code, 401)
                             self.assertEqual(
                                 client.get(
                                     "/api/export_options", params={"task_type": "T2I", "v1": "A", "v2": "B"}
@@ -427,11 +427,16 @@ class ExportApiTests(unittest.TestCase):
                                 401,
                             )
 
-                            main.app.dependency_overrides[main.require_login] = lambda: {
+                            main.app.dependency_overrides[main.require_data_manager] = lambda: {
                                 "id": 1,
                                 "username": "reviewer",
+                                "role": "manager",
                             }
                             try:
+                                self.assertEqual(
+                                    client.get("/api/export", params={"format": "json"}).json(),
+                                    {"legacy": True},
+                                )
                                 self.assertEqual(
                                     client.get(
                                         "/api/export_options",
@@ -450,7 +455,7 @@ class ExportApiTests(unittest.TestCase):
                                     "/api/export", json={"task_type": "T2I", "v1": "A", "v2": "B"}
                                 )
                             finally:
-                                main.app.dependency_overrides.pop(main.require_login, None)
+                                main.app.dependency_overrides.pop(main.require_data_manager, None)
             options.assert_called_once_with("T2I", "A", "B")
             preview.assert_called_once()
             create.assert_called_once()
@@ -462,7 +467,11 @@ class ExportApiTests(unittest.TestCase):
         import main
 
         client = TestClient(main.app)
-        main.app.dependency_overrides[main.require_login] = lambda: {"id": 1, "username": "reviewer"}
+        main.app.dependency_overrides[main.require_data_manager] = lambda: {
+            "id": 1,
+            "username": "reviewer",
+            "role": "manager",
+        }
         try:
             semantic_response = client.post(
                 "/api/export/preview", json={"task_type": "invalid", "v1": "A", "v2": "B"}
@@ -475,7 +484,7 @@ class ExportApiTests(unittest.TestCase):
                     "/api/export/preview", json={"task_type": "T2I", "v1": "A", "v2": "B"}
                 )
         finally:
-            main.app.dependency_overrides.pop(main.require_login, None)
+            main.app.dependency_overrides.pop(main.require_data_manager, None)
 
         self.assertEqual(semantic_response.status_code, 422)
         self.assertEqual(pydantic_response.status_code, 422)
