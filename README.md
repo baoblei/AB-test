@@ -32,6 +32,7 @@
   - 明细预览与对比查看
 - 用户与管理：
   - 注册、登录、退出
+  - 三级角色权限：超级管理员、管理员、评测员
   - 个人历史记录与个人统计
   - 管理后台查看用户、统计和操作日志
 - 数据管理：
@@ -258,6 +259,25 @@ python main.py
 
 建议首次登录后立即修改密码。
 
+### 4. 用户角色与权限
+
+系统使用以下三个角色名；括号内为接口和数据库中的角色值：
+
+- 超级管理员（`admin`）
+- 管理员（`manager`）
+- 评测员（`evaluator`）
+
+| 能力 | 超级管理员 `admin` | 管理员 `manager` | 评测员 `evaluator` |
+| --- | --- | --- | --- |
+| 进行评测、查看个人记录和统计看板 | 允许 | 允许 | 允许 |
+| 上传测评集、结果图和参考图 | 允许 | 允许 | 不允许 |
+| 预览及导出评测结果（含旧版导出接口） | 允许 | 允许 | 不允许 |
+| 访问管理后台接口、管理用户角色和状态 | 允许 | 不允许 | 不允许 |
+
+公开注册的新用户默认写入 `evaluator`（评测员）角色。只有超级管理员能在管理后台调整用户角色或启用状态。为避免系统失去可用的超级管理员，超级管理员不能修改自己的角色；任意操作也不能降级或禁用最后一个处于启用状态的超级管理员。
+
+上传和导出接口要求先登录，且角色必须为 `admin` 或 `manager`。未登录访问返回 `401`；已登录的 `evaluator` 访问返回 `403`，需联系超级管理员调整权限。管理后台接口仍仅允许 `admin` 访问。
+
 ## 使用流程
 
 ### 评测员流程
@@ -320,7 +340,7 @@ Prompt 格式：
 接口对应功能：
 
 - 后端接口：`POST /api/upload_ref`
-- 仅管理员可以调用
+- 仅超级管理员（`admin`）或管理员（`manager`）可以调用
 
 该接口使用 `multipart/form-data`，表单字段为：
 
@@ -517,24 +537,29 @@ results/
 - `GET /api/worker_stats`
 - `GET /api/detail_results`
 - `GET /api/bad_case_details`
-- `GET /api/export_options`：登录后获取当前任务类型和模型对的场景、评测人、维度与北京时间范围
-- `POST /api/export/preview`：登录后按完整筛选返回 Overall、各维度和去重图片的预计数量
-- `POST /api/export`：登录后按完整筛选下载 XLSX 或包含图片的 ZIP；导出语义校验错误返回 `422`
-- `GET /api/export`：保留的旧 JSON / CSV 导出接口
+- `GET /api/export_options`：`admin` 或 `manager` 获取当前任务类型和模型对的场景、评测人、维度与北京时间范围
+- `POST /api/export/preview`：`admin` 或 `manager` 按完整筛选返回 Overall、各维度和去重图片的预计数量
+- `POST /api/export`：`admin` 或 `manager` 按完整筛选下载 XLSX 或包含图片的 ZIP；导出语义校验错误返回 `422`
+- `GET /api/export`：`admin` 或 `manager` 使用的旧 JSON / CSV 导出接口
 - `GET /api/ranking`
 
 ### 管理后台
 
 - `GET /api/admin/users`
 - `PUT /api/admin/users/{user_id}`
+- `PUT /api/admin/users/{user_id}/role`
 - `GET /api/admin/stats`
 - `GET /api/admin/logs`
+
+以上管理后台接口仅允许 `admin` 调用。
 
 ### 数据上传
 
 - `POST /api/upload_dataset`
 - `POST /api/upload`
 - `POST /api/upload_ref`
+
+以上上传接口仅允许 `admin` 或 `manager` 调用。未登录请求返回 `401`，`evaluator` 请求返回 `403`。
 
 ## 已知约束
 
