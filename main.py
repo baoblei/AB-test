@@ -10,8 +10,9 @@ from starlette.background import BackgroundTask
 from app_core.admin_service import admin_logs as admin_logs_service
 from app_core.admin_service import admin_stats as admin_stats_service
 from app_core.admin_service import get_users as get_users_service
+from app_core.admin_service import update_user_role as update_user_role_service
 from app_core.admin_service import update_user_status as update_user_status_service
-from app_core.auth import require_admin, require_login
+from app_core.auth import require_admin, require_data_manager, require_login
 from app_core.config import REF_IMAGE_DIR, RESULT_DIR, TASK_CONFIGS, dim_payload, ensure_data_dirs, get_task_config, normalize_task_type
 from app_core.dashboard_service import bad_case_details as bad_case_details_service
 from app_core.dashboard_service import dashboard_overview as dashboard_overview_service
@@ -260,22 +261,22 @@ def bad_case_details(
 
 
 @app.get("/api/export")
-def export_data(format: str = "json", task_type: str = "T2I", v1: Optional[str] = None, v2: Optional[str] = None, scene: Optional[str] = None):
+def export_data(format: str = "json", task_type: str = "T2I", v1: Optional[str] = None, v2: Optional[str] = None, scene: Optional[str] = None, user: dict = Depends(require_data_manager)):
     return export_results(format, task_type, v1, v2, scene)
 
 
 @app.get("/api/export_options")
-def export_options(task_type: str, v1: str, v2: str, user: dict = Depends(require_login)):
+def export_options(task_type: str, v1: str, v2: str, user: dict = Depends(require_data_manager)):
     return get_export_options(task_type, v1, v2)
 
 
 @app.post("/api/export/preview")
-def export_preview(payload: ExportRequest, user: dict = Depends(require_login)):
+def export_preview(payload: ExportRequest, user: dict = Depends(require_data_manager)):
     return preview_export(payload)
 
 
 @app.post("/api/export")
-def export_file(payload: ExportRequest, user: dict = Depends(require_login)):
+def export_file(payload: ExportRequest, user: dict = Depends(require_data_manager)):
     artifact = create_export_artifact(payload)
     return FileResponse(
         artifact.path,
@@ -300,6 +301,11 @@ def update_user_status(user_id: int, is_active: int, admin: dict = Depends(requi
     return update_user_status_service(user_id, is_active, admin["id"])
 
 
+@app.put("/api/admin/users/{user_id}/role")
+def update_user_role(user_id: int, role: str, admin: dict = Depends(require_admin)):
+    return update_user_role_service(user_id, role, admin["id"])
+
+
 @app.get("/api/admin/stats")
 def admin_stats(admin: dict = Depends(require_admin)):
     return admin_stats_service()
@@ -316,7 +322,7 @@ async def upload_dataset_data(
     scene: str = Form(...),
     prompt_file: UploadFile = File(...),
     ref_file: Optional[UploadFile] = File(None),
-    admin: dict = Depends(require_admin),
+    admin: dict = Depends(require_data_manager),
 ):
     return upload_dataset(task_type, scene, prompt_file, ref_file)
 
@@ -330,7 +336,7 @@ async def upload_data(
     scene: str = Form(...),
     file: UploadFile = File(...),
     auto_rename: bool = Form(False),
-    admin: dict = Depends(require_admin),
+    admin: dict = Depends(require_data_manager),
 ):
     return upload_result_zip(
         task_type,
@@ -348,7 +354,7 @@ async def upload_ref(
     task_type: str = Form(...),
     scene: str = Form(...),
     file: UploadFile = File(...),
-    admin: dict = Depends(require_admin),
+    admin: dict = Depends(require_data_manager),
 ):
     return upload_ref_zip(task_type, scene, file)
 

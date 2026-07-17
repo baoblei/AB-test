@@ -1,5 +1,9 @@
 from .database import connect, log_operation
+from .errors import AppError
 from .time_utils import beijing_today
+
+
+VALID_ROLES = {"admin", "manager", "evaluator"}
 
 
 def get_users() -> list[dict]:
@@ -24,10 +28,50 @@ def get_users() -> list[dict]:
 
 def update_user_status(user_id: int, is_active: int, admin_id: int) -> dict:
     conn = connect()
-    conn.execute("UPDATE users SET is_active=? WHERE id=?", (is_active, user_id))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        user = conn.execute("SELECT role, is_active FROM users WHERE id=?", (user_id,)).fetchone()
+        if user and user[0] == "admin" and user[1] == 1 and not is_active:
+            active_admins = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1"
+            ).fetchone()[0]
+            if active_admins <= 1:
+                raise AppError("不能禁用最后一个启用的管理员")
+        conn.execute("UPDATE users SET is_active=? WHERE id=?", (is_active, user_id))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     log_operation(admin_id, "admin_action", f"更新用户 {user_id} 状态为 {is_active}")
+    return {"status": "ok"}
+
+
+def update_user_role(user_id: int, role: str, admin_id: int) -> dict:
+    if role not in VALID_ROLES:
+        raise AppError("无效的用户角色")
+    if user_id == admin_id:
+        raise AppError("不能修改自己的角色")
+
+    conn = connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        user = conn.execute("SELECT role, is_active FROM users WHERE id=?", (user_id,)).fetchone()
+        if user and user[0] == "admin" and user[1] == 1 and role != "admin":
+            active_admins = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1"
+            ).fetchone()[0]
+            if active_admins <= 1:
+                raise AppError("不能降级最后一个启用的管理员")
+        conn.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    log_operation(admin_id, "admin_action", f"更新用户 {user_id} 角色为 {role}")
     return {"status": "ok"}
 
 

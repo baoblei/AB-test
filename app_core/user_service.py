@@ -21,8 +21,8 @@ def register_user(user: UserRegister, ip_address: str = "") -> dict:
             raise AppError("邮箱已被注册")
 
     cursor.execute(
-        "INSERT INTO users (username, password_hash, email, created_at) VALUES (?, ?, ?, ?)",
-        (user.username, hash_password(user.password), user.email, now_beijing_iso()),
+        "INSERT INTO users (username, password_hash, email, role, created_at) VALUES (?, ?, ?, ?, ?)",
+        (user.username, hash_password(user.password), user.email, "evaluator", now_beijing_iso()),
     )
     conn.commit()
     user_id = cursor.lastrowid

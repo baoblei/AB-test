@@ -8,6 +8,9 @@ from .config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY
 from .database import connect
 
 
+DATA_MANAGER_ROLES = {"admin", "manager"}
+
+
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     to_encode["exp"] = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -46,6 +49,14 @@ async def get_current_user(request: Request, access_token: Optional[str] = Cooki
 async def require_login(user: dict = Depends(get_current_user)) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="请先登录")
+    return user
+
+
+async def require_data_manager(user: dict = Depends(get_current_user)) -> dict:
+    if not user:
+        raise HTTPException(status_code=401, detail="请先登录")
+    if user["role"] not in DATA_MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="当前用户没有权限，请联系管理员")
     return user
 
 
