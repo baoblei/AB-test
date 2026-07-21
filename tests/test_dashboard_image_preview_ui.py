@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -49,6 +50,14 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
             'data-preview-close',
         ):
             self.assertIn(marker, self.html)
+
+    def test_preview_stage_allows_delegated_close_and_toolbar_clicks_to_bubble(self):
+        stage = re.search(
+            r'<div class="dashboard-preview-stage"[^>]*>',
+            self.html,
+        )
+        self.assertIsNotNone(stage, "preview stage is missing")
+        self.assertNotIn("onclick", stage.group(0))
 
     def test_controller_contract_and_zoom_bounds(self):
         for marker in (
