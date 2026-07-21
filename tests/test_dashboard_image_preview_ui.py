@@ -1,8 +1,21 @@
 import json
-import re
 import subprocess
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
+
+
+class PreviewStageParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.onclick = ""
+        self.opening_tag = ""
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "div" and "dashboard-preview-stage" in attributes.get("class", "").split():
+            self.onclick = attributes.get("onclick", "")
+            self.opening_tag = self.get_starttag_text()
 
 
 class DashboardImagePreviewUiTests(unittest.TestCase):
@@ -62,20 +75,38 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
             self.assertIn(marker, self.html)
 
     def test_delegated_preview_clicks_reach_document_without_closing_stage(self):
-        stage = re.search(
-            r'<div class="dashboard-preview-stage"[^>]*>',
-            self.html,
-        )
-        self.assertIsNotNone(stage, "preview stage is missing")
-        stage_stops_propagation = "onclick=\"event.stopPropagation()\"" in stage.group(0)
-        result = self.run_preview_event_delegation_probe(stage_stops_propagation)
+        result = self.run_preview_event_delegation_probe(self.preview_stage_opening_tag())
         self.assertEqual(result, {
             "afterContent": {"display": "flex", "ariaHidden": "false"},
             "afterZoom": {"zoom": 1.1, "scales": [0.55]},
             "afterClose": {"display": "none", "ariaHidden": "true"},
         })
 
-    def run_preview_event_delegation_probe(self, stage_stops_propagation):
+    def test_equivalent_inline_stage_handler_blocks_delegated_controls(self):
+        result = self.run_preview_event_delegation_probe(
+            '<div class="dashboard-preview-stage" onclick=" event . stopPropagation ( ) ; ">'
+        )
+        self.assertEqual(result, {
+            "afterContent": {"display": "flex", "ariaHidden": "false"},
+            "afterZoom": {"zoom": 1, "scales": []},
+            "afterClose": {"display": "flex", "ariaHidden": "false"},
+        })
+
+    def preview_stage_opening_tag(self):
+        parser = PreviewStageParser()
+        parser.feed(self.html)
+        parser.close()
+        self.assertTrue(parser.opening_tag, "preview stage is missing")
+        return parser.opening_tag
+
+    def preview_stage_inline_handler(self, stage_opening_tag):
+        parser = PreviewStageParser()
+        parser.feed(stage_opening_tag)
+        parser.close()
+        return parser.onclick
+
+    def run_preview_event_delegation_probe(self, stage_opening_tag):
+        inline_handler = self.preview_stage_inline_handler(stage_opening_tag)
         script = f"""
 {self.preview_event_delegation_source()}
 const makeNode = (dataset = {{}}, parent = null) => {{
@@ -116,7 +147,9 @@ overlay.style.display = "flex";
 overlay.setAttribute = (name, value) => {{ overlay[name] = value; }};
 overlay["aria-hidden"] = "false";
 const stage = makeNode({{}}, overlay);
-if ({json.dumps(stage_stops_propagation)}) stage.addEventListener("click", event => event.stopPropagation());
+const inlineStageHandler = {json.dumps(inline_handler)};
+const compiledStageHandler = inlineStageHandler ? new Function("event", inlineStageHandler) : null;
+if (compiledStageHandler) stage.addEventListener("click", event => compiledStageHandler.call(stage, event));
 const ordinaryContent = makeNode({{}}, stage);
 const toolbar = makeNode({{ previewGroup: "overlay" }}, stage);
 const zoomButton = makeNode({{ previewAction: "zoom-in" }}, toolbar);
