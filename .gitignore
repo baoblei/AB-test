@@ -3,3 +3,4 @@
 __pycache__
 .worktrees/
 /.generated-dataset-staging/
+/.thumbnails/
