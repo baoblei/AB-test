@@ -75,7 +75,7 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
             'id="dashboard-preview-toolbar"',
             'class="dashboard-preview-grid',
             'aria-modal="true"',
-            'function closeImagePreview(',
+            'data-preview-close',
         ):
             self.assertIn(marker, self.html)
 
@@ -84,7 +84,7 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
             "class PreviewController",
             "normalizedCenter",
             'mode: "fit"',
-            "sync: true",
+            "sync: options.sync !== false",
             '"fit-width"',
             '"fit-height"',
             '"actual"',
