@@ -350,6 +350,15 @@
             vertical-align: top;
             font-size: 0.86rem;
         }
+        .detail-pagination {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+            color: var(--muted);
+            font-size: 0.84rem;
+        }
         .empty-state {
             text-align: center;
             padding: 36px;
@@ -617,11 +626,11 @@
                 <div class="filter-row">
                     <div class="input-group" style="min-width:220px;">
                         <label>文件名搜索</label>
-                        <input id="detail-filename-filter" placeholder="输入关键词..." oninput="renderDetailTable()">
+                        <input id="detail-filename-filter" placeholder="输入关键词..." oninput="scheduleDetailRender()">
                     </div>
                     <div class="input-group" style="min-width:180px;">
                         <label>判定</label>
-                        <select id="detail-result-filter" onchange="renderDetailTable()">
+                        <select id="detail-result-filter" onchange="resetDetailPage()">
                             <option value="">全部</option>
                             <option value="a_win">A胜</option>
                             <option value="b_win">B胜</option>
@@ -648,6 +657,11 @@
                     </thead>
                     <tbody id="detail-body"></tbody>
                 </table>
+                <div class="detail-pagination" id="detail-pagination">
+                    <button class="btn btn-sm btn-outline" id="detail-page-prev" type="button" onclick="changeDetailPage(-1)">上一页</button>
+                    <span id="detail-page-status">第 1 / 1 页</span>
+                    <button class="btn btn-sm btn-outline" id="detail-page-next" type="button" onclick="changeDetailPage(1)">下一页</button>
+                </div>
             </div>
         </div>
     </div>
@@ -776,6 +790,8 @@
     </div>
 
     <script>
+        const DETAIL_PAGE_SIZE = 50;
+
         let state = {
             taskType: "T2I",
             config: null,
@@ -785,6 +801,9 @@
             detailRows: [],
             selectedDetailWorkers: new Set(),
             currentDetail: null,
+            detailPage: 1,
+            detailRenderTimer: null,
+            detailRequestId: 0,
             workerRows: [],
             selectedWorkers: new Set(),
             currentWorker: null,
@@ -1477,15 +1496,59 @@
         }
 
         async function openDetailModal(v1, v2, scene) {
+            cleanupDetailModal();
+            const requestId = ++state.detailRequestId;
             state.currentDetail = { v1, v2, scene };
             document.getElementById("detail-title").textContent = `明细: ${v1} vs ${v2} [${scene}]`;
             document.getElementById("detail-modal").style.display = "flex";
             document.getElementById("detail-filename-filter").value = "";
             document.getElementById("detail-result-filter").value = "";
-            state.detailRows = await api(`/api/detail_results?task_type=${state.taskType}&v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}&scene=${encodeURIComponent(scene)}`).then(r => r.json());
+            const rows = await api(`/api/detail_results?task_type=${state.taskType}&v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}&scene=${encodeURIComponent(scene)}`).then(r => r.json());
+            if (requestId !== state.detailRequestId || document.getElementById("detail-modal").style.display !== "flex") return;
+            state.detailRows = rows;
             state.selectedDetailWorkers = new Set([...new Set(state.detailRows.map(row => row.worker))]);
             renderDetailWorkers();
             renderDetailTable();
+        }
+
+        function paginateDetailRows(rows, page, pageSize = DETAIL_PAGE_SIZE) {
+            const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+            const currentPage = Math.max(1, Math.min(totalPages, Number(page) || 1));
+            const start = (currentPage - 1) * pageSize;
+            return {
+                items: rows.slice(start, start + pageSize),
+                page: currentPage,
+                totalPages
+            };
+        }
+
+        function changeDetailPage(delta) {
+            state.detailPage += Number(delta) || 0;
+            renderDetailTable();
+        }
+
+        function resetDetailPage() {
+            state.detailPage = 1;
+            if (state.currentDetail) renderDetailTable();
+        }
+
+        function scheduleDetailRender() {
+            if (state.detailRenderTimer) clearTimeout(state.detailRenderTimer);
+            state.detailRenderTimer = setTimeout(() => {
+                state.detailRenderTimer = null;
+                resetDetailPage();
+            }, 200);
+        }
+
+        function detailThumbnailUrl(kind, model, scene, filename) {
+            const params = new URLSearchParams({
+                kind,
+                task_type: state.taskType,
+                scene,
+                filename
+            });
+            if (kind === "result") params.set("model", model);
+            return `/api/image-thumbnail?${params.toString()}`;
         }
 
         function renderDetailWorkers() {
@@ -1506,7 +1569,7 @@
             if (state.selectedDetailWorkers.has(worker)) state.selectedDetailWorkers.delete(worker);
             else state.selectedDetailWorkers.add(worker);
             renderDetailWorkers();
-            renderDetailTable();
+            resetDetailPage();
         }
 
         function renderDetailTable() {
@@ -1522,6 +1585,12 @@
                 return true;
             });
             document.getElementById("detail-count").textContent = `共 ${rows.length} 条`;
+            const pagination = paginateDetailRows(rows, state.detailPage, DETAIL_PAGE_SIZE);
+            state.detailPage = pagination.page;
+            document.getElementById("detail-page-status").textContent = `第 ${pagination.page} / ${pagination.totalPages} 页`;
+            document.getElementById("detail-page-prev").disabled = pagination.page <= 1;
+            document.getElementById("detail-page-next").disabled = pagination.page >= pagination.totalPages;
+            document.getElementById("detail-pagination").style.display = rows.length ? "flex" : "none";
             const body = document.getElementById("detail-body");
             if (!rows.length) {
                 const emptyRow = createNode("tr");
@@ -1529,7 +1598,7 @@
                 body.replaceChildren(emptyRow);
                 return;
             }
-            body.replaceChildren(...rows.map(row => {
+            body.replaceChildren(...pagination.items.map(row => {
                 const tableRow = createNode("tr");
                 tableRow.append(createCell(row.filename));
 
@@ -1538,12 +1607,21 @@
                 Object.assign(imageGroup.style, { display: "flex", gap: "6px" });
                 const preview = buildPreviewPayload(row, v1, v2);
                 const imageSources = [];
-                if (state.taskType === "TI2I" && row.ref_img) imageSources.push(row.ref_img);
-                imageSources.push(imageUrl(v1, scene, row.filename), imageUrl(v2, scene, row.filename));
+                if (state.taskType === "TI2I" && row.ref_img) {
+                    imageSources.push(detailThumbnailUrl("ref", "", scene, row.filename));
+                }
+                [v1, v2].forEach(model => {
+                    imageSources.push(detailThumbnailUrl("result", model, scene, row.filename));
+                });
                 imageSources.forEach(src => {
                     const image = createNode("img", "preview-img");
                     image.src = src;
                     image.alt = row.filename;
+                    image.loading = "lazy";
+                    image.decoding = "async";
+                    image.fetchPriority = "low";
+                    image.width = 76;
+                    image.height = 76;
                     image.addEventListener("click", () => openPreview(preview));
                     imageGroup.append(image);
                 });
@@ -2132,7 +2210,25 @@
             document.getElementById("export-modal").style.display = "none";
         }
 
+        function cleanupDetailModal() {
+            if (state.detailRenderTimer) clearTimeout(state.detailRenderTimer);
+            state.detailRenderTimer = null;
+            state.detailRequestId += 1;
+            state.detailRows = [];
+            state.selectedDetailWorkers = new Set();
+            state.currentDetail = null;
+            state.detailPage = 1;
+            document.getElementById("detail-body").replaceChildren();
+            document.getElementById("detail-worker-group").replaceChildren();
+            document.getElementById("detail-count").textContent = "";
+            document.getElementById("detail-pagination").style.display = "none";
+            document.getElementById("detail-page-status").textContent = "第 1 / 1 页";
+            document.getElementById("detail-page-prev").disabled = true;
+            document.getElementById("detail-page-next").disabled = true;
+        }
+
         function closeModal(id) {
+            if (id === "detail-modal") cleanupDetailModal();
             document.getElementById(id).style.display = "none";
         }
 
