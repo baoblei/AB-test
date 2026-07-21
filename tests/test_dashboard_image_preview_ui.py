@@ -34,6 +34,11 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
         )
         return json.loads(result.stdout)
 
+    def dashboard_preview_lifecycle_source(self):
+        start = self.html.index("let dashboardPreviewGeneration")
+        end = self.html.index("function openDashboardPreview", start)
+        return self.html[start:end]
+
     def test_overlay_has_immersive_preview_shell(self):
         for marker in (
             'class="dashboard-preview-stage"',
@@ -438,6 +443,183 @@ console.log(JSON.stringify({{ during, removed: layer.removed, activeAfter: butto
         self.assertIn("grid-template-columns: 1fr", self.html)
         self.assertIn("overflow-x: auto", self.html)
         self.assertIn("100dvh", self.html)
+
+    def test_stale_image_callbacks_after_close_and_reopen_do_not_mutate_current_preview(self):
+        close_source = self.function_source("closeImagePreview")
+        lifecycle_source = self.dashboard_preview_lifecycle_source()
+        script = f"""
+const classList = initial => {{
+    const values = new Set(initial ? initial.split(" ") : []);
+    return {{
+        add: (...names) => names.forEach(name => values.add(name)),
+        remove: (...names) => names.forEach(name => values.delete(name)),
+        contains: name => values.has(name)
+    }};
+}};
+const createNode = (tag, className = "", text = "") => {{
+    const node = {{
+        tag, className, textContent: text, dataset: {{}}, style: {{}}, children: [],
+        classList: classList(className), listeners: new Map(), complete: false,
+        naturalWidth: 0, naturalHeight: 0,
+        append(...children) {{ this.children.push(...children); }},
+        addEventListener(type, listener) {{ this.listeners.set(type, listener); }},
+        removeEventListener() {{}},
+        replaceChildren(...children) {{ this.children = children; }},
+        setAttribute(name, value) {{ this[name] = value; }}
+    }};
+    return node;
+}};
+const overlay = createNode("div");
+const toolbar = createNode("div");
+const grid = createNode("div");
+const document = {{ getElementById: id => id === "image-overlay" ? overlay : id === "image-preview" ? grid : toolbar }};
+const previewController = {{ groups: new Map() }};
+let registrations = 0;
+let magnifierClears = 0;
+const registerPreviewPane = (groupId, paneId) => {{
+    registrations += 1;
+    previewController.groups.get(groupId).panes.set(paneId, {{ failed: false }});
+}};
+const updateDashboardPreviewToolbar = () => null;
+const hidePreviewMagnifiers = () => {{ magnifierClears += 1; }};
+const releasePreviewPointers = () => null;
+const stopHoldCompare = () => null;
+{close_source}
+{lifecycle_source}
+beginDashboardPreviewRender();
+previewController.groups.set("overlay", {{ panes: new Map(), activePaneId: "" }});
+const staleViewport = renderDashboardPreviewPane({{ id: "stale", src: "/stale.png", label: "stale" }});
+const staleImage = staleViewport.children[0];
+const staleLoad = staleImage.listeners.get("load");
+const staleError = staleImage.listeners.get("error");
+closeImagePreview();
+previewController.groups.set("overlay", {{ panes: new Map(), activePaneId: "" }});
+const currentViewport = renderDashboardPreviewPane({{ id: "current", src: "/current.png", label: "current" }});
+const clearsBeforeStaleCallbacks = magnifierClears;
+staleLoad();
+staleError();
+console.log(JSON.stringify({{
+    registrations,
+    currentLoading: currentViewport.classList.contains("loading"),
+    currentFailed: currentViewport.classList.contains("failed"),
+    groupPanes: [...previewController.groups.get("overlay").panes.keys()],
+    staleCallbacksClearedMagnifier: magnifierClears !== clearsBeforeStaleCallbacks
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {
+            "registrations": 0,
+            "currentLoading": True,
+            "currentFailed": False,
+            "groupPanes": [],
+            "staleCallbacksClearedMagnifier": False,
+        })
+
+    def test_registered_failed_pane_is_excluded_from_controller_and_magnifier(self):
+        mark_source = self.function_source("markPreviewPaneFailed")
+        magnifier_source = self.function_source("renderMagnifier")
+        script = f"""
+{self.controller_source()}
+const applied = [];
+const adapter = {{
+    measure: () => ({{ naturalWidth: 400, naturalHeight: 300, viewportWidth: 200, viewportHeight: 150 }}),
+    geometry: () => ({{ viewport: {{ left: 0, top: 0 }}, image: {{ left: 0, right: 1, top: 0, bottom: 1, width: 1, height: 1 }} }}),
+    apply: state => applied.push(state)
+}};
+const previewController = new PreviewController();
+previewController.createGroup("overlay", {{ sync: true }});
+previewController.addPane("overlay", "failed", adapter);
+applied.length = 0;
+const document = {{ querySelector: () => null }};
+{mark_source}
+{magnifier_source}
+markPreviewPaneFailed("overlay", "failed");
+previewController.setZoom("overlay", "failed", 2);
+previewController.groups.get("overlay").magnifier = true;
+const magnifierResult = renderMagnifier("overlay", "failed", {{ clientX: 10, clientY: 10 }});
+console.log(JSON.stringify({{
+    failed: previewController.groups.get("overlay").panes.get("failed").failed,
+    appliedAfterFailure: applied.length,
+    magnifierResult
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {
+            "failed": True,
+            "appliedAfterFailure": 0,
+            "magnifierResult": False,
+        })
+
+    def test_close_and_overlay_binding_are_idempotent_at_runtime(self):
+        close_source = self.function_source("closeImagePreview")
+        binding_source = self.function_source("bindPreviewOverlayEvents")
+        script = f"""
+let dashboardPreviewOverlayBound = false;
+const handlers = [];
+const counts = {{ begin: 0, release: 0, hide: 0, hold: 0, toolbar: 0, grid: 0 }};
+const overlay = {{
+    style: {{ display: "flex" }},
+    setAttribute: (name, value) => {{ overlay[name] = value; }},
+    addEventListener: (type, listener) => handlers.push({{ type, listener }})
+}};
+const toolbar = {{ replaceChildren: () => {{ counts.toolbar += 1; }} }};
+const grid = {{ replaceChildren: () => {{ counts.grid += 1; }} }};
+const document = {{ getElementById: id => id === "image-overlay" ? overlay : id === "image-preview" ? grid : toolbar }};
+const previewController = {{ groups: new Map([["overlay", {{ panes: new Map() }}]]) }};
+const beginDashboardPreviewRender = () => {{ counts.begin += 1; }};
+const releasePreviewPointers = () => {{ counts.release += 1; }};
+const hidePreviewMagnifiers = () => {{ counts.hide += 1; }};
+const stopHoldCompare = () => {{ counts.hold += 1; }};
+{close_source}
+{binding_source}
+bindPreviewOverlayEvents();
+bindPreviewOverlayEvents();
+handlers[0].listener({{ target: overlay }});
+closeImagePreview();
+console.log(JSON.stringify({{
+    listenerCount: handlers.length,
+    counts,
+    groupDeleted: !previewController.groups.has("overlay"),
+    display: overlay.style.display,
+    ariaHidden: overlay["aria-hidden"]
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {
+            "listenerCount": 1,
+            "counts": {"begin": 2, "release": 2, "hide": 2, "hold": 2, "toolbar": 2, "grid": 2},
+            "groupDeleted": True,
+            "display": "none",
+            "ariaHidden": "true",
+        })
+
+    def test_resize_refreshes_once_and_skips_deleted_overlay_group(self):
+        resize_source = self.function_source("bindDashboardPreviewResize")
+        script = f"""
+let dashboardPreviewResizeBound = false;
+let dashboardPreviewResizePending = false;
+const resizeListeners = [];
+const frameCallbacks = [];
+const window = {{ addEventListener: (type, listener) => resizeListeners.push({{ type, listener }}) }};
+const requestAnimationFrame = callback => {{ frameCallbacks.push(callback); return frameCallbacks.length; }};
+let refreshes = 0;
+const previewController = {{
+    groups: new Map([["overlay", {{}}]]),
+    refreshGroup: () => {{ refreshes += 1; }}
+}};
+{resize_source}
+bindDashboardPreviewResize();
+bindDashboardPreviewResize();
+resizeListeners[0].listener();
+resizeListeners[0].listener();
+frameCallbacks.shift()();
+previewController.groups.delete("overlay");
+resizeListeners[0].listener();
+frameCallbacks.shift()();
+console.log(JSON.stringify({{ listenerCount: resizeListeners.length, refreshes, queuedFrames: frameCallbacks.length }}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {"listenerCount": 1, "refreshes": 1, "queuedFrames": 0})
 
 
 if __name__ == "__main__":
