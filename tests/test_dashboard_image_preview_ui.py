@@ -57,6 +57,16 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
         )
         return json.loads(result.stdout)
 
+    def render_toolbar_markup(self, show_sync):
+        start = self.html.index("function renderDashboardPreviewToolbar(")
+        end = self.html.index("function updateDashboardPreviewToolbar(", start)
+        source = self.html[start:end]
+        script = f"""
+{source}
+console.log(renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: {str(show_sync).lower()} }}));
+"""
+        return subprocess.check_output(["node", "-e", script], text=True)
+
     def run_browser_geometry_probe(self, body, scenario, width=700, height=1000):
         chrome = next((candidate for candidate in (
             shutil.which("google-chrome"),
@@ -756,6 +766,48 @@ return {
         self.assertEqual(result["overflowX"], "visible")
         self.assertEqual(result["overflowY"], "visible")
         self.assertTrue(all(all(panel.values()) for panel in result["panels"]), result)
+
+    def test_short_desktop_complete_toolbars_keep_every_control_reachable(self):
+        for show_sync, expected_count in ((True, 11), (False, 10)):
+            with self.subTest(show_sync=show_sync):
+                toolbar = self.render_toolbar_markup(show_sync)
+                body = f"""
+<div id="image-overlay" style="display:flex">
+  <div class="dashboard-preview-stage">
+    <div id="dashboard-preview-toolbar">{toolbar}</div>
+  </div>
+</div>"""
+                result = self.run_browser_geometry_probe(
+                    body,
+                    """
+const stage = document.querySelector(".dashboard-preview-stage").getBoundingClientRect();
+const toolbar = document.querySelector(".dashboard-preview-toolbar");
+const toolbarRect = toolbar.getBoundingClientRect();
+const buttons = [...toolbar.querySelectorAll("[data-preview-action]")];
+const maxScroll = Math.max(0, toolbar.scrollWidth - toolbar.clientWidth);
+const reachable = buttons.map(button => {
+    toolbar.scrollLeft = Math.min(maxScroll, Math.max(0, button.offsetLeft - toolbar.clientWidth / 2));
+    const rect = button.getBoundingClientRect();
+    return rect.left >= toolbarRect.left && rect.right <= toolbarRect.right
+        && rect.top >= stage.top && rect.bottom <= stage.bottom;
+});
+return {
+    count: buttons.length,
+    direction: getComputedStyle(toolbar).flexDirection,
+    overflowX: getComputedStyle(toolbar).overflowX,
+    toolbarInsideStage: toolbarRect.left >= stage.left && toolbarRect.right <= stage.right
+        && toolbarRect.top >= stage.top && toolbarRect.bottom <= stage.bottom,
+    reachable
+};
+""",
+                    width=1024,
+                    height=500,
+                )
+                self.assertEqual(result["count"], expected_count)
+                self.assertEqual(result["direction"], "row")
+                self.assertEqual(result["overflowX"], "auto")
+                self.assertTrue(result["toolbarInsideStage"], result)
+                self.assertTrue(all(result["reachable"]), result)
 
     def test_global_shortcuts_preserve_button_space_and_compare_button_keydown(self):
         toolbar_source = self.function_source("bindDashboardPreviewToolbar")
