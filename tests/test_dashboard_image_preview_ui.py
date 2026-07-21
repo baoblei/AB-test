@@ -40,6 +40,16 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
         end = self.html.index("function openDashboardPreview", start)
         return self.html[start:end]
 
+    def preview_event_delegation_source(self):
+        controller_start = self.html.index("class PreviewController")
+        toolbar_start = self.html.index("function renderDashboardPreviewToolbar", controller_start)
+        return "\n".join((
+            self.html[controller_start:toolbar_start],
+            self.function_source("updateDashboardPreviewToolbar"),
+            self.function_source("bindDashboardPreviewToolbar"),
+            self.preview_close_source(),
+        ))
+
     def test_overlay_has_immersive_preview_shell(self):
         for marker in (
             'class="dashboard-preview-stage"',
@@ -51,13 +61,107 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
         ):
             self.assertIn(marker, self.html)
 
-    def test_preview_stage_allows_delegated_close_and_toolbar_clicks_to_bubble(self):
+    def test_delegated_preview_clicks_reach_document_without_closing_stage(self):
         stage = re.search(
             r'<div class="dashboard-preview-stage"[^>]*>',
             self.html,
         )
         self.assertIsNotNone(stage, "preview stage is missing")
-        self.assertNotIn("onclick", stage.group(0))
+        stage_stops_propagation = "onclick=\"event.stopPropagation()\"" in stage.group(0)
+        result = self.run_preview_event_delegation_probe(stage_stops_propagation)
+        self.assertEqual(result, {
+            "afterContent": {"display": "flex", "ariaHidden": "false"},
+            "afterZoom": {"zoom": 1.1, "scales": [0.55]},
+            "afterClose": {"display": "none", "ariaHidden": "true"},
+        })
+
+    def run_preview_event_delegation_probe(self, stage_stops_propagation):
+        script = f"""
+{self.preview_event_delegation_source()}
+const makeNode = (dataset = {{}}, parent = null) => {{
+    const node = {{ dataset, parent, style: {{}}, listeners: new Map(), children: [] }};
+    node.addEventListener = (type, listener) => {{
+        const listeners = node.listeners.get(type) || [];
+        listeners.push(listener);
+        node.listeners.set(type, listeners);
+    }};
+    node.closest = selector => {{
+        for (let current = node; current; current = current.parent) {{
+            if (selector === "[data-preview-action]" && current.dataset.previewAction) return current;
+            if (selector === "[data-preview-group]" && current.dataset.previewGroup) return current;
+            if (selector === "[data-preview-close]" && current.dataset.previewClose !== undefined) return current;
+        }}
+        return null;
+    }};
+    node.replaceChildren = (...children) => {{ node.children = children; }};
+    return node;
+}};
+const document = makeNode();
+document.getElementById = id => ids.get(id);
+document.querySelector = () => null;
+document.querySelectorAll = () => [];
+const dispatchClick = target => {{
+    const event = {{
+        target,
+        stopped: false,
+        stopPropagation() {{ this.stopped = true; }}
+    }};
+    for (let current = target; current; current = current.parent) {{
+        (current.listeners.get("click") || []).forEach(listener => listener(event));
+        if (event.stopped) break;
+    }}
+}};
+const overlay = makeNode({{}}, document);
+overlay.style.display = "flex";
+overlay.setAttribute = (name, value) => {{ overlay[name] = value; }};
+overlay["aria-hidden"] = "false";
+const stage = makeNode({{}}, overlay);
+if ({json.dumps(stage_stops_propagation)}) stage.addEventListener("click", event => event.stopPropagation());
+const ordinaryContent = makeNode({{}}, stage);
+const toolbar = makeNode({{ previewGroup: "overlay" }}, stage);
+const zoomButton = makeNode({{ previewAction: "zoom-in" }}, toolbar);
+const zoomIcon = makeNode({{}}, zoomButton);
+const closeButton = makeNode({{ previewClose: "" }}, stage);
+const closeIcon = makeNode({{}}, closeButton);
+const toolbarContainer = makeNode();
+const imagePreview = makeNode();
+const ids = new Map([
+    ["image-overlay", overlay],
+    ["dashboard-preview-toolbar", toolbarContainer],
+    ["image-preview", imagePreview],
+]);
+const beginDashboardPreviewRender = () => null;
+const releasePreviewPointers = () => null;
+const hidePreviewMagnifiers = () => null;
+const stopHoldCompare = () => null;
+const applied = [];
+const adapter = {{
+    measure: () => ({{ naturalWidth: 1000, naturalHeight: 500, viewportWidth: 500, viewportHeight: 500 }}),
+    apply: state => applied.push(state.scale)
+}};
+previewController.createGroup("overlay", {{ sync: true }});
+previewController.addPane("overlay", "left", adapter);
+applied.length = 0;
+bindDashboardPreviewToolbar();
+bindPreviewOverlayEvents();
+dispatchClick(ordinaryContent);
+const afterContent = {{ display: overlay.style.display, ariaHidden: overlay["aria-hidden"] }};
+dispatchClick(zoomIcon);
+const afterZoom = {{
+    zoom: previewController.groups.get("overlay").panes.get("left").zoom,
+    scales: applied
+}};
+dispatchClick(closeIcon);
+console.log(JSON.stringify({{
+    afterContent,
+    afterZoom,
+    afterClose: {{ display: overlay.style.display, ariaHidden: overlay["aria-hidden"] }}
+}}));
+"""
+        result = subprocess.run(
+            ["node", "-e", script], check=True, capture_output=True, text=True
+        )
+        return json.loads(result.stdout)
 
     def test_controller_contract_and_zoom_bounds(self):
         for marker in (
