@@ -393,7 +393,7 @@
             gap: 6px;
             width: 42px;
             max-height: calc(100dvh - 100px);
-            overflow-y: auto;
+            overflow: visible;
             padding: 6px 4px;
             border: 1px solid rgba(255, 255, 255, 0.18);
             border-radius: 14px;
@@ -412,6 +412,8 @@
         }
         .preview-tool:hover, .preview-tool.active { background: rgba(111, 191, 255, 0.24); border-color: rgba(153, 213, 255, 0.38); }
         .preview-info, .preview-shortcut-help {
+            position: absolute;
+            right: calc(100% + 8px);
             width: 220px;
             padding: 8px;
             border-radius: 8px;
@@ -420,9 +422,11 @@
             font-size: 0.74rem;
             line-height: 1.45;
         }
-        .preview-info { margin-top: 2px; }
+        .preview-shortcut-help { top: 0; }
+        .preview-info { bottom: 0; }
         .hidden { display: none !important; }
         .dashboard-preview-grid {
+            position: relative;
             display: grid;
             width: 100%;
             height: 100%;
@@ -604,7 +608,42 @@
                 overflow-x: auto;
                 overflow-y: hidden;
             }
-            .preview-info, .preview-shortcut-help { flex: 0 0 220px; }
+            .preview-info, .preview-shortcut-help {
+                position: static;
+                flex: 0 0 220px;
+            }
+            .inline-compare-btn[data-compare-slot="only-upper"] {
+                left: calc(50% - 17px);
+                top: calc(62px + 62dvh + 5px);
+            }
+            .inline-compare-btn[data-compare-slot="only-lower"] {
+                left: calc(50% + 17px);
+                top: calc(62px + 62dvh + 5px);
+            }
+            .inline-compare-btn[data-compare-slot="left-upper"] {
+                left: calc(50% - 34px);
+                top: calc(62px + 62dvh + 5px);
+            }
+            .inline-compare-btn[data-compare-slot="left-middle"] {
+                left: 50%;
+                top: calc(62px + 62dvh + 5px);
+            }
+            .inline-compare-btn[data-compare-slot="left-lower"] {
+                left: calc(50% + 34px);
+                top: calc(62px + 62dvh + 5px);
+            }
+            .inline-compare-btn[data-compare-slot="right-upper"] {
+                left: calc(50% - 34px);
+                top: calc(62px + 124dvh + 15px);
+            }
+            .inline-compare-btn[data-compare-slot="right-middle"] {
+                left: 50%;
+                top: calc(62px + 124dvh + 15px);
+            }
+            .inline-compare-btn[data-compare-slot="right-lower"] {
+                left: calc(50% + 34px);
+                top: calc(62px + 124dvh + 15px);
+            }
         }
     </style>
 </head>
@@ -1223,7 +1262,10 @@
             if (!group?.magnifier || !sourcePane || sourcePane.failed) return false;
             const sourceGeometry = sourcePane.adapter.geometry();
             const sourceImage = sourceGeometry.image;
-            if (point.clientX < sourceImage.left || point.clientX > sourceImage.right || point.clientY < sourceImage.top || point.clientY > sourceImage.bottom) return false;
+            if (point.clientX < sourceImage.left || point.clientX > sourceImage.right || point.clientY < sourceImage.top || point.clientY > sourceImage.bottom) {
+                hidePreviewMagnifiers(groupId);
+                return false;
+            }
             const normalizedPoint = {
                 x: (point.clientX - sourceImage.left) / sourceImage.width,
                 y: (point.clientY - sourceImage.top) / sourceImage.height
@@ -1274,6 +1316,18 @@
                 let dragPointerId = null;
                 let startPoint = null;
                 let startCenter = null;
+                const clearDragState = pointerId => {
+                    if (pointerId !== dragPointerId) return;
+                    dragPointerId = null;
+                    startPoint = null;
+                    startCenter = null;
+                    viewport.classList.remove("dragging");
+                };
+                const finishPointer = (pointerId, releaseCapture) => {
+                    activePointers.delete(pointerId);
+                    if (releaseCapture && viewport.hasPointerCapture?.(pointerId)) viewport.releasePointerCapture(pointerId);
+                    clearDragState(pointerId);
+                };
                 const activate = () => {
                     const group = previewController.groups.get(groupId);
                     if (group) group.activePaneId = paneId;
@@ -1317,28 +1371,27 @@
                     });
                 };
                 const onPointerUp = event => {
-                    activePointers.delete(event.pointerId);
-                    if (viewport.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
-                    if (event.pointerId === dragPointerId) {
-                        dragPointerId = null;
-                        startPoint = null;
-                        startCenter = null;
-                        viewport.classList.remove("dragging");
-                    }
+                    finishPointer(event.pointerId, true);
                 };
+                const onLostPointerCapture = event => finishPointer(event.pointerId, false);
                 const onPointerLeave = () => { if (!activePointers.size) hidePreviewMagnifiers(groupId); };
                 viewport.addEventListener("wheel", onWheel, { passive: false });
                 viewport.addEventListener("pointerdown", onPointerDown);
                 viewport.addEventListener("pointermove", onPointerMove);
                 viewport.addEventListener("pointerup", onPointerUp);
                 viewport.addEventListener("pointercancel", onPointerUp);
+                viewport.addEventListener("lostpointercapture", onLostPointerCapture);
                 viewport.addEventListener("pointerleave", onPointerLeave);
                 cleanups.push(() => {
+                    [...activePointers.keys()].forEach(pointerId => finishPointer(pointerId, true));
+                    activePointers.clear();
+                    clearDragState(dragPointerId);
                     viewport.removeEventListener("wheel", onWheel);
                     viewport.removeEventListener("pointerdown", onPointerDown);
                     viewport.removeEventListener("pointermove", onPointerMove);
                     viewport.removeEventListener("pointerup", onPointerUp);
                     viewport.removeEventListener("pointercancel", onPointerUp);
+                    viewport.removeEventListener("lostpointercapture", onLostPointerCapture);
                     viewport.removeEventListener("pointerleave", onPointerLeave);
                 });
             });
@@ -1373,14 +1426,18 @@
             if (dashboardPreviewKeyboardBound) return;
             dashboardPreviewKeyboardBound = true;
             document.addEventListener("keydown", event => {
-                if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
+                if (event.key === "Escape") {
+                    closeImagePreview();
+                    return;
+                }
+                if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target.tagName)) return;
                 const group = previewController.groups.get("overlay");
+                if (!group) return;
                 const paneId = group?.activePaneId || group?.panes.keys().next().value;
                 const pane = group?.panes.get(paneId);
                 if (event.key === "+" && pane) { setPreviewZoom("overlay", paneId, pane.zoom * 1.1); event.preventDefault(); }
                 if (event.key === "-" && pane) { setPreviewZoom("overlay", paneId, pane.zoom / 1.1); event.preventDefault(); }
                 if (event.key === " ") { dashboardPreviewSpacePan = true; hidePreviewMagnifiers("overlay"); event.preventDefault(); }
-                if (event.key === "Escape") closeImagePreview();
                 updateDashboardPreviewToolbar("overlay");
             });
             document.addEventListener("keyup", event => { if (event.key === " ") dashboardPreviewSpacePan = false; });
@@ -2375,12 +2432,6 @@
                 );
                 return tableRow;
             }));
-        }
-
-        function openPreviewOverlay() {
-            const overlay = document.getElementById("image-overlay");
-            overlay.style.display = "flex";
-            overlay.setAttribute("aria-hidden", "false");
         }
 
         function closeImagePreview() {

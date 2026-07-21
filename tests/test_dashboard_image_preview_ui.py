@@ -1,5 +1,7 @@
 import json
+import shutil
 import subprocess
+import tempfile
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -18,6 +20,26 @@ class PreviewStageParser(HTMLParser):
             self.opening_tag = self.get_starttag_text()
 
 
+class ElementTextParser(HTMLParser):
+    def __init__(self, element_id):
+        super().__init__()
+        self.element_id = element_id
+        self.capturing = False
+        self.value = ""
+
+    def handle_starttag(self, tag, attrs):
+        if dict(attrs).get("id") == self.element_id:
+            self.capturing = True
+
+    def handle_endtag(self, tag):
+        if self.capturing:
+            self.capturing = False
+
+    def handle_data(self, data):
+        if self.capturing:
+            self.value += data
+
+
 class DashboardImagePreviewUiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -34,6 +56,55 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
             ["node", "-e", script], check=True, capture_output=True, text=True
         )
         return json.loads(result.stdout)
+
+    def run_browser_geometry_probe(self, body, scenario, width=700, height=1000):
+        chrome = next((candidate for candidate in (
+            shutil.which("google-chrome"),
+            shutil.which("chromium"),
+            shutil.which("chromium-browser"),
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        ) if candidate and Path(candidate).exists()), None)
+        if not chrome:
+            self.skipTest("Chrome/Chromium is required for browser geometry coverage")
+        style_start = self.html.index("<style>") + len("<style>")
+        style_end = self.html.index("</style>", style_start)
+        page = f"""<!doctype html>
+<html><head><meta charset=\"utf-8\"><style>{self.html[style_start:style_end]}</style></head>
+<body>{body}<pre id=\"geometry-result\"></pre><script>
+document.getElementById("geometry-result").textContent = JSON.stringify((() => {{ {scenario} }})());
+</script></body></html>"""
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            page_path = directory / "probe.html"
+            page_path.write_text(page, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    chrome,
+                    "--headless=new",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-background-networking",
+                    "--disable-component-update",
+                    "--disable-sync",
+                    "--disable-breakpad",
+                    "--disable-crash-reporter",
+                    "--disable-gpu",
+                    "--no-sandbox",
+                    f"--window-size={width},{height}",
+                    "--virtual-time-budget=1000",
+                    "--dump-dom",
+                    page_path.as_uri(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+        parser = ElementTextParser("geometry-result")
+        parser.feed(result.stdout)
+        parser.close()
+        self.assertTrue(parser.value, result.stderr or result.stdout[-2000:])
+        return json.loads(parser.value)
 
     def preview_close_source(self):
         start = self.html.find("function closeImagePreview")
@@ -341,7 +412,7 @@ console.log(renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: true 
             'setPointerCapture(',
             "renderMagnifier(",
             "releasePreviewPointers(",
-            '["INPUT", "SELECT", "TEXTAREA"]',
+            '["INPUT", "SELECT", "TEXTAREA", "BUTTON"]',
             'event.key === "+"',
             'event.key === "-"',
             'event.key === "Escape"',
@@ -589,6 +660,278 @@ console.log(JSON.stringify({{ during, removed: layer.removed, activeAfter: butto
         self.assertIn("grid-template-columns: 1fr", self.html)
         self.assertIn("overflow-x: auto", self.html)
         self.assertIn("100dvh", self.html)
+
+    def test_mobile_compare_controls_follow_stacked_pane_gaps_at_700px(self):
+        cases = {
+            "t2i": (
+                ["left", "right"],
+                ["only-upper", "only-lower"],
+                {"only-upper": (0, 1), "only-lower": (0, 1)},
+            ),
+            "ti2i": (
+                ["reference", "left", "right"],
+                ["left-upper", "left-middle", "left-lower", "right-upper", "right-middle", "right-lower"],
+                {
+                    "left-upper": (0, 1), "left-middle": (0, 1), "left-lower": (0, 1),
+                    "right-upper": (1, 2), "right-middle": (1, 2), "right-lower": (1, 2),
+                },
+            ),
+        }
+        for kind, (pane_ids, slots, mappings) in cases.items():
+            with self.subTest(kind=kind):
+                panes = "".join(
+                    f'<section class="dashboard-preview-viewport" data-preview-pane="{pane_id}"></section>'
+                    for pane_id in pane_ids
+                )
+                buttons = "".join(
+                    f'<button class="inline-compare-btn" data-compare-slot="{slot}"></button>'
+                    for slot in slots
+                )
+                body = f"""
+<div id="image-overlay" style="display:flex">
+  <div class="dashboard-preview-stage">
+    <div id="image-preview" class="dashboard-preview-grid {kind}">{panes}{buttons}</div>
+  </div>
+</div>"""
+                result = self.run_browser_geometry_probe(
+                    body,
+                    f"""
+const paneRects = [...document.querySelectorAll("[data-preview-pane]")].map(node => node.getBoundingClientRect());
+const mappings = {json.dumps(mappings)};
+const controls = [...document.querySelectorAll("[data-compare-slot]")].map(button => {{
+    const rect = button.getBoundingClientRect();
+    const [upperIndex, lowerIndex] = mappings[button.dataset.compareSlot];
+    const upper = paneRects[upperIndex];
+    const lower = paneRects[lowerIndex];
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    return {{
+        slot: button.dataset.compareSlot,
+        centeredInGap: Math.abs(centerY - (upper.bottom + lower.top) / 2) < 1,
+        alignedWithPanes: centerX >= Math.max(upper.left, lower.left) && centerX <= Math.min(upper.right, lower.right)
+    }};
+}});
+return {{ width: document.documentElement.clientWidth, controls }};
+""",
+                )
+                self.assertEqual(result["width"], 700)
+                self.assertTrue(all(item["centeredInGap"] for item in result["controls"]), result)
+                self.assertTrue(all(item["alignedWithPanes"] for item in result["controls"]), result)
+
+    def test_desktop_toolbar_text_panels_expand_left_without_clipping(self):
+        body = """
+<div id="image-overlay" style="display:flex">
+  <div class="dashboard-preview-stage">
+    <div class="dashboard-preview-toolbar">
+      <button class="preview-tool">1</button><button class="preview-tool">2</button>
+      <span class="preview-shortcut-help">快捷键帮助文字</span>
+      <span class="preview-info">自然尺寸与渲染比例信息</span>
+    </div>
+  </div>
+</div>"""
+        result = self.run_browser_geometry_probe(
+            body,
+            """
+const rect = selector => {
+    const value = document.querySelector(selector).getBoundingClientRect();
+    return { left: value.left, right: value.right, top: value.top, bottom: value.bottom, width: value.width };
+};
+const stage = rect(".dashboard-preview-stage");
+const toolbar = rect(".dashboard-preview-toolbar");
+const info = rect(".preview-info");
+const help = rect(".preview-shortcut-help");
+return {
+    overflowX: getComputedStyle(document.querySelector(".dashboard-preview-toolbar")).overflowX,
+    overflowY: getComputedStyle(document.querySelector(".dashboard-preview-toolbar")).overflowY,
+    panels: [info, help].map(panel => ({
+        wideEnough: panel.width >= 200,
+        expandsLeft: panel.right <= toolbar.left,
+        insideStage: panel.left >= stage.left && panel.top >= stage.top && panel.bottom <= stage.bottom
+    }))
+};
+""",
+            width=1024,
+            height=800,
+        )
+        self.assertEqual(result["overflowX"], "visible")
+        self.assertEqual(result["overflowY"], "visible")
+        self.assertTrue(all(all(panel.values()) for panel in result["panels"]), result)
+
+    def test_global_shortcuts_preserve_button_space_and_compare_button_keydown(self):
+        toolbar_source = self.function_source("bindDashboardPreviewToolbar")
+        compare_source = self.function_source("bindDashboardPreviewCompareControls")
+        script = f"""
+let dashboardPreviewToolbarBound = false;
+let dashboardPreviewKeyboardBound = false;
+let dashboardPreviewCompareBound = false;
+let dashboardPreviewSpacePan = false;
+let activeHoldCompare = null;
+const handlers = {{}};
+const document = {{
+    addEventListener(type, listener) {{ (handlers[type] ||= []).push(listener); }},
+    querySelectorAll: () => []
+}};
+const window = {{ addEventListener() {{}} }};
+const previewController = {{ groups: new Map(), setSync() {{}} }};
+let closes = 0;
+let hides = 0;
+let compareStarts = 0;
+const closeImagePreview = () => {{ closes += 1; }};
+const hidePreviewMagnifiers = () => {{ hides += 1; }};
+const updateDashboardPreviewToolbar = () => null;
+const setPreviewMode = () => null;
+const resetPreviewGroup = () => null;
+const setPreviewZoom = () => null;
+const stopHoldCompare = () => null;
+const startHoldCompare = () => {{ compareStarts += 1; return true; }};
+{toolbar_source}
+{compare_source}
+bindDashboardPreviewToolbar();
+bindDashboardPreviewCompareControls();
+const dispatchKeydown = (target, key) => {{
+    const event = {{ target, key, repeat: false, defaultPrevented: false, preventDefault() {{ this.defaultPrevented = true; }} }};
+    handlers.keydown.forEach(listener => listener(event));
+    return event.defaultPrevented;
+}};
+const ordinaryButton = {{ tagName: "BUTTON", closest: () => null }};
+const compareButton = {{
+    tagName: "BUTTON",
+    dataset: {{ previewGroupId: "overlay", compareSource: "left", compareTarget: "right" }},
+    closest: selector => selector === "[data-hold-compare]" ? compareButton : null,
+    matches: selector => selector === "[data-hold-compare]"
+}};
+const ordinarySpacePrevented = dispatchKeydown(ordinaryButton, " ");
+const spacePanAfterOrdinaryButton = dashboardPreviewSpacePan;
+dispatchKeydown(ordinaryButton, "Escape");
+const compareSpacePrevented = dispatchKeydown(compareButton, " ");
+console.log(JSON.stringify({{
+    ordinarySpacePrevented,
+    spacePanAfterOrdinaryButton,
+    compareSpacePrevented,
+    closes,
+    hides,
+    compareStarts
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {
+            "ordinarySpacePrevented": False,
+            "spacePanAfterOrdinaryButton": False,
+            "compareSpacePrevented": True,
+            "closes": 1,
+            "hides": 0,
+            "compareStarts": 1,
+        })
+
+    def test_pointer_cleanup_releases_capture_and_lost_capture_clears_dragging(self):
+        release_source = self.function_source("releasePreviewPointers")
+        bind_source = self.function_source("bindPreviewGroup")
+        script = f"""
+const previewPointerCleanups = new Map();
+const listeners = new Map();
+const classes = new Set();
+const captures = new Set();
+const released = [];
+const viewport = {{
+    dataset: {{ previewPane: "left" }},
+    classList: {{ add: name => classes.add(name), remove: name => classes.delete(name) }},
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    removeEventListener: type => listeners.delete(type),
+    setPointerCapture: pointerId => captures.add(pointerId),
+    hasPointerCapture: pointerId => captures.has(pointerId),
+    releasePointerCapture: pointerId => {{ released.push(pointerId); captures.delete(pointerId); }},
+    getBoundingClientRect: () => ({{ left: 0, top: 0 }})
+}};
+const pane = {{ failed: false, normalizedCenter: {{ x: 0.5, y: 0.5 }}, zoom: 1, adapter: {{ measure: () => ({{ naturalWidth: 100, naturalHeight: 100 }}) }} }};
+const previewController = {{ groups: new Map([["overlay", {{ panes: new Map([["left", pane]]), mode: "fit" }}]]), fitScale: () => 1 }};
+const document = {{ querySelectorAll: () => [viewport] }};
+let dashboardPreviewSpacePan = false;
+const updateDashboardPreviewToolbar = () => null;
+const setPreviewZoom = () => null;
+const setPreviewCenter = () => null;
+const renderMagnifier = () => null;
+const hidePreviewMagnifiers = () => null;
+{release_source}
+{bind_source}
+bindPreviewGroup("overlay");
+listeners.get("pointerdown")({{ button: 0, pointerType: "mouse", pointerId: 7, clientX: 10, clientY: 10, preventDefault() {{}} }});
+const lostCaptureHandler = listeners.get("lostpointercapture");
+captures.delete(7);
+if (lostCaptureHandler) lostCaptureHandler({{ pointerId: 7 }});
+const afterLost = {{ dragging: classes.has("dragging"), captures: [...captures] }};
+listeners.get("pointerdown")({{ button: 0, pointerType: "mouse", pointerId: 8, clientX: 10, clientY: 10, preventDefault() {{}} }});
+releasePreviewPointers("overlay");
+console.log(JSON.stringify({{
+    afterLost,
+    hasLostCaptureHandler: Boolean(lostCaptureHandler),
+    released,
+    draggingAfterClose: classes.has("dragging"),
+    capturesAfterClose: [...captures],
+    listenerCountAfterClose: listeners.size,
+    cleanupRemoved: !previewPointerCleanups.has("overlay")
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {
+            "afterLost": {"dragging": False, "captures": []},
+            "hasLostCaptureHandler": True,
+            "released": [8],
+            "draggingAfterClose": False,
+            "capturesAfterClose": [],
+            "listenerCountAfterClose": 0,
+            "cleanupRemoved": True,
+        })
+
+    def test_magnifier_hides_when_pointer_leaves_rendered_image(self):
+        source = self.function_source("renderMagnifier")
+        script = f"""
+const classes = () => {{
+    const values = new Set();
+    return {{ add: name => values.add(name), remove: name => values.delete(name), contains: name => values.has(name) }};
+}};
+const lens = {{ classList: classes(), style: {{}}, offsetWidth: 20, offsetHeight: 20 }};
+const marker = {{ classList: classes(), style: {{}} }};
+const sourceViewport = {{ clientWidth: 200, clientHeight: 200, querySelector: selector => selector === "img" ? sourceImage : lens }};
+const targetViewport = {{ clientWidth: 200, clientHeight: 200, querySelector: selector => selector === "img" ? targetImage : marker }};
+const sourceImage = {{ currentSrc: "source.jpg", src: "source.jpg" }};
+const targetImage = {{ currentSrc: "target.jpg", src: "target.jpg" }};
+const geometry = {{ viewport: {{ left: 0, top: 0 }}, image: {{ left: 50, right: 150, top: 50, bottom: 150, width: 100, height: 100 }} }};
+const panes = new Map([
+    ["source", {{ failed: false, adapter: {{ geometry: () => geometry }} }}],
+    ["target", {{ failed: false, adapter: {{ geometry: () => geometry }} }}]
+]);
+const previewController = {{ groups: new Map([["overlay", {{ magnifier: true, sync: true, panes }}]]) }};
+const document = {{
+    querySelector: selector => selector.includes('data-preview-pane="source"') ? sourceViewport : targetViewport,
+    querySelectorAll: () => [sourceViewport, targetViewport]
+}};
+const hidePreviewMagnifiers = groupId => {{
+    lens.classList.remove("visible");
+    marker.classList.remove("visible");
+}};
+{source}
+const shown = renderMagnifier("overlay", "source", {{ clientX: 100, clientY: 100 }});
+const visibleInside = lens.classList.contains("visible") && marker.classList.contains("visible");
+const shownOutside = renderMagnifier("overlay", "source", {{ clientX: 20, clientY: 20 }});
+console.log(JSON.stringify({{
+    shown,
+    visibleInside,
+    shownOutside,
+    lensVisibleOutside: lens.classList.contains("visible"),
+    markerVisibleOutside: marker.classList.contains("visible")
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {
+            "shown": True,
+            "visibleInside": True,
+            "shownOutside": False,
+            "lensVisibleOutside": False,
+            "markerVisibleOutside": False,
+        })
+
+    def test_unused_legacy_preview_opener_is_removed(self):
+        self.assertNotIn("function openPreviewOverlay(", self.html)
 
     def test_stale_image_callbacks_after_close_and_reopen_do_not_mutate_current_preview(self):
         close_source = self.function_source("closeImagePreview")
