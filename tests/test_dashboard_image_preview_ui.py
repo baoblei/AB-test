@@ -22,7 +22,7 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
         return json.loads(result.stdout)
 
     def preview_close_source(self):
-        start = self.html.find("function closePreview")
+        start = self.html.find("function closeImagePreview")
         self.assertNotEqual(start, -1, "preview close function is missing")
         end = self.html.index("function buildPreviewPayload", start)
         return self.html[start:end]
@@ -140,16 +140,19 @@ console.log(JSON.stringify({ synced, unlocked, reset }));
         result = self.run_preview_close_probe(
             """
 const handlers = {};
+let dashboardPreviewOverlayBound = false;
+const beginDashboardPreviewRender = () => null;
+const releasePreviewPointers = () => null;
+const hidePreviewMagnifiers = () => null;
+const stopHoldCompare = () => null;
+const previewController = { groups: new Map() };
 const overlay = {
     style: { display: "flex" },
     attributes: { "aria-hidden": "false" },
     setAttribute: (name, value) => { overlay.attributes[name] = value; },
     addEventListener: (name, handler) => { handlers[name] = handler; }
 };
-const document = { getElementById: id => {
-    if (id !== "image-overlay") throw new Error(`unexpected element ${id}`);
-    return overlay;
-} };
+const document = { getElementById: id => id === "image-overlay" ? overlay : { replaceChildren: () => null } };
 bindPreviewOverlayEvents();
 handlers.click({ target: overlay });
 const afterBackdrop = { display: overlay.style.display, ariaHidden: overlay.attributes["aria-hidden"] };
@@ -397,6 +400,44 @@ console.log(JSON.stringify({{ during, removed: layer.removed, activeAfter: butto
         self.assertNotIn("state.currentBadcase", source)
         self.assertNotIn("ref_img", source)
         self.assertNotIn("imageUrl(", source)
+
+    def test_preview_lifecycle_has_loading_failure_and_stale_guards(self):
+        for marker in (
+            "function beginDashboardPreviewRender(",
+            "function isDashboardPreviewRenderCurrent(",
+            "function markPreviewPaneFailed(",
+            'classList.remove("loading")',
+            'classList.add("failed")',
+            "function closeImagePreview(",
+            'setAttribute("aria-hidden", "true")',
+            'addEventListener("resize"',
+        ):
+            self.assertIn(marker, self.html)
+
+    def test_close_cleans_every_transient_preview_resource(self):
+        source = self.function_source("closeImagePreview")
+        for marker in (
+            'releasePreviewPointers("overlay")',
+            "hidePreviewMagnifiers()",
+            "stopHoldCompare()",
+            'previewController.groups.delete("overlay")',
+            "replaceChildren()",
+        ):
+            self.assertIn(marker, source)
+
+    def test_overlay_click_and_escape_close_only_preview(self):
+        self.assertIn('event.target === overlay', self.html)
+        self.assertIn('event.key === "Escape"', self.html)
+        close_source = self.function_source("closeImagePreview")
+        self.assertNotIn("closeModal(", close_source)
+        self.assertNotIn('detail-modal', close_source)
+        self.assertNotIn('badcase-modal', close_source)
+
+    def test_responsive_overlay_keeps_single_column_and_bottom_tools(self):
+        self.assertIn("@media (max-width: 760px)", self.html)
+        self.assertIn("grid-template-columns: 1fr", self.html)
+        self.assertIn("overflow-x: auto", self.html)
+        self.assertIn("100dvh", self.html)
 
 
 if __name__ == "__main__":

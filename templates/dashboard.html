@@ -466,7 +466,7 @@
         }
         .dashboard-preview-error { display: none; color: #ffd3d3; }
         .dashboard-preview-viewport:not(.loading) .dashboard-preview-loading { display: none; }
-        .dashboard-preview-viewport.image-error .dashboard-preview-error { display: block; }
+        .dashboard-preview-viewport.failed .dashboard-preview-error { display: block; }
         .dashboard-preview-label {
             position: absolute;
             z-index: 5;
@@ -1132,6 +1132,9 @@
         const previewPointerCleanups = new Map();
         let dashboardPreviewToolbarBound = false;
         let dashboardPreviewKeyboardBound = false;
+        let dashboardPreviewOverlayBound = false;
+        let dashboardPreviewResizeBound = false;
+        let dashboardPreviewResizePending = false;
         let dashboardPreviewSpacePan = false;
 
         function renderDashboardPreviewToolbar({ groupId, showSync }) {
@@ -1377,10 +1380,23 @@
                 if (event.key === "+" && pane) { setPreviewZoom("overlay", paneId, pane.zoom * 1.1); event.preventDefault(); }
                 if (event.key === "-" && pane) { setPreviewZoom("overlay", paneId, pane.zoom / 1.1); event.preventDefault(); }
                 if (event.key === " ") { dashboardPreviewSpacePan = true; hidePreviewMagnifiers("overlay"); event.preventDefault(); }
-                if (event.key === "Escape") { hidePreviewMagnifiers("overlay"); closePreview(); }
+                if (event.key === "Escape") closeImagePreview();
                 updateDashboardPreviewToolbar("overlay");
             });
             document.addEventListener("keyup", event => { if (event.key === " ") dashboardPreviewSpacePan = false; });
+        }
+
+        function bindDashboardPreviewResize() {
+            if (dashboardPreviewResizeBound) return;
+            dashboardPreviewResizeBound = true;
+            window.addEventListener("resize", () => {
+                if (dashboardPreviewResizePending) return;
+                dashboardPreviewResizePending = true;
+                requestAnimationFrame(() => {
+                    dashboardPreviewResizePending = false;
+                    if (previewController.groups.has("overlay")) previewController.refreshGroup("overlay");
+                });
+            });
         }
 
         let state = {
@@ -1469,6 +1485,7 @@
             bindPreviewOverlayEvents();
             bindDashboardPreviewToolbar();
             bindDashboardPreviewCompareControls();
+            bindDashboardPreviewResize();
         }
 
         async function handleTaskTypeChange() {
@@ -2366,19 +2383,25 @@
             overlay.setAttribute("aria-hidden", "false");
         }
 
-        function closePreview() {
-            if (typeof stopHoldCompare === "function") stopHoldCompare();
-            if (typeof hidePreviewMagnifiers === "function") hidePreviewMagnifiers("overlay");
-            if (typeof releasePreviewPointers === "function") releasePreviewPointers("overlay");
+        function closeImagePreview() {
+            beginDashboardPreviewRender();
+            releasePreviewPointers("overlay");
+            hidePreviewMagnifiers();
+            stopHoldCompare();
+            previewController.groups.delete("overlay");
+            document.getElementById("dashboard-preview-toolbar").replaceChildren();
+            document.getElementById("image-preview").replaceChildren();
             const overlay = document.getElementById("image-overlay");
             overlay.style.display = "none";
             overlay.setAttribute("aria-hidden", "true");
         }
 
         function bindPreviewOverlayEvents() {
+            if (dashboardPreviewOverlayBound) return;
+            dashboardPreviewOverlayBound = true;
             const overlay = document.getElementById("image-overlay");
             overlay.addEventListener("click", event => {
-                if (event.target === overlay || event.target.closest("[data-preview-close]")) closePreview();
+                if (event.target === overlay || event.target.closest("[data-preview-close]")) closeImagePreview();
             });
         }
 
@@ -2520,18 +2543,27 @@
             window.addEventListener("blur", stopHoldCompare);
         }
 
-        let dashboardPreviewRenderGeneration = 0;
+        let dashboardPreviewGeneration = 0;
         let dashboardPreviewImageCleanups = [];
 
         function beginDashboardPreviewRender() {
             dashboardPreviewImageCleanups.forEach(cleanup => cleanup());
             dashboardPreviewImageCleanups = [];
-            dashboardPreviewRenderGeneration += 1;
-            return dashboardPreviewRenderGeneration;
+            dashboardPreviewGeneration += 1;
+            return dashboardPreviewGeneration;
+        }
+
+        function isDashboardPreviewRenderCurrent(generation) {
+            return dashboardPreviewGeneration === generation;
+        }
+
+        function markPreviewPaneFailed(groupId, paneId) {
+            const pane = previewController.groups.get(groupId)?.panes.get(paneId);
+            if (pane) pane.failed = true;
         }
 
         function renderDashboardPreviewPane(pane) {
-            const generation = dashboardPreviewRenderGeneration;
+            const generation = dashboardPreviewGeneration;
             const viewport = createNode("section", "dashboard-preview-viewport loading");
             viewport.dataset.previewGroupPane = "overlay";
             viewport.dataset.previewPane = pane.id;
@@ -2547,7 +2579,7 @@
             const label = createNode("strong", "dashboard-preview-label", pane.label || "");
             viewport.append(image, loading, error, lens, marker, label);
             const register = () => {
-                if (generation !== dashboardPreviewRenderGeneration) return;
+                if (!isDashboardPreviewRenderCurrent(generation)) return;
                 viewport.classList.remove("loading");
                 registerPreviewPane("overlay", pane.id, viewport, image);
                 const group = previewController.groups.get("overlay");
@@ -2555,11 +2587,10 @@
                 updateDashboardPreviewToolbar("overlay");
             };
             const fail = () => {
-                if (generation !== dashboardPreviewRenderGeneration) return;
+                if (!isDashboardPreviewRenderCurrent(generation)) return;
                 viewport.classList.remove("loading");
-                viewport.classList.add("image-error");
-                const registeredPane = previewController.groups.get("overlay")?.panes.get(pane.id);
-                if (registeredPane) registeredPane.failed = true;
+                viewport.classList.add("failed");
+                markPreviewPaneFailed("overlay", pane.id);
                 hidePreviewMagnifiers("overlay");
             };
             image.addEventListener("load", register, { once: true });
