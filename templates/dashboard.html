@@ -382,6 +382,46 @@
             pointer-events: none;
         }
         .dashboard-preview-head button { pointer-events: auto; }
+        .dashboard-preview-toolbar {
+            position: absolute;
+            top: 62px;
+            right: 14px;
+            z-index: 9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            width: 42px;
+            max-height: calc(100dvh - 100px);
+            overflow-y: auto;
+            padding: 6px 4px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 14px;
+            background: rgba(17, 24, 32, 0.9);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
+        }
+        .preview-tool {
+            width: 32px;
+            min-height: 32px;
+            padding: 4px;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            color: white;
+            background: transparent;
+            cursor: pointer;
+        }
+        .preview-tool:hover, .preview-tool.active { background: rgba(111, 191, 255, 0.24); border-color: rgba(153, 213, 255, 0.38); }
+        .preview-info, .preview-shortcut-help {
+            width: 220px;
+            padding: 8px;
+            border-radius: 8px;
+            color: #dceaf4;
+            background: rgba(5, 9, 15, 0.86);
+            font-size: 0.74rem;
+            line-height: 1.45;
+        }
+        .preview-info { margin-top: 2px; }
+        .hidden { display: none !important; }
         .dashboard-preview-grid {
             display: grid;
             width: 100%;
@@ -411,6 +451,35 @@
             -webkit-user-drag: none;
             transform-origin: center;
         }
+        .dashboard-preview-viewport.preview-light { background: #f1f4f7; }
+        .dashboard-preview-viewport.dragging { cursor: grabbing; }
+        .magnifier-layer {
+            position: absolute;
+            z-index: 4;
+            display: none;
+            width: 132px;
+            height: 132px;
+            pointer-events: none;
+            border: 2px solid white;
+            border-radius: 50%;
+            background-repeat: no-repeat;
+            box-shadow: 0 3px 16px rgba(0, 0, 0, 0.46);
+        }
+        .magnifier-layer.visible { display: block; }
+        .correspondence-marker {
+            position: absolute;
+            z-index: 4;
+            display: none;
+            width: 16px;
+            height: 16px;
+            margin: -8px 0 0 -8px;
+            pointer-events: none;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            background: rgba(35, 166, 255, 0.68);
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);
+        }
+        .correspondence-marker.visible { display: block; }
         .compare-preview {
             width: min(1500px, 100%);
             display: grid;
@@ -449,6 +518,20 @@
             .dashboard-preview-grid.ti2i { grid-template-columns: 1fr; }
             .dashboard-preview-grid { overflow-y: auto; padding: 62px 12px 82px; }
             .dashboard-preview-viewport { min-height: 62dvh; }
+            .dashboard-preview-toolbar {
+                top: auto;
+                right: 12px;
+                bottom: 12px;
+                left: 12px;
+                flex-direction: row;
+                align-items: center;
+                width: auto;
+                max-width: none;
+                max-height: 52px;
+                overflow-x: auto;
+                overflow-y: hidden;
+            }
+            .preview-info, .preview-shortcut-help { flex: 0 0 220px; }
         }
     </style>
 </head>
@@ -973,6 +1056,261 @@
         function setPreviewCenter(groupId, paneId, center) { previewController.setCenter(groupId, paneId, center); }
         function resetPreviewGroup(groupId) { previewController.resetGroup(groupId); }
 
+        const previewPointerCleanups = new Map();
+        let dashboardPreviewToolbarBound = false;
+        let dashboardPreviewKeyboardBound = false;
+        let dashboardPreviewSpacePan = false;
+
+        function renderDashboardPreviewToolbar({ groupId, showSync }) {
+            function previewToolButton(action, label, symbol, pressed) {
+                const pressedAttribute = pressed == null ? "" : ` aria-pressed="${pressed}"`;
+                return `<button type="button" class="preview-tool" data-preview-action="${action}" aria-label="${label}" title="${label}"${pressedAttribute}><span aria-hidden="true">${symbol}</span></button>`;
+            }
+            return `
+                <!-- data-preview-action="magnifier" data-preview-action="reset" data-preview-action="fit" data-preview-action="fit-width" data-preview-action="fit-height" data-preview-action="actual" data-preview-action="zoom-out" data-preview-action="zoom-in" data-preview-action="background" data-preview-action="help" -->
+                <div class="dashboard-preview-toolbar" data-preview-group="${groupId}">
+                    ${previewToolButton("magnifier", "放大镜关", "🔍", false)}
+                    ${previewToolButton("reset", "重置", "↺")}
+                    ${showSync ? previewToolButton("sync", "同步开", "🔗", true) : ""}
+                    ${previewToolButton("fit", "适应窗口", "▣")}
+                    ${previewToolButton("fit-width", "适应宽度", "↔")}
+                    ${previewToolButton("fit-height", "适应高度", "↕")}
+                    ${previewToolButton("actual", "原始尺寸", "1:1")}
+                    ${previewToolButton("zoom-out", "缩小（-）", "−")}
+                    ${previewToolButton("zoom-in", "放大（+）", "+")}
+                    ${previewToolButton("background", "深色背景", "◐", true)}
+                    ${previewToolButton("help", "快捷键帮助", "?", false)}
+                    <span class="preview-shortcut-help hidden" data-preview-help="${groupId}">滚轮缩放；拖动平移；+ / - 缩放；空格临时平移；Esc 关闭。</span>
+                    <span class="preview-info" data-preview-info="${groupId}">自然尺寸 - · 渲染比例 - · 适应倍率 100% · 模式 适应</span>
+                </div>`;
+        }
+
+        function updateDashboardPreviewToolbar(groupId) {
+            const group = previewController.groups.get(groupId);
+            const toolbar = document.querySelector(`[data-preview-group="${groupId}"]`);
+            if (!group || !toolbar) return;
+            const paneId = group.activePaneId || group.panes.keys().next().value;
+            const pane = group.panes.get(paneId);
+            const modes = { fit: "适应", "fit-width": "适宽", "fit-height": "适高", actual: "原始" };
+            if (pane) {
+                const dimensions = pane.adapter.measure();
+                const renderedScale = previewController.fitScale(group.mode, pane.adapter) * pane.zoom;
+                const info = toolbar.querySelector(`[data-preview-info="${groupId}"]`);
+                if (info) info.textContent = `自然尺寸 ${dimensions.naturalWidth}×${dimensions.naturalHeight} · 渲染比例 ${Math.round(renderedScale * 100)}% · 适应倍率 ${Math.round(pane.zoom * 100)}% · 模式 ${modes[group.mode]}`;
+            }
+            toolbar.querySelectorAll("[data-preview-action]").forEach(button => {
+                const action = button.dataset.previewAction;
+                const pressed = (action === "magnifier" && group.magnifier)
+                    || (action === "sync" && group.sync)
+                    || (action === "background" && group.darkBackground)
+                    || ["fit", "fit-width", "fit-height", "actual"].includes(action) && action === group.mode;
+                if (["magnifier", "sync", "background", "fit", "fit-width", "fit-height", "actual"].includes(action)) {
+                    button.classList.toggle("active", pressed);
+                    button.setAttribute("aria-pressed", String(pressed));
+                }
+            });
+        }
+
+        function registerPreviewPane(groupId, paneId, viewport, image) {
+            if (!viewport || !image || !image.naturalWidth || !image.naturalHeight) return;
+            previewController.addPane(groupId, paneId, {
+                measure: () => ({
+                    naturalWidth: image.naturalWidth,
+                    naturalHeight: image.naturalHeight,
+                    viewportWidth: viewport.clientWidth,
+                    viewportHeight: viewport.clientHeight
+                }),
+                geometry: () => ({ viewport: viewport.getBoundingClientRect(), image: image.getBoundingClientRect() }),
+                apply: ({ scale, normalizedCenter }) => {
+                    const renderedWidth = image.naturalWidth * scale;
+                    const renderedHeight = image.naturalHeight * scale;
+                    const offsetX = (0.5 - normalizedCenter.x) * renderedWidth;
+                    const offsetY = (0.5 - normalizedCenter.y) * renderedHeight;
+                    image.style.width = `${image.naturalWidth * scale}px`;
+                    image.style.height = `${image.naturalHeight * scale}px`;
+                    image.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
+                    updateDashboardPreviewToolbar(groupId);
+                }
+            });
+        }
+
+        function hidePreviewMagnifiers(groupId) {
+            const selector = groupId ? `[data-preview-group-pane="${groupId}"]` : "[data-preview-group-pane]";
+            document.querySelectorAll(selector).forEach(viewport => {
+                viewport.querySelector(".magnifier-layer")?.classList.remove("visible");
+                viewport.querySelector(".correspondence-marker")?.classList.remove("visible");
+            });
+        }
+
+        function renderMagnifier(groupId, paneId, point) {
+            const group = previewController.groups.get(groupId);
+            const sourcePane = group?.panes.get(paneId);
+            if (!group?.magnifier || !sourcePane || sourcePane.failed) return false;
+            const sourceGeometry = sourcePane.adapter.geometry();
+            const sourceImage = sourceGeometry.image;
+            if (point.clientX < sourceImage.left || point.clientX > sourceImage.right || point.clientY < sourceImage.top || point.clientY > sourceImage.bottom) return false;
+            const normalizedPoint = {
+                x: (point.clientX - sourceImage.left) / sourceImage.width,
+                y: (point.clientY - sourceImage.top) / sourceImage.height
+            };
+            hidePreviewMagnifiers(groupId);
+            group.panes.forEach((pane, targetId) => {
+                if (pane.failed) return;
+                const viewport = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${targetId}"]`);
+                const image = viewport?.querySelector("img");
+                if (!viewport || !image) return;
+                const geometry = pane.adapter.geometry();
+                const targetImage = geometry.image;
+                const pointX = targetImage.left + normalizedPoint.x * targetImage.width - geometry.viewport.left;
+                const pointY = targetImage.top + normalizedPoint.y * targetImage.height - geometry.viewport.top;
+                if (targetId === paneId) {
+                    const lens = viewport.querySelector(".magnifier-layer");
+                    if (!lens) return;
+                    const lensLeft = Math.max(0, Math.min(viewport.clientWidth - lens.offsetWidth, pointX - lens.offsetWidth / 2));
+                    const lensTop = Math.max(0, Math.min(viewport.clientHeight - lens.offsetHeight, pointY - lens.offsetHeight / 2));
+                    lens.style.left = `${lensLeft}px`;
+                    lens.style.top = `${lensTop}px`;
+                    lens.style.backgroundImage = `url("${image.currentSrc || image.src}")`;
+                    lens.style.backgroundSize = `${targetImage.width * 3}px ${targetImage.height * 3}px`;
+                    lens.style.backgroundPosition = `${pointX - lensLeft - normalizedPoint.x * targetImage.width * 3}px ${pointY - lensTop - normalizedPoint.y * targetImage.height * 3}px`;
+                    lens.classList.add("visible");
+                } else if (group.sync) {
+                    const marker = viewport.querySelector(".correspondence-marker");
+                    if (!marker) return;
+                    marker.style.left = `${pointX}px`;
+                    marker.style.top = `${pointY}px`;
+                    marker.classList.add("visible");
+                }
+            });
+            return true;
+        }
+
+        function releasePreviewPointers(groupId) {
+            (previewPointerCleanups.get(groupId) || []).forEach(cleanup => cleanup());
+            previewPointerCleanups.delete(groupId);
+        }
+
+        function bindPreviewGroup(groupId) {
+            releasePreviewPointers(groupId);
+            const cleanups = [];
+            document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(viewport => {
+                const paneId = viewport.dataset.previewPane;
+                const activePointers = new Map();
+                let dragPointerId = null;
+                let startPoint = null;
+                let startCenter = null;
+                const activate = () => {
+                    const group = previewController.groups.get(groupId);
+                    if (group) group.activePaneId = paneId;
+                    updateDashboardPreviewToolbar(groupId);
+                };
+                const onWheel = event => {
+                    const group = previewController.groups.get(groupId);
+                    const pane = group?.panes.get(paneId);
+                    if (!pane || pane.failed) return;
+                    activate();
+                    const rect = viewport.getBoundingClientRect();
+                    setPreviewZoom(groupId, paneId, pane.zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1), { x: event.clientX - rect.left, y: event.clientY - rect.top });
+                    event.preventDefault();
+                };
+                const onPointerDown = event => {
+                    if (event.button !== 0 && event.pointerType !== "touch") return;
+                    const pane = previewController.groups.get(groupId)?.panes.get(paneId);
+                    if (!pane || pane.failed) return;
+                    activate();
+                    activePointers.set(event.pointerId, true);
+                    dragPointerId = event.pointerId;
+                    startPoint = { x: event.clientX, y: event.clientY };
+                    startCenter = { ...pane.normalizedCenter };
+                    viewport.setPointerCapture(event.pointerId);
+                    viewport.classList.add("dragging");
+                    event.preventDefault();
+                };
+                const onPointerMove = event => {
+                    const pane = previewController.groups.get(groupId)?.panes.get(paneId);
+                    if (!pane || pane.failed) return;
+                    if (!activePointers.has(event.pointerId)) {
+                        if (!dashboardPreviewSpacePan) renderMagnifier(groupId, paneId, event);
+                        return;
+                    }
+                    if (dragPointerId !== event.pointerId || !startPoint || !startCenter) return;
+                    const dimensions = pane.adapter.measure();
+                    const scale = previewController.fitScale(previewController.groups.get(groupId).mode, pane.adapter) * pane.zoom;
+                    setPreviewCenter(groupId, paneId, {
+                        x: startCenter.x - (event.clientX - startPoint.x) / (dimensions.naturalWidth * scale),
+                        y: startCenter.y - (event.clientY - startPoint.y) / (dimensions.naturalHeight * scale)
+                    });
+                };
+                const onPointerUp = event => {
+                    activePointers.delete(event.pointerId);
+                    if (viewport.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+                    if (event.pointerId === dragPointerId) {
+                        dragPointerId = null;
+                        startPoint = null;
+                        startCenter = null;
+                        viewport.classList.remove("dragging");
+                    }
+                };
+                const onPointerLeave = () => { if (!activePointers.size) hidePreviewMagnifiers(groupId); };
+                viewport.addEventListener("wheel", onWheel, { passive: false });
+                viewport.addEventListener("pointerdown", onPointerDown);
+                viewport.addEventListener("pointermove", onPointerMove);
+                viewport.addEventListener("pointerup", onPointerUp);
+                viewport.addEventListener("pointercancel", onPointerUp);
+                viewport.addEventListener("pointerleave", onPointerLeave);
+                cleanups.push(() => {
+                    viewport.removeEventListener("wheel", onWheel);
+                    viewport.removeEventListener("pointerdown", onPointerDown);
+                    viewport.removeEventListener("pointermove", onPointerMove);
+                    viewport.removeEventListener("pointerup", onPointerUp);
+                    viewport.removeEventListener("pointercancel", onPointerUp);
+                    viewport.removeEventListener("pointerleave", onPointerLeave);
+                });
+            });
+            previewPointerCleanups.set(groupId, cleanups);
+        }
+
+        function bindDashboardPreviewToolbar() {
+            if (dashboardPreviewToolbarBound) return;
+            dashboardPreviewToolbarBound = true;
+            document.addEventListener("click", event => {
+                const button = event.target.closest("[data-preview-action]");
+                const toolbar = button?.closest("[data-preview-group]");
+                const groupId = toolbar?.dataset.previewGroup;
+                const group = groupId && previewController.groups.get(groupId);
+                if (!button || !group) return;
+                const action = button.dataset.previewAction;
+                const paneId = group.activePaneId || group.panes.keys().next().value;
+                const pane = group.panes.get(paneId);
+                if (["fit", "fit-width", "fit-height", "actual"].includes(action)) setPreviewMode(groupId, action);
+                if (action === "reset") resetPreviewGroup(groupId);
+                if (action === "sync") previewController.setSync(groupId, !group.sync);
+                if (action === "magnifier") { group.magnifier = !group.magnifier; if (!group.magnifier) hidePreviewMagnifiers(groupId); }
+                if (action === "background") {
+                    group.darkBackground = !group.darkBackground;
+                    document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(viewport => viewport.classList.toggle("preview-light", !group.darkBackground));
+                }
+                if (action === "help") toolbar.querySelector(`[data-preview-help="${groupId}"]`)?.classList.toggle("hidden");
+                if (pane && action === "zoom-in") setPreviewZoom(groupId, paneId, pane.zoom * 1.1);
+                if (pane && action === "zoom-out") setPreviewZoom(groupId, paneId, pane.zoom / 1.1);
+                updateDashboardPreviewToolbar(groupId);
+            });
+            if (dashboardPreviewKeyboardBound) return;
+            dashboardPreviewKeyboardBound = true;
+            document.addEventListener("keydown", event => {
+                if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
+                const group = previewController.groups.get("overlay");
+                const paneId = group?.activePaneId || group?.panes.keys().next().value;
+                const pane = group?.panes.get(paneId);
+                if (event.key === "+" && pane) { setPreviewZoom("overlay", paneId, pane.zoom * 1.1); event.preventDefault(); }
+                if (event.key === "-" && pane) { setPreviewZoom("overlay", paneId, pane.zoom / 1.1); event.preventDefault(); }
+                if (event.key === " ") { dashboardPreviewSpacePan = true; hidePreviewMagnifiers("overlay"); event.preventDefault(); }
+                if (event.key === "Escape") { hidePreviewMagnifiers("overlay"); closePreview(); }
+                updateDashboardPreviewToolbar("overlay");
+            });
+            document.addEventListener("keyup", event => { if (event.key === " ") dashboardPreviewSpacePan = false; });
+        }
+
         let state = {
             taskType: "T2I",
             config: null,
@@ -1057,6 +1395,7 @@
             bindUploadForms();
             bindExportEvents();
             bindPreviewOverlayEvents();
+            bindDashboardPreviewToolbar();
         }
 
         async function handleTaskTypeChange() {
@@ -1955,6 +2294,8 @@
         }
 
         function closePreview() {
+            if (typeof hidePreviewMagnifiers === "function") hidePreviewMagnifiers("overlay");
+            if (typeof releasePreviewPointers === "function") releasePreviewPointers("overlay");
             const overlay = document.getElementById("image-overlay");
             overlay.style.display = "none";
             overlay.setAttribute("aria-hidden", "true");
@@ -1981,38 +2322,62 @@
             return `/images/${[state.taskType, model, scene, filename].map(encodeURIComponent).join("/")}`;
         }
 
-        function createCompareBox(src, label) {
-            const box = createNode("div", "compare-box");
+        function createDashboardPreviewPane(groupId, paneId, src, label) {
+            const viewport = createNode("div", "dashboard-preview-viewport");
+            viewport.dataset.previewGroupPane = groupId;
+            viewport.dataset.previewPane = paneId;
             const image = createNode("img");
-            image.src = src;
+            image.src = src || "";
             image.alt = label;
-            box.append(image, createNode("div", "compare-label", label));
-            return box;
+            image.draggable = false;
+            const lens = createNode("span", "magnifier-layer");
+            const marker = createNode("span", "correspondence-marker");
+            viewport.append(image, lens, marker, createNode("div", "compare-label", label));
+            const register = () => {
+                registerPreviewPane(groupId, paneId, viewport, image);
+                const group = previewController.groups.get(groupId);
+                if (group && !group.activePaneId) group.activePaneId = paneId;
+                updateDashboardPreviewToolbar(groupId);
+            };
+            image.addEventListener("load", register, { once: true });
+            image.addEventListener("error", () => {
+                const pane = previewController.groups.get(groupId)?.panes.get(paneId);
+                if (pane) pane.failed = true;
+                hidePreviewMagnifiers(groupId);
+            }, { once: true });
+            if (image.complete && image.naturalWidth) register();
+            return viewport;
+        }
+
+        function renderDashboardPreview(payload) {
+            const panes = payload.mode === "TI2I" && payload.ref
+                ? [
+                    { paneId: "reference", src: payload.ref, label: "参考图" },
+                    { paneId: "a", src: payload.a, label: payload.labels[0] },
+                    { paneId: "b", src: payload.b, label: payload.labels[1] }
+                ]
+                : [
+                    { paneId: "a", src: payload.a, label: payload.labels[0] },
+                    { paneId: "b", src: payload.b, label: payload.labels[1] }
+                ];
+            releasePreviewPointers("overlay");
+            hidePreviewMagnifiers("overlay");
+            createPreviewGroup("overlay", { sync: panes.length > 1 });
+            const grid = document.getElementById("image-preview");
+            grid.className = `dashboard-preview-grid ${payload.mode === "TI2I" && payload.ref ? "ti2i" : "t2i"}`;
+            grid.replaceChildren(...panes.map(item => createDashboardPreviewPane("overlay", item.paneId, item.src, item.label)));
+            document.getElementById("dashboard-preview-toolbar").innerHTML = renderDashboardPreviewToolbar({ groupId: "overlay", showSync: panes.length > 1 });
+            bindPreviewGroup("overlay");
+            updateDashboardPreviewToolbar("overlay");
         }
 
         function openPreview(payload) {
-            const container = document.getElementById("image-preview");
-            if (payload.mode === "TI2I" && payload.ref) {
-                container.className = "compare-preview ti2i";
-                container.replaceChildren(
-                    createCompareBox(payload.ref, "参考图"),
-                    createCompareBox(payload.a, payload.labels[0]),
-                    createCompareBox(payload.b, payload.labels[1])
-                );
-            } else {
-                container.className = "compare-preview t2i";
-                container.replaceChildren(
-                    createCompareBox(payload.a, payload.labels[0]),
-                    createCompareBox(payload.b, payload.labels[1])
-                );
-            }
+            renderDashboardPreview(payload);
             openPreviewOverlay();
         }
 
         function openSinglePreview(src, label) {
-            const container = document.getElementById("image-preview");
-            container.className = "compare-preview t2i";
-            container.replaceChildren(createCompareBox(src, label));
+            renderDashboardPreview({ mode: "single", a: src, labels: [label] });
             openPreviewOverlay();
         }
 

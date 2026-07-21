@@ -164,6 +164,53 @@ console.log(JSON.stringify({ afterBackdrop, afterButton: { display: overlay.styl
             "afterButton": {"display": "none", "ariaHidden": "true"},
         })
 
+    def test_toolbar_contains_evaluation_inspection_tools(self):
+        for marker in (
+            'data-preview-action="magnifier"',
+            'data-preview-action="reset"',
+            'data-preview-action="fit"',
+            'data-preview-action="fit-width"',
+            'data-preview-action="fit-height"',
+            'data-preview-action="actual"',
+            'data-preview-action="zoom-out"',
+            'data-preview-action="zoom-in"',
+            'data-preview-action="background"',
+            'data-preview-action="help"',
+            "function renderDashboardPreviewToolbar(",
+            "function updateDashboardPreviewToolbar(",
+        ):
+            self.assertIn(marker, self.html)
+
+    def test_pointer_magnifier_and_keyboard_bindings_exist(self):
+        for marker in (
+            'addEventListener("wheel"',
+            'addEventListener("pointerdown"',
+            'addEventListener("pointermove"',
+            'setPointerCapture(',
+            "renderMagnifier(",
+            "releasePreviewPointers(",
+            '["INPUT", "SELECT", "TEXTAREA"]',
+            'event.key === "+"',
+            'event.key === "-"',
+            'event.key === "Escape"',
+        ):
+            self.assertIn(marker, self.html)
+
+    def test_single_preview_toolbar_can_hide_sync(self):
+        start = self.html.index("function renderDashboardPreviewToolbar(")
+        end = self.html.index("function updateDashboardPreviewToolbar(", start)
+        source = self.html[start:end]
+        script = f"""
+{source}
+console.log(JSON.stringify({{
+    detail: renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: true }}),
+    single: renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: false }})
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertIn('data-preview-action="sync"', result["detail"])
+        self.assertNotIn('data-preview-action="sync"', result["single"])
+
 
 if __name__ == "__main__":
     unittest.main()
