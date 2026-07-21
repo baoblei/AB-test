@@ -238,6 +238,57 @@ console.log(JSON.stringify({{ created, groupOptions, toolbarOptions, className: 
         self.assertEqual(result["className"], "dashboard-preview-grid single")
         self.assertEqual(result["toolbar"], "toolbar")
 
+    def function_source(self, name):
+        start = self.html.index(f"function {name}")
+        brace = self.html.index("{", start)
+        depth = 0
+        for index in range(brace, len(self.html)):
+            if self.html[index] == "{":
+                depth += 1
+            elif self.html[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return self.html[start:index + 1]
+        self.fail(f"function {name} is incomplete")
+
+    def test_preview_normalization_keeps_detail_and_single_boundaries(self):
+        source = self.function_source("normalizeDashboardPreview")
+        script = f"""
+{source}
+console.log(JSON.stringify({{
+    t2i: normalizeDashboardPreview({{ mode: "T2I", a: "a.jpg", b: "b.jpg", labels: ["A", "B"] }}),
+    ti2i: normalizeDashboardPreview({{ mode: "TI2I", ref: "ref.jpg", a: "a.jpg", b: "b.jpg", labels: ["A", "B"] }}),
+    missingRef: normalizeDashboardPreview({{ mode: "TI2I", ref: null, a: "a.jpg", b: "b.jpg", labels: ["A", "B"] }}),
+    single: normalizeDashboardPreview({{ single: true, src: "bad.jpg", label: "A" }})
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual([p["id"] for p in result["t2i"]["panes"]], ["left", "right"])
+        self.assertEqual([p["id"] for p in result["ti2i"]["panes"]], ["reference", "left", "right"])
+        self.assertEqual([p["id"] for p in result["missingRef"]["panes"]], ["left", "right"])
+        self.assertTrue(result["t2i"]["showSync"])
+        self.assertTrue(result["t2i"]["showCompare"])
+        self.assertEqual([p["id"] for p in result["single"]["panes"]], ["single"])
+        self.assertFalse(result["single"]["showSync"])
+        self.assertFalse(result["single"]["showCompare"])
+
+    def test_detail_has_two_way_and_three_way_hold_compare_controls(self):
+        for marker in (
+            "function buildHoldComparePairs(",
+            "function renderInlineCompareControls(",
+            'data-hold-compare="true"',
+            "function startHoldCompare(",
+            "function stopHoldCompare(",
+        ):
+            self.assertIn(marker, self.html)
+
+    def test_bad_case_click_stays_single_image(self):
+        source = self.function_source("openSinglePreview")
+        self.assertIn("single: true", source)
+        self.assertNotIn("state.currentBadcase", source)
+        self.assertNotIn("ref_img", source)
+        self.assertNotIn("imageUrl(", source)
+
 
 if __name__ == "__main__":
     unittest.main()

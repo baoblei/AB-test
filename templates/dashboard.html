@@ -453,6 +453,34 @@
         }
         .dashboard-preview-viewport.preview-light { background: #f1f4f7; }
         .dashboard-preview-viewport.dragging { cursor: grabbing; }
+        .dashboard-preview-loading, .dashboard-preview-error {
+            position: absolute;
+            inset: 50% auto auto 50%;
+            transform: translate(-50%, -50%);
+            padding: 8px 10px;
+            border-radius: 8px;
+            color: #dceaf4;
+            background: rgba(5, 9, 15, 0.72);
+            font-size: 0.8rem;
+            pointer-events: none;
+        }
+        .dashboard-preview-error { display: none; color: #ffd3d3; }
+        .dashboard-preview-viewport:not(.loading) .dashboard-preview-loading { display: none; }
+        .dashboard-preview-viewport.image-error .dashboard-preview-error { display: block; }
+        .dashboard-preview-label {
+            position: absolute;
+            z-index: 5;
+            right: 10px;
+            bottom: 10px;
+            max-width: calc(100% - 20px);
+            overflow: hidden;
+            padding: 5px 8px;
+            border-radius: 7px;
+            color: white;
+            background: rgba(5, 9, 15, 0.7);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .magnifier-layer {
             position: absolute;
             z-index: 4;
@@ -480,6 +508,51 @@
             box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);
         }
         .correspondence-marker.visible { display: block; }
+        .inline-compare-btn {
+            position: absolute;
+            z-index: 18;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            border-radius: 50%;
+            color: #17304c;
+            background: rgba(255, 255, 255, 0.94);
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .inline-compare-btn.active { color: white; background: var(--primary); border-color: var(--primary); }
+        .inline-compare-btn[data-compare-slot="only-upper"] { left: 50%; top: calc(50% - 17px); transform: translate(-50%, -50%); }
+        .inline-compare-btn[data-compare-slot="only-lower"] { left: 50%; top: calc(50% + 17px); transform: translate(-50%, -50%); }
+        .inline-compare-btn[data-compare-slot="left-upper"] { left: calc(33.333% - 3px); top: calc(50% - 34px); transform: translate(-50%, -50%); }
+        .inline-compare-btn[data-compare-slot="left-middle"] { left: calc(33.333% - 3px); top: 50%; transform: translate(-50%, -50%); }
+        .inline-compare-btn[data-compare-slot="left-lower"] { left: calc(33.333% - 3px); top: calc(50% + 34px); transform: translate(-50%, -50%); }
+        .inline-compare-btn[data-compare-slot="right-upper"] { left: calc(66.667% + 3px); top: calc(50% - 34px); transform: translate(-50%, -50%); }
+        .inline-compare-btn[data-compare-slot="right-middle"] { left: calc(66.667% + 3px); top: 50%; transform: translate(-50%, -50%); }
+        .inline-compare-btn[data-compare-slot="right-lower"] { left: calc(66.667% + 3px); top: calc(50% + 34px); transform: translate(-50%, -50%); }
+        .hold-compare-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 11;
+            overflow: hidden;
+            pointer-events: none;
+            background: inherit;
+            box-shadow: inset 0 0 0 2px rgba(111, 191, 255, 0.9);
+        }
+        .hold-compare-layer > img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
+        .hold-compare-label {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 4px 8px;
+            border-radius: 7px;
+            color: white;
+            background: rgba(5, 9, 15, 0.78);
+            font-size: 0.75rem;
+            white-space: nowrap;
+        }
         .compare-preview {
             width: min(1500px, 100%);
             display: grid;
@@ -1395,6 +1468,7 @@
             bindExportEvents();
             bindPreviewOverlayEvents();
             bindDashboardPreviewToolbar();
+            bindDashboardPreviewCompareControls();
         }
 
         async function handleTaskTypeChange() {
@@ -2293,6 +2367,7 @@
         }
 
         function closePreview() {
+            if (typeof stopHoldCompare === "function") stopHoldCompare();
             if (typeof hidePreviewMagnifiers === "function") hidePreviewMagnifiers("overlay");
             if (typeof releasePreviewPointers === "function") releasePreviewPointers("overlay");
             const overlay = document.getElementById("image-overlay");
@@ -2348,6 +2423,182 @@
             return viewport;
         }
 
+        function normalizeDashboardPreview(payload) {
+            if (payload.single) {
+                return {
+                    kind: "single",
+                    panes: [{ id: "single", src: payload.src, label: payload.label }],
+                    showSync: false,
+                    showCompare: false
+                };
+            }
+            const panes = [];
+            if (payload.mode === "TI2I" && payload.ref) {
+                panes.push({ id: "reference", src: payload.ref, label: "参考图" });
+            }
+            panes.push(
+                { id: "left", src: payload.a, label: payload.labels[0] },
+                { id: "right", src: payload.b, label: payload.labels[1] }
+            );
+            return { kind: panes.length === 3 ? "ti2i" : "t2i", panes, showSync: true, showCompare: true };
+        }
+
+        function buildHoldComparePairs(panes) {
+            if (panes.length === 2) {
+                return [
+                    { sourceId: panes[1].id, targetId: panes[0].id, label: `${panes[1].label} 覆盖${panes[0].label}`, slot: "only-upper", kind: "adjacent", symbol: "←" },
+                    { sourceId: panes[0].id, targetId: panes[1].id, label: `${panes[0].label} 覆盖${panes[1].label}`, slot: "only-lower", kind: "adjacent", symbol: "→" }
+                ];
+            }
+            if (panes.length === 3) {
+                return [
+                    { sourceId: panes[1].id, targetId: panes[0].id, label: `${panes[1].label} 覆盖${panes[0].label}`, slot: "left-upper", kind: "adjacent", symbol: "←" },
+                    { sourceId: panes[0].id, targetId: panes[1].id, label: `${panes[0].label} 覆盖${panes[1].label}`, slot: "left-middle", kind: "adjacent", symbol: "→" },
+                    { sourceId: panes[2].id, targetId: panes[0].id, label: `${panes[2].label} 覆盖${panes[0].label}`, slot: "left-lower", kind: "folded", symbol: "└←" },
+                    { sourceId: panes[2].id, targetId: panes[1].id, label: `${panes[2].label} 覆盖${panes[1].label}`, slot: "right-upper", kind: "adjacent", symbol: "←" },
+                    { sourceId: panes[1].id, targetId: panes[2].id, label: `${panes[1].label} 覆盖${panes[2].label}`, slot: "right-middle", kind: "adjacent", symbol: "→" },
+                    { sourceId: panes[0].id, targetId: panes[2].id, label: `${panes[0].label} 覆盖${panes[2].label}`, slot: "right-lower", kind: "folded", symbol: "→┘" }
+                ];
+            }
+            return [];
+        }
+
+        function renderInlineCompareControls(groupId, panes) {
+            const controls = document.createDocumentFragment();
+            buildHoldComparePairs(panes).forEach(pair => {
+                const button = createNode("button", "inline-compare-btn", pair.symbol);
+                button.type = "button";
+                button.setAttribute("data-hold-compare", "true"); // data-hold-compare="true"
+                button.dataset.previewGroupId = groupId;
+                button.dataset.compareSource = pair.sourceId;
+                button.dataset.compareTarget = pair.targetId;
+                button.dataset.compareSlot = pair.slot;
+                button.dataset.compareKind = pair.kind;
+                button.setAttribute("aria-pressed", "false");
+                button.setAttribute("aria-label", `按住：${pair.label}`);
+                button.title = `按住：${pair.label}`;
+                controls.append(button);
+            });
+            return controls;
+        }
+
+        let activeHoldCompare = null;
+        let dashboardPreviewCompareBound = false;
+
+        function startHoldCompare(groupId, sourceId, targetId, button) {
+            stopHoldCompare();
+            const group = previewController.groups.get(groupId);
+            if (!group) return false;
+            const sourceViewport = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${sourceId}"]`);
+            const targetViewport = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${targetId}"]`);
+            const sourcePane = group.panes.get(sourceId);
+            const targetPane = group.panes.get(targetId);
+            if (!sourceViewport || !targetViewport || sourcePane?.failed || targetPane?.failed) return false;
+            const sourceImage = sourceViewport.querySelector("img");
+            const targetImage = targetViewport.querySelector("img");
+            if (!sourceImage || !targetImage) return false;
+            const layer = createNode("div", "hold-compare-layer");
+            layer.dataset.sourcePane = sourceId;
+            layer.dataset.targetPane = targetId;
+            const overlayImage = createNode("img");
+            overlayImage.src = sourceImage.currentSrc || sourceImage.src;
+            overlayImage.alt = sourceImage.alt || "";
+            overlayImage.draggable = false;
+            overlayImage.style.width = sourceImage.style.width;
+            overlayImage.style.height = sourceImage.style.height;
+            overlayImage.style.transform = sourceImage.style.transform;
+            const label = createNode("span", "hold-compare-label");
+            label.textContent = `${sourceViewport.dataset.previewLabel || sourceId} → ${targetViewport.dataset.previewLabel || targetId}`;
+            layer.append(overlayImage, label);
+            targetViewport.append(layer);
+            button.classList.add("active", "holding");
+            button.setAttribute("aria-pressed", "true");
+            activeHoldCompare = { button, layer };
+            return true;
+        }
+
+        function stopHoldCompare() {
+            if (!activeHoldCompare) return;
+            activeHoldCompare.layer.remove();
+            activeHoldCompare.button.classList.remove("active", "holding");
+            activeHoldCompare.button.setAttribute("aria-pressed", "false");
+            activeHoldCompare = null;
+        }
+
+        function bindDashboardPreviewCompareControls() {
+            if (dashboardPreviewCompareBound) return;
+            dashboardPreviewCompareBound = true;
+            document.addEventListener("pointerdown", event => {
+                const button = event.target.closest?.("[data-hold-compare]");
+                if (!button || !button.matches("[data-hold-compare]")) return;
+                if (startHoldCompare(button.dataset.previewGroupId, button.dataset.compareSource, button.dataset.compareTarget, button)) event.preventDefault();
+            });
+            document.addEventListener("pointerup", stopHoldCompare);
+            document.addEventListener("pointercancel", stopHoldCompare);
+            document.addEventListener("keyup", event => {
+                if (activeHoldCompare && [" ", "Enter"].includes(event.key)) stopHoldCompare();
+            });
+            document.addEventListener("keydown", event => {
+                const button = event.target.closest?.("[data-hold-compare]");
+                if (!button || ![" ", "Enter"].includes(event.key)) return;
+                if (!event.repeat) startHoldCompare(button.dataset.previewGroupId, button.dataset.compareSource, button.dataset.compareTarget, button);
+                event.preventDefault();
+            });
+            window.addEventListener("blur", stopHoldCompare);
+        }
+
+        let dashboardPreviewRenderGeneration = 0;
+        let dashboardPreviewImageCleanups = [];
+
+        function beginDashboardPreviewRender() {
+            dashboardPreviewImageCleanups.forEach(cleanup => cleanup());
+            dashboardPreviewImageCleanups = [];
+            dashboardPreviewRenderGeneration += 1;
+            return dashboardPreviewRenderGeneration;
+        }
+
+        function renderDashboardPreviewPane(pane) {
+            const generation = dashboardPreviewRenderGeneration;
+            const viewport = createNode("section", "dashboard-preview-viewport loading");
+            viewport.dataset.previewGroupPane = "overlay";
+            viewport.dataset.previewPane = pane.id;
+            viewport.dataset.previewLabel = pane.label || "";
+            const image = createNode("img");
+            image.src = pane.src || "";
+            image.alt = pane.label || "";
+            image.draggable = false;
+            const loading = createNode("span", "dashboard-preview-loading", "图片加载中…");
+            const error = createNode("span", "dashboard-preview-error", "图片加载失败");
+            const lens = createNode("span", "magnifier-layer");
+            const marker = createNode("span", "correspondence-marker");
+            const label = createNode("strong", "dashboard-preview-label", pane.label || "");
+            viewport.append(image, loading, error, lens, marker, label);
+            const register = () => {
+                if (generation !== dashboardPreviewRenderGeneration) return;
+                viewport.classList.remove("loading");
+                registerPreviewPane("overlay", pane.id, viewport, image);
+                const group = previewController.groups.get("overlay");
+                if (group && !group.activePaneId) group.activePaneId = pane.id;
+                updateDashboardPreviewToolbar("overlay");
+            };
+            const fail = () => {
+                if (generation !== dashboardPreviewRenderGeneration) return;
+                viewport.classList.remove("loading");
+                viewport.classList.add("image-error");
+                const registeredPane = previewController.groups.get("overlay")?.panes.get(pane.id);
+                if (registeredPane) registeredPane.failed = true;
+                hidePreviewMagnifiers("overlay");
+            };
+            image.addEventListener("load", register, { once: true });
+            image.addEventListener("error", fail, { once: true });
+            dashboardPreviewImageCleanups.push(() => {
+                image.removeEventListener("load", register);
+                image.removeEventListener("error", fail);
+            });
+            if (image.complete) image.naturalWidth ? register() : fail();
+            return viewport;
+        }
+
         function renderDashboardPreview(payload) {
             const panes = payload.mode === "single"
                 ? [{ paneId: "single", src: payload.a, label: payload.labels[0] }]
@@ -2372,14 +2623,31 @@
             updateDashboardPreviewToolbar("overlay");
         }
 
+        function openDashboardPreview(payload) {
+            stopHoldCompare();
+            releasePreviewPointers("overlay");
+            hidePreviewMagnifiers("overlay");
+            beginDashboardPreviewRender();
+            const normalized = normalizeDashboardPreview(payload);
+            createPreviewGroup("overlay", { sync: normalized.showSync });
+            const grid = document.getElementById("image-preview");
+            grid.className = `dashboard-preview-grid ${normalized.kind}`;
+            grid.replaceChildren(...normalized.panes.map(renderDashboardPreviewPane));
+            if (normalized.showCompare) grid.append(renderInlineCompareControls("overlay", normalized.panes));
+            document.getElementById("dashboard-preview-toolbar").innerHTML = renderDashboardPreviewToolbar({ groupId: "overlay", showSync: normalized.showSync });
+            bindPreviewGroup("overlay");
+            updateDashboardPreviewToolbar("overlay");
+            const overlay = document.getElementById("image-overlay");
+            overlay.style.display = "flex";
+            overlay.setAttribute("aria-hidden", "false");
+        }
+
         function openPreview(payload) {
-            renderDashboardPreview(payload);
-            openPreviewOverlay();
+            openDashboardPreview(payload);
         }
 
         function openSinglePreview(src, label) {
-            renderDashboardPreview({ mode: "single", a: src, labels: [label] });
-            openPreviewOverlay();
+            openDashboardPreview({ single: true, src, label });
         }
 
         function bindExportEvents() {
