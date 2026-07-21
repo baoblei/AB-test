@@ -21,6 +21,19 @@ class DashboardImagePreviewUiTests(unittest.TestCase):
         )
         return json.loads(result.stdout)
 
+    def preview_close_source(self):
+        start = self.html.find("function closePreview")
+        self.assertNotEqual(start, -1, "preview close function is missing")
+        end = self.html.index("function buildPreviewPayload", start)
+        return self.html[start:end]
+
+    def run_preview_close_probe(self, scenario):
+        script = f"{self.preview_close_source()}\n{scenario}"
+        result = subprocess.run(
+            ["node", "-e", script], check=True, capture_output=True, text=True
+        )
+        return json.loads(result.stdout)
+
     def test_overlay_has_immersive_preview_shell(self):
         for marker in (
             'class="dashboard-preview-stage"',
@@ -64,6 +77,23 @@ console.log(JSON.stringify({ high, low }));
         )
         self.assertEqual(result, {"high": 12, "low": 0.1})
 
+    def test_controller_rejects_nonnumeric_zoom(self):
+        result = self.run_controller_probe(
+            """
+const adapter = {
+    measure: () => ({ naturalWidth: 1000, naturalHeight: 500, viewportWidth: 500, viewportHeight: 500 }),
+    apply: () => {}
+};
+const controller = new PreviewController();
+controller.createGroup("overlay");
+controller.addPane("overlay", "left", adapter);
+controller.setZoom("overlay", "left", "not-a-number");
+const zoom = controller.groups.get("overlay").panes.get("left").zoom;
+console.log(JSON.stringify({ zoom, valid: Number.isFinite(zoom) && zoom >= 0.1 && zoom <= 12 }));
+"""
+        )
+        self.assertEqual(result, {"zoom": 1, "valid": True})
+
     def test_controller_syncs_normalized_center_and_can_unlock(self):
         result = self.run_controller_probe(
             """
@@ -88,6 +118,51 @@ console.log(JSON.stringify({ synced, unlocked, reset }));
         self.assertEqual(result["synced"], {"x": 0.7, "y": 0.35})
         self.assertEqual(result["unlocked"], {"x": 0.7, "y": 0.35})
         self.assertEqual(result["reset"], {"x": 0.5, "y": 0.5})
+
+    def test_legacy_preview_markup_has_compatibility_styles(self):
+        for marker in (
+            ".compare-preview {",
+            ".compare-preview.t2i",
+            ".compare-preview.ti2i",
+            ".compare-box {",
+            ".compare-label {",
+        ):
+            self.assertIn(marker, self.html)
+
+        medium_breakpoint = self.html[
+            self.html.index("@media (max-width: 1180px)"):
+            self.html.index("@media (max-width: 720px)")
+        ]
+        self.assertIn(".compare-preview.t2i", medium_breakpoint)
+        self.assertIn(".compare-preview.ti2i", medium_breakpoint)
+
+    def test_preview_close_controls_close_only_the_preview_overlay(self):
+        result = self.run_preview_close_probe(
+            """
+const handlers = {};
+const overlay = {
+    style: { display: "flex" },
+    attributes: { "aria-hidden": "false" },
+    setAttribute: (name, value) => { overlay.attributes[name] = value; },
+    addEventListener: (name, handler) => { handlers[name] = handler; }
+};
+const document = { getElementById: id => {
+    if (id !== "image-overlay") throw new Error(`unexpected element ${id}`);
+    return overlay;
+} };
+bindPreviewOverlayEvents();
+handlers.click({ target: overlay });
+const afterBackdrop = { display: overlay.style.display, ariaHidden: overlay.attributes["aria-hidden"] };
+overlay.style.display = "flex";
+overlay.attributes["aria-hidden"] = "false";
+handlers.click({ target: { closest: selector => selector === "[data-preview-close]" ? {} : null } });
+console.log(JSON.stringify({ afterBackdrop, afterButton: { display: overlay.style.display, ariaHidden: overlay.attributes["aria-hidden"] } }));
+"""
+        )
+        self.assertEqual(result, {
+            "afterBackdrop": {"display": "none", "ariaHidden": "true"},
+            "afterButton": {"display": "none", "ariaHidden": "true"},
+        })
 
 
 if __name__ == "__main__":

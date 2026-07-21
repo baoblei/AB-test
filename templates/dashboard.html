@@ -411,11 +411,31 @@
             -webkit-user-drag: none;
             transform-origin: center;
         }
+        .compare-preview {
+            width: min(1500px, 100%);
+            display: grid;
+            gap: 16px;
+        }
+        .compare-preview.t2i { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .compare-preview.ti2i { grid-template-columns: minmax(280px, 0.8fr) repeat(2, minmax(0, 1fr)); }
+        .compare-box {
+            background: rgba(255,255,255,0.08);
+            border-radius: 22px;
+            padding: 16px;
+            text-align: center;
+        }
+        .compare-box img {
+            max-width: 100%;
+            max-height: 76vh;
+            object-fit: contain;
+            border-radius: 14px;
+        }
+        .compare-label { color: white; margin-top: 10px; font-weight: 800; }
         @media (max-width: 1180px) {
             .upload-row, .dataset-download-grid, .filter-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
-            .toolbar, .pair-head, .summary-grid, .export-fixed-info, .export-grid {
+            .toolbar, .pair-head, .summary-grid, .compare-preview.t2i, .compare-preview.ti2i, .export-fixed-info, .export-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -883,7 +903,10 @@
                 const group = this.groups.get(groupId);
                 const pane = group?.panes.get(paneId);
                 if (!pane || pane.failed) return;
-                const nextZoom = Math.max(0.1, Math.min(12, Number(zoom)));
+                const numericZoom = Number(zoom);
+                const nextZoom = Number.isFinite(numericZoom)
+                    ? Math.max(0.1, Math.min(12, numericZoom))
+                    : pane.zoom;
                 if (anchor) {
                     const size = pane.adapter.measure();
                     const baseScale = this.fitScale(group.mode, pane.adapter);
@@ -1033,6 +1056,7 @@
             await handleResultTaskTypeChange();
             bindUploadForms();
             bindExportEvents();
+            bindPreviewOverlayEvents();
         }
 
         async function handleTaskTypeChange() {
@@ -1924,6 +1948,25 @@
             }));
         }
 
+        function openPreviewOverlay() {
+            const overlay = document.getElementById("image-overlay");
+            overlay.style.display = "flex";
+            overlay.setAttribute("aria-hidden", "false");
+        }
+
+        function closePreview() {
+            const overlay = document.getElementById("image-overlay");
+            overlay.style.display = "none";
+            overlay.setAttribute("aria-hidden", "true");
+        }
+
+        function bindPreviewOverlayEvents() {
+            const overlay = document.getElementById("image-overlay");
+            overlay.addEventListener("click", event => {
+                if (event.target === overlay || event.target.closest("[data-preview-close]")) closePreview();
+            });
+        }
+
         function buildPreviewPayload(row, v1, v2) {
             return {
                 mode: state.taskType,
@@ -1963,14 +2006,14 @@
                     createCompareBox(payload.b, payload.labels[1])
                 );
             }
-            document.getElementById("image-overlay").style.display = "flex";
+            openPreviewOverlay();
         }
 
         function openSinglePreview(src, label) {
             const container = document.getElementById("image-preview");
             container.className = "compare-preview t2i";
             container.replaceChildren(createCompareBox(src, label));
-            document.getElementById("image-overlay").style.display = "flex";
+            openPreviewOverlay();
         }
 
         function bindExportEvents() {
