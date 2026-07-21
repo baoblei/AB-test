@@ -165,21 +165,19 @@ console.log(JSON.stringify({ afterBackdrop, afterButton: { display: overlay.styl
         })
 
     def test_toolbar_contains_evaluation_inspection_tools(self):
-        for marker in (
-            'data-preview-action="magnifier"',
-            'data-preview-action="reset"',
-            'data-preview-action="fit"',
-            'data-preview-action="fit-width"',
-            'data-preview-action="fit-height"',
-            'data-preview-action="actual"',
-            'data-preview-action="zoom-out"',
-            'data-preview-action="zoom-in"',
-            'data-preview-action="background"',
-            'data-preview-action="help"',
-            "function renderDashboardPreviewToolbar(",
-            "function updateDashboardPreviewToolbar(",
+        start = self.html.index("function renderDashboardPreviewToolbar(")
+        end = self.html.index("function updateDashboardPreviewToolbar(", start)
+        source = self.html[start:end]
+        script = f"""
+{source}
+console.log(renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: true }}));
+"""
+        markup = subprocess.check_output(["node", "-e", script], text=True)
+        for action in (
+            "magnifier", "reset", "fit", "fit-width", "fit-height", "actual",
+            "zoom-out", "zoom-in", "background", "help",
         ):
-            self.assertIn(marker, self.html)
+            self.assertIn(f'data-preview-action="{action}"', markup)
 
     def test_pointer_magnifier_and_keyboard_bindings_exist(self):
         for marker in (
@@ -210,6 +208,35 @@ console.log(JSON.stringify({{
         result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
         self.assertIn('data-preview-action="sync"', result["detail"])
         self.assertNotIn('data-preview-action="sync"', result["single"])
+
+    def test_single_preview_renders_one_clicked_image_without_sync(self):
+        start = self.html.index("function renderDashboardPreview(payload)")
+        end = self.html.index("function openPreview(payload)", start)
+        source = self.html[start:end]
+        script = f"""
+const created = [];
+let groupOptions;
+let toolbarOptions;
+const grid = {{ replaceChildren: (...children) => {{ grid.children = children; }} }};
+const toolbar = {{ innerHTML: "" }};
+const document = {{ getElementById: id => id === "image-preview" ? grid : toolbar }};
+const createDashboardPreviewPane = (...args) => {{ created.push(args); return {{ args }}; }};
+const releasePreviewPointers = () => null;
+const hidePreviewMagnifiers = () => null;
+const createPreviewGroup = (groupId, options) => {{ groupOptions = {{ groupId, ...options }}; }};
+const renderDashboardPreviewToolbar = options => {{ toolbarOptions = options; return "toolbar"; }};
+const bindPreviewGroup = () => null;
+const updateDashboardPreviewToolbar = () => null;
+{source}
+renderDashboardPreview({{ mode: "single", a: "/clicked.png", labels: ["Clicked"] }});
+console.log(JSON.stringify({{ created, groupOptions, toolbarOptions, className: grid.className, toolbar: toolbar.innerHTML }}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result["created"], [["overlay", "single", "/clicked.png", "Clicked"]])
+        self.assertEqual(result["groupOptions"], {"groupId": "overlay", "sync": False})
+        self.assertEqual(result["toolbarOptions"], {"groupId": "overlay", "showSync": False})
+        self.assertEqual(result["className"], "dashboard-preview-grid single")
+        self.assertEqual(result["toolbar"], "toolbar")
 
 
 if __name__ == "__main__":

@@ -1067,7 +1067,6 @@
                 return `<button type="button" class="preview-tool" data-preview-action="${action}" aria-label="${label}" title="${label}"${pressedAttribute}><span aria-hidden="true">${symbol}</span></button>`;
             }
             return `
-                <!-- data-preview-action="magnifier" data-preview-action="reset" data-preview-action="fit" data-preview-action="fit-width" data-preview-action="fit-height" data-preview-action="actual" data-preview-action="zoom-out" data-preview-action="zoom-in" data-preview-action="background" data-preview-action="help" -->
                 <div class="dashboard-preview-toolbar" data-preview-group="${groupId}">
                     ${previewToolButton("magnifier", "放大镜关", "🔍", false)}
                     ${previewToolButton("reset", "重置", "↺")}
@@ -2350,7 +2349,9 @@
         }
 
         function renderDashboardPreview(payload) {
-            const panes = payload.mode === "TI2I" && payload.ref
+            const panes = payload.mode === "single"
+                ? [{ paneId: "single", src: payload.a, label: payload.labels[0] }]
+                : payload.mode === "TI2I" && payload.ref
                 ? [
                     { paneId: "reference", src: payload.ref, label: "参考图" },
                     { paneId: "a", src: payload.a, label: payload.labels[0] },
@@ -2364,7 +2365,7 @@
             hidePreviewMagnifiers("overlay");
             createPreviewGroup("overlay", { sync: panes.length > 1 });
             const grid = document.getElementById("image-preview");
-            grid.className = `dashboard-preview-grid ${payload.mode === "TI2I" && payload.ref ? "ti2i" : "t2i"}`;
+            grid.className = `dashboard-preview-grid ${payload.mode === "single" ? "single" : payload.mode === "TI2I" && payload.ref ? "ti2i" : "t2i"}`;
             grid.replaceChildren(...panes.map(item => createDashboardPreviewPane("overlay", item.paneId, item.src, item.label)));
             document.getElementById("dashboard-preview-toolbar").innerHTML = renderDashboardPreviewToolbar({ groupId: "overlay", showSync: panes.length > 1 });
             bindPreviewGroup("overlay");
