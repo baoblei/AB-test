@@ -209,34 +209,46 @@ console.log(JSON.stringify({{
         self.assertIn('data-preview-action="sync"', result["detail"])
         self.assertNotIn('data-preview-action="sync"', result["single"])
 
-    def test_single_preview_renders_one_clicked_image_without_sync(self):
-        start = self.html.index("function renderDashboardPreview(payload)")
-        end = self.html.index("function openPreview(payload)", start)
-        source = self.html[start:end]
+    def test_open_dashboard_preview_renders_normalized_single_image_without_sync(self):
+        source = self.function_source("openDashboardPreview")
         script = f"""
 const created = [];
 let groupOptions;
 let toolbarOptions;
+let normalizedPayload;
 const grid = {{ replaceChildren: (...children) => {{ grid.children = children; }} }};
 const toolbar = {{ innerHTML: "" }};
-const document = {{ getElementById: id => id === "image-preview" ? grid : toolbar }};
-const createDashboardPreviewPane = (...args) => {{ created.push(args); return {{ args }}; }};
+const overlay = {{ style: {{}}, setAttribute: (name, value) => {{ overlay[name] = value; }} }};
+const document = {{ getElementById: id => id === "image-preview" ? grid : id === "dashboard-preview-toolbar" ? toolbar : overlay }};
+const normalizeDashboardPreview = payload => {{
+    normalizedPayload = payload;
+    return {{ kind: "single", panes: [{{ id: "single", src: payload.src, label: payload.label }}], showSync: false, showCompare: false }};
+}};
+const renderDashboardPreviewPane = pane => {{ created.push(pane); return pane; }};
+const renderInlineCompareControls = () => {{ throw new Error("single preview must not render compare controls"); }};
+const stopHoldCompare = () => null;
 const releasePreviewPointers = () => null;
 const hidePreviewMagnifiers = () => null;
+const beginDashboardPreviewRender = () => null;
 const createPreviewGroup = (groupId, options) => {{ groupOptions = {{ groupId, ...options }}; }};
 const renderDashboardPreviewToolbar = options => {{ toolbarOptions = options; return "toolbar"; }};
 const bindPreviewGroup = () => null;
 const updateDashboardPreviewToolbar = () => null;
 {source}
-renderDashboardPreview({{ mode: "single", a: "/clicked.png", labels: ["Clicked"] }});
-console.log(JSON.stringify({{ created, groupOptions, toolbarOptions, className: grid.className, toolbar: toolbar.innerHTML }}));
+openDashboardPreview({{ single: true, src: "/clicked.png", label: "Clicked" }});
+console.log(JSON.stringify({{ normalizedPayload, created, groupOptions, toolbarOptions, className: grid.className, toolbar: toolbar.innerHTML, display: overlay.style.display, ariaHidden: overlay["aria-hidden"] }}));
 """
         result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
-        self.assertEqual(result["created"], [["overlay", "single", "/clicked.png", "Clicked"]])
+        self.assertEqual(result["normalizedPayload"], {"single": True, "src": "/clicked.png", "label": "Clicked"})
+        self.assertEqual(result["created"], [{"id": "single", "src": "/clicked.png", "label": "Clicked"}])
         self.assertEqual(result["groupOptions"], {"groupId": "overlay", "sync": False})
         self.assertEqual(result["toolbarOptions"], {"groupId": "overlay", "showSync": False})
         self.assertEqual(result["className"], "dashboard-preview-grid single")
         self.assertEqual(result["toolbar"], "toolbar")
+        self.assertEqual(result["display"], "flex")
+        self.assertEqual(result["ariaHidden"], "false")
+        self.assertNotIn("function createDashboardPreviewPane(", self.html)
+        self.assertNotIn("function renderDashboardPreview(", self.html)
 
     def function_source(self, name):
         start = self.html.index(f"function {name}")
@@ -281,6 +293,103 @@ console.log(JSON.stringify({{
             "function stopHoldCompare(",
         ):
             self.assertIn(marker, self.html)
+
+        source = self.function_source("buildHoldComparePairs")
+        script = f"""
+{source}
+console.log(JSON.stringify({{
+    two: buildHoldComparePairs([{{ id: "left", label: "A" }}, {{ id: "right", label: "B" }}]),
+    three: buildHoldComparePairs([{{ id: "reference", label: "参考图" }}, {{ id: "left", label: "A" }}, {{ id: "right", label: "B" }}])
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(
+            [(item["sourceId"], item["targetId"], item["slot"], item["symbol"]) for item in result["two"]],
+            [("right", "left", "only-upper", "←"), ("left", "right", "only-lower", "→")],
+        )
+        self.assertEqual(
+            [(item["sourceId"], item["targetId"], item["slot"], item["kind"], item["symbol"]) for item in result["three"]],
+            [
+                ("left", "reference", "left-upper", "adjacent", "←"),
+                ("reference", "left", "left-middle", "adjacent", "→"),
+                ("right", "reference", "left-lower", "folded", "└←"),
+                ("right", "left", "right-upper", "adjacent", "←"),
+                ("left", "right", "right-middle", "adjacent", "→"),
+                ("reference", "right", "right-lower", "folded", "→┘"),
+            ],
+        )
+
+    def test_hold_compare_requires_loaded_panes_and_cleans_up(self):
+        start = self.function_source("startHoldCompare")
+        stop = self.function_source("stopHoldCompare")
+        script = f"""
+let activeHoldCompare = null;
+const classes = () => {{
+    const names = new Set();
+    return {{ add: (...items) => items.forEach(item => names.add(item)), remove: (...items) => items.forEach(item => names.delete(item)), contains: item => names.has(item) }};
+}};
+const node = tag => ({{
+    tag,
+    dataset: {{}},
+    style: {{}},
+    attributes: {{}},
+    children: [],
+    classList: classes(),
+    append(...items) {{ this.children.push(...items); }},
+    setAttribute(name, value) {{ this.attributes[name] = value; }},
+    remove() {{ this.removed = true; }}
+}});
+const createNode = (tag, className) => {{ const item = node(tag); item.className = className; return item; }};
+const sourceImage = {{ currentSrc: "source-current.jpg", src: "source.jpg", alt: "Source", draggable: true, style: {{ width: "420px", height: "280px", transform: "translate(-50%) scale(1.3)" }} }};
+const targetImage = {{ src: "target.jpg", style: {{ width: "300px", height: "200px", transform: "translate(-50%)" }} }};
+const sourceViewport = {{ dataset: {{ previewLabel: "Source" }}, querySelector: () => sourceImage }};
+const targetChildren = [];
+const targetViewport = {{ dataset: {{ previewLabel: "Target" }}, querySelector: () => targetImage, append: layer => targetChildren.push(layer) }};
+let panes = new Map([["source", {{}}], ["target", {{}}]]);
+const previewController = {{ groups: new Map([["overlay", {{ panes }}]]) }};
+const document = {{ querySelector: selector => selector.includes('data-preview-pane="source"') ? sourceViewport : selector.includes('data-preview-pane="target"') ? targetViewport : null }};
+const button = node("button");
+{stop}
+{start}
+const started = startHoldCompare("overlay", "source", "target", button);
+const layer = targetChildren[0];
+const overlayImage = layer.children[0];
+const during = {{
+    started,
+    source: overlayImage.src,
+    width: overlayImage.style.width,
+    height: overlayImage.style.height,
+    transform: overlayImage.style.transform,
+    attachedToTarget: targetChildren.length,
+    active: button.classList.contains("active"),
+    pressed: button.attributes["aria-pressed"]
+}};
+stopHoldCompare();
+panes = new Map([["target", {{}}]]);
+previewController.groups.set("overlay", {{ panes }});
+const missingSource = startHoldCompare("overlay", "source", "target", button);
+panes = new Map([["source", {{}}]]);
+previewController.groups.set("overlay", {{ panes }});
+const missingTarget = startHoldCompare("overlay", "source", "target", button);
+console.log(JSON.stringify({{ during, removed: layer.removed, activeAfter: button.classList.contains("active"), pressedAfter: button.attributes["aria-pressed"], missingSource, missingTarget, layers: targetChildren.length }}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result["during"], {
+            "started": True,
+            "source": "source-current.jpg",
+            "width": "420px",
+            "height": "280px",
+            "transform": "translate(-50%) scale(1.3)",
+            "attachedToTarget": 1,
+            "active": True,
+            "pressed": "true",
+        })
+        self.assertTrue(result["removed"])
+        self.assertFalse(result["activeAfter"])
+        self.assertEqual(result["pressedAfter"], "false")
+        self.assertFalse(result["missingSource"])
+        self.assertFalse(result["missingTarget"])
+        self.assertEqual(result["layers"], 1)
 
     def test_bad_case_click_stays_single_image(self):
         source = self.function_source("openSinglePreview")

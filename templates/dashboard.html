@@ -2396,33 +2396,6 @@
             return `/images/${[state.taskType, model, scene, filename].map(encodeURIComponent).join("/")}`;
         }
 
-        function createDashboardPreviewPane(groupId, paneId, src, label) {
-            const viewport = createNode("div", "dashboard-preview-viewport");
-            viewport.dataset.previewGroupPane = groupId;
-            viewport.dataset.previewPane = paneId;
-            const image = createNode("img");
-            image.src = src || "";
-            image.alt = label;
-            image.draggable = false;
-            const lens = createNode("span", "magnifier-layer");
-            const marker = createNode("span", "correspondence-marker");
-            viewport.append(image, lens, marker, createNode("div", "compare-label", label));
-            const register = () => {
-                registerPreviewPane(groupId, paneId, viewport, image);
-                const group = previewController.groups.get(groupId);
-                if (group && !group.activePaneId) group.activePaneId = paneId;
-                updateDashboardPreviewToolbar(groupId);
-            };
-            image.addEventListener("load", register, { once: true });
-            image.addEventListener("error", () => {
-                const pane = previewController.groups.get(groupId)?.panes.get(paneId);
-                if (pane) pane.failed = true;
-                hidePreviewMagnifiers(groupId);
-            }, { once: true });
-            if (image.complete && image.naturalWidth) register();
-            return viewport;
-        }
-
         function normalizeDashboardPreview(payload) {
             if (payload.single) {
                 return {
@@ -2493,7 +2466,7 @@
             const targetViewport = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${targetId}"]`);
             const sourcePane = group.panes.get(sourceId);
             const targetPane = group.panes.get(targetId);
-            if (!sourceViewport || !targetViewport || sourcePane?.failed || targetPane?.failed) return false;
+            if (!sourceViewport || !targetViewport || !sourcePane || !targetPane || sourcePane.failed || targetPane.failed) return false;
             const sourceImage = sourceViewport.querySelector("img");
             const targetImage = targetViewport.querySelector("img");
             if (!sourceImage || !targetImage) return false;
@@ -2597,30 +2570,6 @@
             });
             if (image.complete) image.naturalWidth ? register() : fail();
             return viewport;
-        }
-
-        function renderDashboardPreview(payload) {
-            const panes = payload.mode === "single"
-                ? [{ paneId: "single", src: payload.a, label: payload.labels[0] }]
-                : payload.mode === "TI2I" && payload.ref
-                ? [
-                    { paneId: "reference", src: payload.ref, label: "参考图" },
-                    { paneId: "a", src: payload.a, label: payload.labels[0] },
-                    { paneId: "b", src: payload.b, label: payload.labels[1] }
-                ]
-                : [
-                    { paneId: "a", src: payload.a, label: payload.labels[0] },
-                    { paneId: "b", src: payload.b, label: payload.labels[1] }
-                ];
-            releasePreviewPointers("overlay");
-            hidePreviewMagnifiers("overlay");
-            createPreviewGroup("overlay", { sync: panes.length > 1 });
-            const grid = document.getElementById("image-preview");
-            grid.className = `dashboard-preview-grid ${payload.mode === "single" ? "single" : payload.mode === "TI2I" && payload.ref ? "ti2i" : "t2i"}`;
-            grid.replaceChildren(...panes.map(item => createDashboardPreviewPane("overlay", item.paneId, item.src, item.label)));
-            document.getElementById("dashboard-preview-toolbar").innerHTML = renderDashboardPreviewToolbar({ groupId: "overlay", showSync: panes.length > 1 });
-            bindPreviewGroup("overlay");
-            updateDashboardPreviewToolbar("overlay");
         }
 
         function openDashboardPreview(payload) {
