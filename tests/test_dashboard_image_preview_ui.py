@@ -1125,46 +1125,87 @@ const classes = () => {{
     const values = new Set();
     return {{ add: name => values.add(name), remove: name => values.delete(name), contains: name => values.has(name) }};
 }};
-const lens = {{ classList: classes(), style: {{}}, offsetWidth: 20, offsetHeight: 20 }};
-const marker = {{ classList: classes(), style: {{}} }};
-const sourceViewport = {{ clientWidth: 200, clientHeight: 200, querySelector: selector => selector === "img" ? sourceImage : lens }};
-const targetViewport = {{ clientWidth: 200, clientHeight: 200, querySelector: selector => selector === "img" ? targetImage : marker }};
-const sourceImage = {{ currentSrc: "source.jpg", src: "source.jpg" }};
-const targetImage = {{ currentSrc: "target.jpg", src: "target.jpg" }};
-const geometry = {{ viewport: {{ left: 0, top: 0 }}, image: {{ left: 50, right: 150, top: 50, bottom: 150, width: 100, height: 100 }} }};
+const makePane = (image, geometry, clientWidth, clientHeight) => {{
+    const lens = {{ classList: classes(), style: {{}}, offsetWidth: 20, offsetHeight: 20 }};
+    return {{
+        image,
+        lens,
+        geometry,
+        viewport: {{
+            clientWidth,
+            clientHeight,
+            querySelector: selector => selector === "img" ? image : selector === ".magnifier-layer" ? lens : null
+        }}
+    }};
+}};
+const reference = makePane(
+    {{ currentSrc: "ref.jpg", src: "ref.jpg" }},
+    {{ viewport: {{ left: 100, top: 100 }}, image: {{ left: 110, right: 310, top: 130, bottom: 230, width: 200, height: 100 }} }},
+    240,
+    180
+);
+const left = makePane(
+    {{ currentSrc: "a.jpg", src: "a.jpg" }},
+    {{ viewport: {{ left: 360, top: 30 }}, image: {{ left: 380, right: 500, top: 80, bottom: 320, width: 120, height: 240 }} }},
+    180,
+    320
+);
+const right = makePane(
+    {{ currentSrc: "b.jpg", src: "b.jpg" }},
+    {{ viewport: {{ left: 620, top: 160 }}, image: {{ left: 650, right: 950, top: 190, bottom: 340, width: 300, height: 150 }} }},
+    340,
+    220
+);
 const panes = new Map([
-    ["source", {{ failed: false, adapter: {{ geometry: () => geometry }} }}],
-    ["target", {{ failed: false, adapter: {{ geometry: () => geometry }} }}]
+    ["reference", {{ failed: false, adapter: {{ geometry: () => reference.geometry }} }}],
+    ["left", {{ failed: false, adapter: {{ geometry: () => left.geometry }} }}],
+    ["right", {{ failed: false, adapter: {{ geometry: () => right.geometry }} }}]
 ]);
 const previewController = {{ groups: new Map([["overlay", {{ magnifier: true, sync: true, panes }}]]) }};
+const paneFor = selector => selector.includes('data-preview-pane="reference"') ? reference : selector.includes('data-preview-pane="left"') ? left : right;
 const document = {{
-    querySelector: selector => selector.includes('data-preview-pane="source"') ? sourceViewport : targetViewport,
-    querySelectorAll: () => [sourceViewport, targetViewport]
+    querySelector: selector => paneFor(selector).viewport,
+    querySelectorAll: () => [reference.viewport, left.viewport, right.viewport]
 }};
 const hidePreviewMagnifiers = groupId => {{
-    lens.classList.remove("visible");
-    marker.classList.remove("visible");
+    [reference, left, right].forEach(pane => pane.lens.classList.remove("visible"));
 }};
 {source}
-const shown = renderMagnifier("overlay", "source", {{ clientX: 100, clientY: 100 }});
-const visibleInside = lens.classList.contains("visible") && marker.classList.contains("visible");
-const shownOutside = renderMagnifier("overlay", "source", {{ clientX: 20, clientY: 20 }});
+const shown = renderMagnifier("overlay", "reference", {{ clientX: 190, clientY: 190 }});
+const visibleLenses = ["reference", "left", "right"].filter(id => ({{ reference, left, right }})[id].lens.classList.contains("visible"));
+const backgrounds = [reference, left, right].map(pane => pane.lens.style.backgroundImage);
+const positions = [reference, left, right].map(pane => `${{pane.lens.style.left}},${{pane.lens.style.top}}`);
+const distinctPositions = new Set(positions).size === positions.length;
+const anyMarkerVisible = false;
+previewController.groups.get("overlay").sync = false;
+const shownUnsynced = renderMagnifier("overlay", "left", {{ clientX: 428, clientY: 224 }});
+const unsyncedVisibleLenses = ["reference", "left", "right"].filter(id => ({{ reference, left, right }})[id].lens.classList.contains("visible"));
+const shownOutside = renderMagnifier("overlay", "left", {{ clientX: 20, clientY: 20 }});
 console.log(JSON.stringify({{
     shown,
-    visibleInside,
+    visibleLenses,
+    backgrounds,
+    distinctPositions,
+    anyMarkerVisible,
+    shownUnsynced,
+    unsyncedVisibleLenses,
     shownOutside,
-    lensVisibleOutside: lens.classList.contains("visible"),
-    markerVisibleOutside: marker.classList.contains("visible")
+    visibleLensesOutside: ["reference", "left", "right"].filter(id => ({{ reference, left, right }})[id].lens.classList.contains("visible"))
 }}));
 """
         result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
         self.assertEqual(result, {
             "shown": True,
-            "visibleInside": True,
+            "visibleLenses": ["reference", "left", "right"],
+            "backgrounds": ['url("ref.jpg")', 'url("a.jpg")', 'url("b.jpg")'],
+            "distinctPositions": True,
+            "anyMarkerVisible": False,
+            "shownUnsynced": True,
+            "unsyncedVisibleLenses": ["left"],
             "shownOutside": False,
-            "lensVisibleOutside": False,
-            "markerVisibleOutside": False,
+            "visibleLensesOutside": [],
         })
+        self.assertNotIn("correspondence-marker", self.html)
 
     def test_unused_legacy_preview_opener_is_removed(self):
         self.assertNotIn("function openPreviewOverlay(", self.html)

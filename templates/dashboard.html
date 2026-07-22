@@ -513,20 +513,6 @@
             box-shadow: 0 3px 16px rgba(0, 0, 0, 0.46);
         }
         .magnifier-layer.visible { display: block; }
-        .correspondence-marker {
-            position: absolute;
-            z-index: 4;
-            display: none;
-            width: 16px;
-            height: 16px;
-            margin: -8px 0 0 -8px;
-            pointer-events: none;
-            border: 2px solid #fff;
-            border-radius: 50%;
-            background: rgba(35, 166, 255, 0.68);
-            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);
-        }
-        .correspondence-marker.visible { display: block; }
         .inline-compare-btn {
             position: absolute;
             z-index: 18;
@@ -1300,7 +1286,6 @@
             const selector = groupId ? `[data-preview-group-pane="${groupId}"]` : "[data-preview-group-pane]";
             document.querySelectorAll(selector).forEach(viewport => {
                 viewport.querySelector(".magnifier-layer")?.classList.remove("visible");
-                viewport.querySelector(".correspondence-marker")?.classList.remove("visible");
             });
         }
 
@@ -1320,32 +1305,23 @@
             };
             hidePreviewMagnifiers(groupId);
             group.panes.forEach((pane, targetId) => {
-                if (pane.failed) return;
+                if (pane.failed || (targetId !== paneId && !group.sync)) return;
                 const viewport = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${targetId}"]`);
                 const image = viewport?.querySelector("img");
-                if (!viewport || !image) return;
+                const lens = viewport?.querySelector(".magnifier-layer");
+                if (!viewport || !image || !lens) return;
                 const geometry = pane.adapter.geometry();
                 const targetImage = geometry.image;
                 const pointX = targetImage.left + normalizedPoint.x * targetImage.width - geometry.viewport.left;
                 const pointY = targetImage.top + normalizedPoint.y * targetImage.height - geometry.viewport.top;
-                if (targetId === paneId) {
-                    const lens = viewport.querySelector(".magnifier-layer");
-                    if (!lens) return;
-                    const lensLeft = Math.max(0, Math.min(viewport.clientWidth - lens.offsetWidth, pointX - lens.offsetWidth / 2));
-                    const lensTop = Math.max(0, Math.min(viewport.clientHeight - lens.offsetHeight, pointY - lens.offsetHeight / 2));
-                    lens.style.left = `${lensLeft}px`;
-                    lens.style.top = `${lensTop}px`;
-                    lens.style.backgroundImage = `url("${image.currentSrc || image.src}")`;
-                    lens.style.backgroundSize = `${targetImage.width * 3}px ${targetImage.height * 3}px`;
-                    lens.style.backgroundPosition = `${pointX - lensLeft - normalizedPoint.x * targetImage.width * 3}px ${pointY - lensTop - normalizedPoint.y * targetImage.height * 3}px`;
-                    lens.classList.add("visible");
-                } else if (group.sync) {
-                    const marker = viewport.querySelector(".correspondence-marker");
-                    if (!marker) return;
-                    marker.style.left = `${pointX}px`;
-                    marker.style.top = `${pointY}px`;
-                    marker.classList.add("visible");
-                }
+                const lensLeft = Math.max(0, Math.min(viewport.clientWidth - lens.offsetWidth, pointX - lens.offsetWidth / 2));
+                const lensTop = Math.max(0, Math.min(viewport.clientHeight - lens.offsetHeight, pointY - lens.offsetHeight / 2));
+                lens.style.left = `${lensLeft}px`;
+                lens.style.top = `${lensTop}px`;
+                lens.style.backgroundImage = `url("${image.currentSrc || image.src}")`;
+                lens.style.backgroundSize = `${targetImage.width * 3}px ${targetImage.height * 3}px`;
+                lens.style.backgroundPosition = `${pointX - lensLeft - normalizedPoint.x * targetImage.width * 3}px ${pointY - lensTop - normalizedPoint.y * targetImage.height * 3}px`;
+                lens.classList.add("visible");
             });
             return true;
         }
@@ -2754,9 +2730,8 @@
             const loading = createNode("span", "dashboard-preview-loading", "图片加载中…");
             const error = createNode("span", "dashboard-preview-error", "图片加载失败");
             const lens = createNode("span", "magnifier-layer");
-            const marker = createNode("span", "correspondence-marker");
             const label = createNode("strong", "dashboard-preview-label", pane.label || "");
-            viewport.append(image, loading, error, lens, marker, label);
+            viewport.append(image, loading, error, lens, label);
             const register = () => {
                 if (!isDashboardPreviewRenderCurrent(generation)) return;
                 viewport.classList.remove("loading");
