@@ -1118,6 +1118,46 @@ console.log(JSON.stringify({{
             "cleanupRemoved": True,
         })
 
+    def test_sync_toggle_hides_existing_magnifier_lenses_immediately(self):
+        source = self.function_source("bindDashboardPreviewToolbar")
+        script = f"""
+const classes = () => {{
+    const values = new Set(["visible"]);
+    return {{ remove: name => values.delete(name), contains: name => values.has(name) }};
+}};
+const lenses = [{{ classList: classes() }}, {{ classList: classes() }}, {{ classList: classes() }}];
+const listeners = new Map();
+const toolbar = {{ dataset: {{ previewGroup: "overlay" }} }};
+const syncButton = {{
+    dataset: {{ previewAction: "sync" }},
+    closest: selector => selector === "[data-preview-action]" ? syncButton : selector === "[data-preview-group]" ? toolbar : null
+}};
+const group = {{ sync: true, activePaneId: "left", panes: new Map([["left", {{ zoom: 1 }}]]) }};
+const previewController = {{
+    groups: new Map([["overlay", group]]),
+    setSync: (groupId, sync) => {{ previewController.groups.get(groupId).sync = sync; }}
+}};
+const document = {{ addEventListener: (type, listener) => listeners.set(type, listener), querySelectorAll: () => [] }};
+let dashboardPreviewToolbarBound = false;
+let dashboardPreviewKeyboardBound = false;
+let dashboardPreviewSpacePan = false;
+const hidePreviewMagnifiers = () => lenses.forEach(lens => lens.classList.remove("visible"));
+const updateDashboardPreviewToolbar = () => null;
+const setPreviewMode = () => null;
+const resetPreviewGroup = () => null;
+const setPreviewZoom = () => null;
+const closeImagePreview = () => null;
+{source}
+bindDashboardPreviewToolbar();
+listeners.get("click")({{ target: syncButton }});
+console.log(JSON.stringify({{
+    sync: group.sync,
+    visibleLenses: lenses.filter(lens => lens.classList.contains("visible")).length
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {"sync": False, "visibleLenses": 0})
+
     def test_magnifier_hides_when_pointer_leaves_rendered_image(self):
         source = self.function_source("renderMagnifier")
         script = f"""
@@ -1147,8 +1187,8 @@ const reference = makePane(
 const left = makePane(
     {{ currentSrc: "a.jpg", src: "a.jpg" }},
     {{ viewport: {{ left: 360, top: 30 }}, image: {{ left: 380, right: 500, top: 80, bottom: 320, width: 120, height: 240 }} }},
-    180,
-    320
+    130,
+    200
 );
 const right = makePane(
     {{ currentSrc: "b.jpg", src: "b.jpg" }},
@@ -1176,7 +1216,17 @@ const visibleLenses = ["reference", "left", "right"].filter(id => ({{ reference,
 const backgrounds = [reference, left, right].map(pane => pane.lens.style.backgroundImage);
 const positions = [reference, left, right].map(pane => `${{pane.lens.style.left}},${{pane.lens.style.top}}`);
 const distinctPositions = new Set(positions).size === positions.length;
+const lensStyles = Object.fromEntries(["reference", "left", "right"].map(id => {{
+    const style = ({{ reference, left, right }})[id].lens.style;
+    return [id, {{ left: style.left, top: style.top, backgroundPosition: style.backgroundPosition }}];
+}}));
 const anyMarkerVisible = false;
+renderMagnifier("overlay", "reference", {{ clientX: 300, clientY: 225 }});
+const edgeClamp = {{
+    left: left.lens.style.left,
+    top: left.lens.style.top,
+    backgroundPosition: left.lens.style.backgroundPosition
+}};
 previewController.groups.get("overlay").sync = false;
 const shownUnsynced = renderMagnifier("overlay", "left", {{ clientX: 428, clientY: 224 }});
 const unsyncedVisibleLenses = ["reference", "left", "right"].filter(id => ({{ reference, left, right }})[id].lens.classList.contains("visible"));
@@ -1186,6 +1236,8 @@ console.log(JSON.stringify({{
     visibleLenses,
     backgrounds,
     distinctPositions,
+    lensStyles,
+    edgeClamp,
     anyMarkerVisible,
     shownUnsynced,
     unsyncedVisibleLenses,
@@ -1199,6 +1251,12 @@ console.log(JSON.stringify({{
             "visibleLenses": ["reference", "left", "right"],
             "backgrounds": ['url("ref.jpg")', 'url("a.jpg")', 'url("b.jpg")'],
             "distinctPositions": True,
+            "lensStyles": {
+                "reference": {"left": "80px", "top": "80px", "backgroundPosition": "-230px -170px"},
+                "left": {"left": "58px", "top": "180px", "backgroundPosition": "-134px -418px"},
+                "right": {"left": "140px", "top": "110px", "backgroundPosition": "-350px -260px"},
+            },
+            "edgeClamp": {"left": "110px", "top": "180px", "backgroundPosition": "-318px -586px"},
             "anyMarkerVisible": False,
             "shownUnsynced": True,
             "unsyncedVisibleLenses": ["left"],

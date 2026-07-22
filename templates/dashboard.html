@@ -1436,7 +1436,10 @@
                 const pane = group.panes.get(paneId);
                 if (["fit", "fit-width", "fit-height", "actual"].includes(action)) setPreviewMode(groupId, action);
                 if (action === "reset") resetPreviewGroup(groupId);
-                if (action === "sync") previewController.setSync(groupId, !group.sync);
+                if (action === "sync") {
+                    previewController.setSync(groupId, !group.sync);
+                    hidePreviewMagnifiers(groupId);
+                }
                 if (action === "magnifier") { group.magnifier = !group.magnifier; if (!group.magnifier) hidePreviewMagnifiers(groupId); }
                 if (action === "background") {
                     group.darkBackground = !group.darkBackground;
