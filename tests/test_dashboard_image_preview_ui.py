@@ -554,6 +554,26 @@ console.log(JSON.stringify({{
             ],
         )
 
+    def test_folded_compare_buttons_use_evaluation_svg_paths(self):
+        folded = self.function_source("foldedCompareIcon")
+        script = f"""
+{folded}
+console.log(JSON.stringify({{
+    left: foldedCompareIcon("left"),
+    right: foldedCompareIcon("right")
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        for direction in ("left", "right"):
+            self.assertIn('class="inline-compare-icon folded"', result[direction])
+            self.assertEqual(result[direction].count("<polyline"), 2)
+        self.assertIn('points="21,18 12,5 4,18"', result["left"])
+        self.assertIn('points="3,18 12,5 20,18"', result["right"])
+
+        renderer = self.function_source("renderInlineCompareControls")
+        self.assertIn('pair.kind === "folded"', renderer)
+        self.assertIn("foldedCompareIcon", renderer)
+
     def test_hold_compare_requires_loaded_panes_and_cleans_up(self):
         start = self.function_source("startHoldCompare")
         stop = self.function_source("stopHoldCompare")

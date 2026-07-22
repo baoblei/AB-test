@@ -535,6 +535,9 @@
             user-select: none;
             -webkit-user-select: none;
         }
+        .inline-compare-icon { width: 20px; height: 20px; display: block; overflow: visible; pointer-events: none; }
+        .inline-compare-icon polyline { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+        .inline-compare-icon .arrow-head { stroke-width: 2.4; }
         .inline-compare-btn.active { color: white; background: var(--primary); border-color: var(--primary); }
         .inline-compare-btn[data-compare-slot="only-upper"] { left: 50%; top: calc(50% - 17px); transform: translate(-50%, -50%); }
         .inline-compare-btn[data-compare-slot="only-lower"] { left: 50%; top: calc(50% + 17px); transform: translate(-50%, -50%); }
@@ -2607,10 +2610,19 @@
             return [];
         }
 
+        function foldedCompareIcon(direction) {
+            const path = direction === "left"
+                ? '<polyline points="21,18 12,5 4,18"></polyline><polyline class="arrow-head" points="4.5,12.5 4,18 8.8,15.1"></polyline>'
+                : '<polyline points="3,18 12,5 20,18"></polyline><polyline class="arrow-head" points="15.2,15.1 20,18 19.5,12.5"></polyline>';
+            return `<svg class="inline-compare-icon folded" viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+        }
+
         function renderInlineCompareControls(groupId, panes) {
             const controls = document.createDocumentFragment();
             buildHoldComparePairs(panes).forEach(pair => {
-                const button = createNode("button", "inline-compare-btn", pair.symbol);
+                const folded = pair.kind === "folded";
+                const button = createNode("button", "inline-compare-btn", folded ? "" : pair.symbol);
+                if (folded) button.innerHTML = foldedCompareIcon(pair.symbol === "└←" ? "left" : "right");
                 button.type = "button";
                 button.setAttribute("data-hold-compare", "true"); // data-hold-compare="true"
                 button.dataset.previewGroupId = groupId;
