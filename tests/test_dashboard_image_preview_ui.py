@@ -710,6 +710,46 @@ console.log(JSON.stringify({{ during, removed: layer.removed, activeAfter: butto
 
     def test_close_cleans_every_transient_preview_resource(self):
         source = self.function_source("closeImagePreview")
+        result = self.run_preview_close_probe(
+            """
+const classes = initial => {
+    const values = new Set(initial);
+    return { contains: name => values.has(name), remove: name => values.delete(name) };
+};
+const stage = { classList: classes(["preview-help-open"]) };
+const toolbar = { replaceChildren: () => null };
+const preview = { replaceChildren: () => null };
+const overlay = {
+    style: { display: "flex" },
+    attributes: { "aria-hidden": "false" },
+    setAttribute(name, value) { this.attributes[name] = value; }
+};
+const document = {
+    querySelector: selector => selector === ".dashboard-preview-stage" ? stage : null,
+    getElementById: id => ({
+        "dashboard-preview-toolbar": toolbar,
+        "image-preview": preview,
+        "image-overlay": overlay
+    })[id]
+};
+const beginDashboardPreviewRender = () => null;
+const releasePreviewPointers = () => null;
+const hidePreviewMagnifiers = () => null;
+const stopHoldCompare = () => null;
+const previewController = { groups: new Map() };
+closeImagePreview();
+console.log(JSON.stringify({
+    stageOpen: stage.classList.contains("preview-help-open"),
+    overlayDisplay: overlay.style.display,
+    overlayAriaHidden: overlay.attributes["aria-hidden"]
+}));
+"""
+        )
+        self.assertEqual(result, {
+            "stageOpen": False,
+            "overlayDisplay": "none",
+            "overlayAriaHidden": "true",
+        })
         for marker in (
             'releasePreviewPointers("overlay")',
             "hidePreviewMagnifiers()",
@@ -906,30 +946,36 @@ console.log(JSON.stringify({{ opened, closed }}));
 
     def test_short_desktop_complete_toolbars_keep_every_control_reachable(self):
         for show_sync, expected_count in ((True, 11), (False, 10)):
-            with self.subTest(show_sync=show_sync):
-                toolbar = self.render_toolbar_markup(show_sync)
-                body = f"""
+            for width, height in ((1024, 500), (700, 1000)):
+                with self.subTest(show_sync=show_sync, width=width, height=height):
+                    toolbar = self.render_toolbar_markup(show_sync)
+                    body = f"""
 <div id="image-overlay" style="display:flex">
-  <div class="dashboard-preview-stage">
+  <div class="dashboard-preview-stage preview-help-open">
     <div id="dashboard-preview-toolbar">{toolbar}</div>
   </div>
 </div>"""
-                result = self.run_browser_geometry_probe(
-                    body,
-                    """
+                    result = self.run_browser_geometry_probe(
+                        body,
+                        """
 const stage = document.querySelector(".dashboard-preview-stage").getBoundingClientRect();
 const toolbar = document.querySelector(".dashboard-preview-toolbar");
+toolbar.classList.add("help-open");
+toolbar.querySelector(".preview-info").classList.remove("hidden");
+toolbar.querySelector(".preview-shortcut-help").classList.remove("hidden");
 const toolbarRect = toolbar.getBoundingClientRect();
 const buttons = [...toolbar.querySelectorAll("[data-preview-action]")];
+const text = [toolbar.querySelector(".preview-info"), toolbar.querySelector(".preview-shortcut-help")];
 const maxScroll = Math.max(0, toolbar.scrollWidth - toolbar.clientWidth);
-const reachable = buttons.map(button => {
-    toolbar.scrollLeft = Math.min(maxScroll, Math.max(0, button.offsetLeft - toolbar.clientWidth / 2));
-    const rect = button.getBoundingClientRect();
+const reachable = [...buttons, ...text].map(node => {
+    toolbar.scrollLeft = Math.min(maxScroll, Math.max(0, node.offsetLeft - toolbar.clientWidth / 2));
+    const rect = node.getBoundingClientRect();
     return rect.left >= toolbarRect.left && rect.right <= toolbarRect.right
         && rect.top >= stage.top && rect.bottom <= stage.bottom;
 });
 return {
-    count: buttons.length,
+    buttonCount: buttons.length,
+    textCount: text.length,
     direction: getComputedStyle(toolbar).flexDirection,
     overflowX: getComputedStyle(toolbar).overflowX,
     toolbarInsideStage: toolbarRect.left >= stage.left && toolbarRect.right <= stage.right
@@ -937,14 +983,15 @@ return {
     reachable
 };
 """,
-                    width=1024,
-                    height=500,
-                )
-                self.assertEqual(result["count"], expected_count)
-                self.assertEqual(result["direction"], "row")
-                self.assertEqual(result["overflowX"], "auto")
-                self.assertTrue(result["toolbarInsideStage"], result)
-                self.assertTrue(all(result["reachable"]), result)
+                        width=width,
+                        height=height,
+                    )
+                    self.assertEqual(result["buttonCount"], expected_count)
+                    self.assertEqual(result["textCount"], 2)
+                    self.assertEqual(result["direction"], "row")
+                    self.assertEqual(result["overflowX"], "auto")
+                    self.assertTrue(result["toolbarInsideStage"], result)
+                    self.assertTrue(all(result["reachable"]), result)
 
     def test_global_shortcuts_preserve_button_space_and_compare_button_keydown(self):
         toolbar_source = self.function_source("bindDashboardPreviewToolbar")
