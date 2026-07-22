@@ -32,6 +32,7 @@ from app_core.task_service import get_next_task, get_progress as get_progress_se
 from app_core.task_service import skip_task as skip_task_service
 from app_core.task_service import start_eval_session as start_eval_session_service
 from app_core.task_service import submit_vote as submit_vote_service
+from app_core.thumbnail_service import get_image_thumbnail
 from app_core.user_service import change_user_password, get_my_history as get_my_history_service
 from app_core.user_service import get_my_stats as get_my_stats_service
 from app_core.user_service import get_user_profile, login_user, register_user
@@ -245,6 +246,22 @@ def worker_stats(task_type: str, v1: str, v2: str, scene: Optional[str] = None):
 @app.get("/api/detail_results")
 def detail_results(task_type: str, v1: str, v2: str, scene: str):
     return detail_results_service(task_type, v1, v2, scene)
+
+
+@app.get("/api/image-thumbnail")
+def image_thumbnail(
+    kind: str,
+    task_type: str,
+    scene: str,
+    filename: str,
+    model: Optional[str] = None,
+):
+    path = get_image_thumbnail(kind, task_type, scene, filename, model)
+    return FileResponse(
+        path,
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/api/bad_case_details")
