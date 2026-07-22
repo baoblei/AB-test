@@ -574,6 +574,48 @@ console.log(JSON.stringify({{
         self.assertIn('pair.kind === "folded"', renderer)
         self.assertIn("foldedCompareIcon", renderer)
 
+    def test_three_way_compare_renderer_uses_folded_svg_only_for_folded_pairs(self):
+        script = f"""
+{self.function_source("createNode")}
+{self.function_source("buildHoldComparePairs")}
+{self.function_source("foldedCompareIcon")}
+{self.function_source("renderInlineCompareControls")}
+const document = {{
+    createDocumentFragment: () => ({{ children: [], append(...nodes) {{ this.children.push(...nodes); }} }}),
+    createElement: tag => ({{ tag, dataset: {{}}, attributes: {{}}, textContent: "", innerHTML: "", setAttribute(name, value) {{ this.attributes[name] = value; }} }})
+}};
+const controls = renderInlineCompareControls("overlay", [
+    {{ id: "reference", label: "参考图" }},
+    {{ id: "left", label: "A" }},
+    {{ id: "right", label: "B" }}
+]);
+console.log(JSON.stringify(controls.children.map(button => ({{
+    text: button.textContent,
+    html: button.innerHTML,
+    source: button.dataset.compareSource,
+    target: button.dataset.compareTarget,
+    slot: button.dataset.compareSlot,
+    kind: button.dataset.compareKind
+}}))));
+"""
+        buttons = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(len(buttons), 6)
+        self.assertEqual(
+            [(button["slot"], button["source"], button["target"], button["kind"]) for button in buttons],
+            [
+                ("left-upper", "left", "reference", "adjacent"),
+                ("left-middle", "reference", "left", "adjacent"),
+                ("left-lower", "right", "reference", "folded"),
+                ("right-upper", "right", "left", "adjacent"),
+                ("right-middle", "left", "right", "adjacent"),
+                ("right-lower", "reference", "right", "folded"),
+            ],
+        )
+        self.assertEqual([button["text"] for button in buttons[:2] + buttons[3:5]], ["←", "→", "←", "→"])
+        self.assertEqual([button["html"].count("<polyline") for button in buttons], [0, 0, 2, 0, 0, 2])
+        self.assertIn('points="21,18 12,5 4,18"', buttons[2]["html"])
+        self.assertIn('points="3,18 12,5 20,18"', buttons[5]["html"])
+
     def test_hold_compare_requires_loaded_panes_and_cleans_up(self):
         start = self.function_source("startHoldCompare")
         stop = self.function_source("stopHoldCompare")
