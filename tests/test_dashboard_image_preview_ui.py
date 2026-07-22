@@ -519,6 +519,52 @@ console.log(JSON.stringify({{
         self.assertFalse(result["single"]["showSync"])
         self.assertFalse(result["single"]["showCompare"])
 
+    def test_direct_preview_rerender_resets_stale_help_layout_state(self):
+        source = self.function_source("openDashboardPreview")
+        script = f"""
+const classes = initial => {{
+    const values = new Set(initial);
+    return {{
+        contains: name => values.has(name),
+        remove: name => values.delete(name)
+    }};
+}};
+const stage = {{ classList: classes(["preview-help-open"]) }};
+const grid = {{ replaceChildren: (...children) => {{ grid.children = children; }} }};
+const toolbar = {{ innerHTML: '<div class="dashboard-preview-toolbar help-open"></div>' }};
+const overlay = {{ style: {{}}, setAttribute(name, value) {{ this[name] = value; }} }};
+const document = {{
+    querySelector: selector => selector === ".dashboard-preview-stage" ? stage : null,
+    getElementById: id => id === "image-preview" ? grid : id === "dashboard-preview-toolbar" ? toolbar : overlay
+}};
+const stopHoldCompare = () => null;
+const releasePreviewPointers = () => null;
+const hidePreviewMagnifiers = () => null;
+const beginDashboardPreviewRender = () => null;
+const normalizeDashboardPreview = () => ({{ kind: "single", panes: [{{ id: "single" }}], showSync: false, showCompare: false }});
+const createPreviewGroup = () => null;
+const renderDashboardPreviewPane = pane => pane;
+const renderInlineCompareControls = () => null;
+const renderDashboardPreviewToolbar = () => '<div class="dashboard-preview-toolbar"></div>';
+const bindPreviewGroup = () => null;
+const updateDashboardPreviewToolbar = () => null;
+{source}
+openDashboardPreview({{ single: true, src: "/second.png", label: "Second" }});
+console.log(JSON.stringify({{
+    stageHelpOpen: stage.classList.contains("preview-help-open"),
+    toolbarHelpOpen: toolbar.innerHTML.includes("help-open"),
+    display: overlay.style.display,
+    ariaHidden: overlay["aria-hidden"]
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {
+            "stageHelpOpen": False,
+            "toolbarHelpOpen": False,
+            "display": "flex",
+            "ariaHidden": "false",
+        })
+
     def test_detail_has_two_way_and_three_way_hold_compare_controls(self):
         for marker in (
             "function buildHoldComparePairs(",
@@ -831,6 +877,32 @@ return {{ width: document.documentElement.clientWidth, controls }};
                 self.assertTrue(all(item["centeredInGap"] for item in result["controls"]), result)
                 self.assertTrue(all(item["alignedWithPanes"] for item in result["controls"]), result)
 
+    def test_folded_compare_svg_is_centered_inside_its_button_in_chrome(self):
+        body = """
+<button class="inline-compare-btn" style="position:relative;left:auto;top:auto;transform:none">
+  <svg class="inline-compare-icon folded" viewBox="0 0 24 24" aria-hidden="true">
+    <polyline points="21,18 12,5 4,18"></polyline>
+    <polyline class="arrow-head" points="4.5,12.5 4,18 8.8,15.1"></polyline>
+  </svg>
+</button>"""
+        result = self.run_browser_geometry_probe(
+            body,
+            """
+const button = document.querySelector(".inline-compare-btn").getBoundingClientRect();
+const icon = document.querySelector(".inline-compare-icon").getBoundingClientRect();
+return {
+    display: getComputedStyle(document.querySelector(".inline-compare-btn")).display,
+    deltaX: Math.abs((button.left + button.width / 2) - (icon.left + icon.width / 2)),
+    deltaY: Math.abs((button.top + button.height / 2) - (icon.top + icon.height / 2))
+};
+""",
+            width=320,
+            height=200,
+        )
+        self.assertEqual(result["display"], "inline-flex")
+        self.assertLessEqual(result["deltaX"], 0.25, result)
+        self.assertLessEqual(result["deltaY"], 0.25, result)
+
     def test_desktop_toolbar_text_panels_expand_left_without_clipping(self):
         toolbar = self.render_toolbar_markup(True)
         body = f"""
@@ -905,7 +977,13 @@ const listeners = new Map();
 const document = {{ addEventListener(type, listener) {{ listeners.set(type, listener); }} }};
 let dashboardPreviewToolbarBound = false;
 let dashboardPreviewKeyboardBound = true;
-const previewController = {{ groups: new Map([["overlay", {{ activePaneId: null, panes: new Map() }}]]) }};
+let refreshes = 0;
+let magnifierClears = 0;
+const previewController = {{
+    groups: new Map([["overlay", {{ activePaneId: null, panes: new Map() }}]]),
+    refreshGroup: () => {{ refreshes += 1; }}
+}};
+const hidePreviewMagnifiers = () => {{ magnifierClears += 1; }};
 const updateDashboardPreviewToolbar = () => null;
 {source}
 bindDashboardPreviewToolbar();
@@ -926,7 +1004,7 @@ const closed = {{
     infoHidden: info.classList.contains("hidden"),
     ariaExpanded: helpButton["aria-expanded"]
 }};
-console.log(JSON.stringify({{ opened, closed }}));
+console.log(JSON.stringify({{ opened, closed, refreshes, magnifierClears }}));
 """
         result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
         self.assertEqual(result["opened"], {
@@ -943,6 +1021,95 @@ console.log(JSON.stringify({{ opened, closed }}));
             "infoHidden": True,
             "ariaExpanded": "false",
         })
+        self.assertEqual(result["refreshes"], 2)
+        self.assertEqual(result["magnifierClears"], 2)
+
+    def test_help_open_and_close_refit_images_and_info_after_real_chrome_layout(self):
+        toolbar = self.render_toolbar_markup(True)
+        body = f"""
+<div id="image-overlay" style="display:flex">
+  <div class="dashboard-preview-stage">
+    <div id="dashboard-preview-toolbar">{toolbar}</div>
+    <div id="image-preview" class="dashboard-preview-grid ti2i">
+      <section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="reference"><img><span class="magnifier-layer visible"></span></section>
+      <section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="left"><img><span class="magnifier-layer visible"></span></section>
+      <section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="right"><img><span class="magnifier-layer visible"></span></section>
+    </div>
+  </div>
+</div>"""
+        result = self.run_browser_geometry_probe(
+            body,
+            f"""
+{self.controller_source()}
+const previewController = new PreviewController();
+const setPreviewMode = (groupId, mode) => previewController.setMode(groupId, mode);
+const resetPreviewGroup = groupId => previewController.resetGroup(groupId);
+const setPreviewZoom = (groupId, paneId, zoom, anchor) => previewController.setZoom(groupId, paneId, zoom, anchor);
+const closeImagePreview = () => null;
+let dashboardPreviewToolbarBound = false;
+let dashboardPreviewKeyboardBound = true;
+let dashboardPreviewSpacePan = false;
+{self.function_source("updateDashboardPreviewToolbar")}
+{self.function_source("hidePreviewMagnifiers")}
+{self.function_source("bindDashboardPreviewToolbar")}
+previewController.createGroup("overlay", {{ sync: true }});
+document.querySelectorAll("[data-preview-pane]").forEach(viewport => {{
+    const image = viewport.querySelector("img");
+    const paneId = viewport.dataset.previewPane;
+    previewController.addPane("overlay", paneId, {{
+        measure: () => ({{ naturalWidth: 1200, naturalHeight: 800, viewportWidth: viewport.clientWidth, viewportHeight: viewport.clientHeight }}),
+        apply: ({{ scale }}) => {{
+            image.style.width = `${{1200 * scale}}px`;
+            image.style.height = `${{800 * scale}}px`;
+            image.style.transform = "translate(-50%, -50%)";
+        }}
+    }});
+}});
+previewController.groups.get("overlay").activePaneId = "reference";
+previewController.groups.get("overlay").magnifier = true;
+updateDashboardPreviewToolbar("overlay");
+bindDashboardPreviewToolbar();
+const helpButton = document.querySelector('[data-preview-action="help"]');
+const snapshot = () => {{
+    const viewport = document.querySelector('[data-preview-pane="reference"]');
+    const pane = viewport.getBoundingClientRect();
+    const image = viewport.querySelector("img").getBoundingClientRect();
+    const info = document.querySelector('[data-preview-info="overlay"]').textContent;
+    const renderedPercent = Number(info.match(/渲染比例 (\d+)%/)[1]);
+    const actualScale = image.width / 1200;
+    const expectedScale = Math.min(viewport.clientWidth / 1200, viewport.clientHeight / 800);
+    return {{
+        imageInsidePane: image.left >= pane.left - 0.5 && image.right <= pane.right + 0.5
+            && image.top >= pane.top - 0.5 && image.bottom <= pane.bottom + 0.5,
+        matchesFit: Math.abs(actualScale - expectedScale) < 0.001,
+        infoMatchesImage: Math.abs(actualScale - renderedPercent / 100) <= 0.005,
+        paneWidth: viewport.clientWidth,
+        visibleLenses: document.querySelectorAll(".magnifier-layer.visible").length
+    }};
+}};
+helpButton.click();
+const opened = snapshot();
+document.querySelectorAll(".magnifier-layer").forEach(lens => lens.classList.add("visible"));
+helpButton.click();
+const closed = snapshot();
+return {{
+    opened,
+    closed,
+    toolbarOpen: document.querySelector(".dashboard-preview-toolbar").classList.contains("help-open"),
+    stageOpen: document.querySelector(".dashboard-preview-stage").classList.contains("preview-help-open")
+}};
+""",
+            width=1280,
+            height=800,
+        )
+        self.assertLess(result["opened"]["paneWidth"], result["closed"]["paneWidth"], result)
+        for state in (result["opened"], result["closed"]):
+            self.assertTrue(state["imageInsidePane"], result)
+            self.assertTrue(state["matchesFit"], result)
+            self.assertTrue(state["infoMatchesImage"], result)
+            self.assertEqual(state["visibleLenses"], 0, result)
+        self.assertFalse(result["toolbarOpen"], result)
+        self.assertFalse(result["stageOpen"], result)
 
     def test_short_desktop_complete_toolbars_keep_every_control_reachable(self):
         for show_sync, expected_count in ((True, 11), (False, 10)):
@@ -1117,6 +1284,96 @@ console.log(JSON.stringify({{
             "listenerCountAfterClose": 0,
             "cleanupRemoved": True,
         })
+
+    def test_pointer_enter_activates_valid_pane_updates_info_and_routes_unsynced_zoom(self):
+        bind_group_source = self.function_source("bindPreviewGroup")
+        release_source = self.function_source("releasePreviewPointers")
+        update_source = self.function_source("updateDashboardPreviewToolbar")
+        toolbar_source = self.function_source("bindDashboardPreviewToolbar")
+        script = f"""
+{self.controller_source()}
+const previewPointerCleanups = new Map();
+const makeViewport = paneId => {{
+    const listeners = new Map();
+    return {{
+        dataset: {{ previewPane: paneId }}, listeners,
+        classList: {{ add() {{}}, remove() {{}} }},
+        addEventListener: (type, listener) => listeners.set(type, listener),
+        removeEventListener: type => listeners.delete(type),
+        hasPointerCapture: () => false,
+        getBoundingClientRect: () => ({{ left: 0, top: 0 }})
+    }};
+}};
+const viewports = [makeViewport("reference"), makeViewport("left"), makeViewport("failed")];
+const info = {{ textContent: "" }};
+const toolbar = {{
+    dataset: {{ previewGroup: "overlay" }},
+    querySelector: selector => selector.includes("data-preview-info") ? info : null,
+    querySelectorAll: () => []
+}};
+const documentListeners = new Map();
+const document = {{
+    querySelectorAll: selector => selector.includes("data-preview-group-pane") ? viewports : [],
+    querySelector: selector => selector.includes("data-preview-group") ? toolbar : null,
+    addEventListener: (type, listener) => documentListeners.set(type, listener)
+}};
+const adapters = {{
+    reference: {{ measure: () => ({{ naturalWidth: 1000, naturalHeight: 500, viewportWidth: 500, viewportHeight: 500 }}), apply() {{}} }},
+    left: {{ measure: () => ({{ naturalWidth: 400, naturalHeight: 200, viewportWidth: 100, viewportHeight: 200 }}), apply() {{}} }},
+    failed: {{ measure: () => ({{ naturalWidth: 300, naturalHeight: 300, viewportWidth: 100, viewportHeight: 100 }}), apply() {{}} }}
+}};
+const previewController = new PreviewController();
+previewController.createGroup("overlay", {{ sync: false }});
+Object.entries(adapters).forEach(([paneId, adapter]) => previewController.addPane("overlay", paneId, adapter));
+previewController.groups.get("overlay").panes.get("failed").failed = true;
+previewController.groups.get("overlay").activePaneId = "reference";
+let dashboardPreviewSpacePan = false;
+let dashboardPreviewToolbarBound = false;
+let dashboardPreviewKeyboardBound = true;
+const renderMagnifier = () => false;
+const hidePreviewMagnifiers = () => null;
+const setPreviewCenter = () => null;
+const setPreviewZoom = (groupId, paneId, zoom, anchor) => previewController.setZoom(groupId, paneId, zoom, anchor);
+const setPreviewMode = (groupId, mode) => previewController.setMode(groupId, mode);
+const resetPreviewGroup = groupId => previewController.resetGroup(groupId);
+const closeImagePreview = () => null;
+{update_source}
+{release_source}
+{bind_group_source}
+{toolbar_source}
+bindPreviewGroup("overlay");
+bindDashboardPreviewToolbar();
+const leftEnter = viewports[1].listeners.get("pointerenter");
+if (leftEnter) leftEnter();
+const activeAfterLeft = previewController.groups.get("overlay").activePaneId;
+const infoAfterLeft = info.textContent;
+const zoomButton = {{
+    dataset: {{ previewAction: "zoom-in" }},
+    closest: selector => selector === "[data-preview-action]" ? zoomButton : selector === "[data-preview-group]" ? toolbar : null
+}};
+documentListeners.get("click")({{ target: zoomButton }});
+const zooms = Object.fromEntries([...previewController.groups.get("overlay").panes].map(([id, pane]) => [id, pane.zoom]));
+const failedEnter = viewports[2].listeners.get("pointerenter");
+if (failedEnter) failedEnter();
+const activeAfterFailed = previewController.groups.get("overlay").activePaneId;
+releasePreviewPointers("overlay");
+console.log(JSON.stringify({{
+    hasPointerEnter: Boolean(leftEnter),
+    activeAfterLeft,
+    infoAfterLeft,
+    zooms,
+    activeAfterFailed,
+    listenerCountsAfterCleanup: viewports.map(viewport => viewport.listeners.size)
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertTrue(result["hasPointerEnter"], result)
+        self.assertEqual(result["activeAfterLeft"], "left", result)
+        self.assertIn("自然尺寸 400×200", result["infoAfterLeft"])
+        self.assertIn("渲染比例 25%", result["infoAfterLeft"])
+        self.assertEqual(result["zooms"], {"reference": 1, "left": 1.1, "failed": 1})
+        self.assertEqual(result["activeAfterFailed"], "left", result)
+        self.assertEqual(result["listenerCountsAfterCleanup"], [0, 0, 0])
 
     def test_sync_toggle_hides_existing_magnifier_lenses_immediately(self):
         source = self.function_source("bindDashboardPreviewToolbar")

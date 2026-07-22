@@ -516,6 +516,9 @@
         .inline-compare-btn {
             position: absolute;
             z-index: 18;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             width: 26px;
             height: 26px;
             padding: 0;
@@ -1354,9 +1357,12 @@
                 };
                 const activate = () => {
                     const group = previewController.groups.get(groupId);
-                    if (group) group.activePaneId = paneId;
+                    const pane = group?.panes.get(paneId);
+                    if (!pane || pane.failed) return;
+                    group.activePaneId = paneId;
                     updateDashboardPreviewToolbar(groupId);
                 };
+                const onPointerEnter = () => activate();
                 const onWheel = event => {
                     const group = previewController.groups.get(groupId);
                     const pane = group?.panes.get(paneId);
@@ -1400,6 +1406,7 @@
                 const onLostPointerCapture = event => finishPointer(event.pointerId, false);
                 const onPointerLeave = () => { if (!activePointers.size) hidePreviewMagnifiers(groupId); };
                 viewport.addEventListener("wheel", onWheel, { passive: false });
+                viewport.addEventListener("pointerenter", onPointerEnter);
                 viewport.addEventListener("pointerdown", onPointerDown);
                 viewport.addEventListener("pointermove", onPointerMove);
                 viewport.addEventListener("pointerup", onPointerUp);
@@ -1411,6 +1418,7 @@
                     activePointers.clear();
                     clearDragState(dragPointerId);
                     viewport.removeEventListener("wheel", onWheel);
+                    viewport.removeEventListener("pointerenter", onPointerEnter);
                     viewport.removeEventListener("pointerdown", onPointerDown);
                     viewport.removeEventListener("pointermove", onPointerMove);
                     viewport.removeEventListener("pointerup", onPointerUp);
@@ -1452,6 +1460,8 @@
                     toolbar.querySelector(`[data-preview-help="${groupId}"]`)?.classList.toggle("hidden", !open);
                     toolbar.querySelector(`[data-preview-info="${groupId}"]`)?.classList.toggle("hidden", !open);
                     button.setAttribute("aria-expanded", String(open));
+                    hidePreviewMagnifiers(groupId);
+                    previewController.refreshGroup(groupId);
                 }
                 if (pane && action === "zoom-in") setPreviewZoom(groupId, paneId, pane.zoom * 1.1);
                 if (pane && action === "zoom-out") setPreviewZoom(groupId, paneId, pane.zoom / 1.1);
@@ -2761,6 +2771,7 @@
         }
 
         function openDashboardPreview(payload) {
+            document.querySelector?.(".dashboard-preview-stage")?.classList.remove("preview-help-open");
             stopHoldCompare();
             releasePreviewPointers("overlay");
             hidePreviewMagnifiers("overlay");
