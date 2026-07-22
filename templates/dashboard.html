@@ -409,6 +409,7 @@
             background: rgba(17, 24, 32, 0.9);
             box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
         }
+        .dashboard-preview-toolbar.help-open { width: 220px; align-items: flex-end; }
         .preview-tool {
             width: 32px;
             min-height: 32px;
@@ -434,6 +435,10 @@
         .preview-shortcut-help { top: 0; }
         .preview-info { bottom: 0; }
         .hidden { display: none !important; }
+        .dashboard-preview-toolbar:not(.help-open) .preview-info,
+        .dashboard-preview-toolbar:not(.help-open) .preview-shortcut-help { display: none; }
+        .dashboard-preview-toolbar.help-open .preview-info,
+        .dashboard-preview-toolbar.help-open .preview-shortcut-help { right: 50px; width: 160px; }
         .dashboard-preview-grid {
             position: relative;
             display: grid;
@@ -442,6 +447,7 @@
             gap: 10px;
             padding: 62px 70px 18px 18px;
         }
+        .dashboard-preview-stage.preview-help-open .dashboard-preview-grid { width: calc(100% - 248px); padding-right: 248px; }
         .dashboard-preview-grid.single { grid-template-columns: minmax(0, 1fr); }
         .dashboard-preview-grid.t2i { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .dashboard-preview-grid.ti2i { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -617,6 +623,8 @@
                 overflow-x: auto;
                 overflow-y: hidden;
             }
+            .dashboard-preview-toolbar.help-open { width: auto; }
+            .dashboard-preview-stage.preview-help-open .dashboard-preview-grid { width: 100%; padding-right: 70px; }
             .preview-info, .preview-shortcut-help {
                 position: static;
                 flex: 0 0 220px;
@@ -640,6 +648,8 @@
                 overflow-x: auto;
                 overflow-y: hidden;
             }
+            .dashboard-preview-toolbar.help-open { width: auto; }
+            .dashboard-preview-stage.preview-help-open .dashboard-preview-grid { width: 100%; padding-right: 12px; }
             .preview-info, .preview-shortcut-help {
                 position: static;
                 flex: 0 0 220px;
@@ -1214,9 +1224,10 @@
         let dashboardPreviewSpacePan = false;
 
         function renderDashboardPreviewToolbar({ groupId, showSync }) {
-            function previewToolButton(action, label, symbol, pressed) {
+            function previewToolButton(action, label, symbol, pressed, expanded) {
                 const pressedAttribute = pressed == null ? "" : ` aria-pressed="${pressed}"`;
-                return `<button type="button" class="preview-tool" data-preview-action="${action}" aria-label="${label}" title="${label}"${pressedAttribute}><span aria-hidden="true">${symbol}</span></button>`;
+                const expandedAttribute = expanded == null ? "" : ` aria-expanded="${expanded}"`;
+                return `<button type="button" class="preview-tool" data-preview-action="${action}" aria-label="${label}" title="${label}"${pressedAttribute}${expandedAttribute}><span aria-hidden="true">${symbol}</span></button>`;
             }
             return `
                 <div class="dashboard-preview-toolbar" data-preview-group="${groupId}">
@@ -1230,9 +1241,9 @@
                     ${previewToolButton("zoom-out", "缩小（-）", "−")}
                     ${previewToolButton("zoom-in", "放大（+）", "+")}
                     ${previewToolButton("background", "深色背景", "◐", true)}
-                    ${previewToolButton("help", "快捷键帮助", "?", false)}
+                    ${previewToolButton("help", "快捷键帮助", "?", false, false)}
                     <span class="preview-shortcut-help hidden" data-preview-help="${groupId}">滚轮缩放；拖动平移；+ / - 缩放；空格临时平移；Esc 关闭。</span>
-                    <span class="preview-info" data-preview-info="${groupId}">自然尺寸 - · 渲染比例 - · 适应倍率 100% · 模式 适应</span>
+                    <span class="preview-info hidden" data-preview-info="${groupId}">自然尺寸 - · 渲染比例 - · 适应倍率 100% · 模式 适应</span>
                 </div>`;
         }
 
@@ -1455,7 +1466,14 @@
                     group.darkBackground = !group.darkBackground;
                     document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(viewport => viewport.classList.toggle("preview-light", !group.darkBackground));
                 }
-                if (action === "help") toolbar.querySelector(`[data-preview-help="${groupId}"]`)?.classList.toggle("hidden");
+                if (action === "help") {
+                    const open = !toolbar.classList.contains("help-open");
+                    toolbar.classList.toggle("help-open", open);
+                    toolbar.closest(".dashboard-preview-stage")?.classList.toggle("preview-help-open", open);
+                    toolbar.querySelector(`[data-preview-help="${groupId}"]`)?.classList.toggle("hidden", !open);
+                    toolbar.querySelector(`[data-preview-info="${groupId}"]`)?.classList.toggle("hidden", !open);
+                    button.setAttribute("aria-expanded", String(open));
+                }
                 if (pane && action === "zoom-in") setPreviewZoom(groupId, paneId, pane.zoom * 1.1);
                 if (pane && action === "zoom-out") setPreviewZoom(groupId, paneId, pane.zoom / 1.1);
                 updateDashboardPreviewToolbar(groupId);
@@ -2540,6 +2558,7 @@
             hidePreviewMagnifiers();
             stopHoldCompare();
             previewController.groups.delete("overlay");
+            document.querySelector?.(".dashboard-preview-stage")?.classList.remove("preview-help-open");
             document.getElementById("dashboard-preview-toolbar").replaceChildren();
             document.getElementById("image-preview").replaceChildren();
             const overlay = document.getElementById("image-overlay");

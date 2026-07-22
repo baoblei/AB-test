@@ -715,6 +715,7 @@ console.log(JSON.stringify({{ during, removed: layer.removed, activeAfter: butto
             "hidePreviewMagnifiers()",
             "stopHoldCompare()",
             'previewController.groups.delete("overlay")',
+            'classList.remove("preview-help-open")',
             "replaceChildren()",
         ):
             self.assertIn(marker, source)
@@ -791,43 +792,117 @@ return {{ width: document.documentElement.clientWidth, controls }};
                 self.assertTrue(all(item["alignedWithPanes"] for item in result["controls"]), result)
 
     def test_desktop_toolbar_text_panels_expand_left_without_clipping(self):
-        body = """
+        toolbar = self.render_toolbar_markup(True)
+        body = f"""
 <div id="image-overlay" style="display:flex">
   <div class="dashboard-preview-stage">
-    <div class="dashboard-preview-toolbar">
-      <button class="preview-tool">1</button><button class="preview-tool">2</button>
-      <span class="preview-shortcut-help">快捷键帮助文字</span>
-      <span class="preview-info">自然尺寸与渲染比例信息</span>
+    <div id="dashboard-preview-toolbar">{toolbar}</div>
+    <div id="image-preview" class="dashboard-preview-grid ti2i">
+      <section class="dashboard-preview-viewport"></section>
+      <section class="dashboard-preview-viewport"></section>
+      <section class="dashboard-preview-viewport"></section>
     </div>
   </div>
 </div>"""
         result = self.run_browser_geometry_probe(
             body,
             """
-const rect = selector => {
-    const value = document.querySelector(selector).getBoundingClientRect();
-    return { left: value.left, right: value.right, top: value.top, bottom: value.bottom, width: value.width };
+const stageNode = document.querySelector(".dashboard-preview-stage");
+const toolbarNode = document.querySelector(".dashboard-preview-toolbar");
+const gridNode = document.querySelector(".dashboard-preview-grid");
+const infoNode = document.querySelector(".preview-info");
+const helpNode = document.querySelector(".preview-shortcut-help");
+const closed = {
+    info: getComputedStyle(infoNode).display,
+    help: getComputedStyle(helpNode).display
 };
-const stage = rect(".dashboard-preview-stage");
-const toolbar = rect(".dashboard-preview-toolbar");
-const info = rect(".preview-info");
-const help = rect(".preview-shortcut-help");
+toolbarNode.classList.add("help-open");
+stageNode.classList.add("preview-help-open");
+infoNode.classList.remove("hidden");
+helpNode.classList.remove("hidden");
+const stage = stageNode.getBoundingClientRect();
+const grid = gridNode.getBoundingClientRect();
+const toolbar = toolbarNode.getBoundingClientRect();
+const panels = [infoNode, helpNode].map(node => node.getBoundingClientRect());
 return {
-    overflowX: getComputedStyle(document.querySelector(".dashboard-preview-toolbar")).overflowX,
-    overflowY: getComputedStyle(document.querySelector(".dashboard-preview-toolbar")).overflowY,
-    panels: [info, help].map(panel => ({
-        wideEnough: panel.width >= 200,
-        expandsLeft: panel.right <= toolbar.left,
-        insideStage: panel.left >= stage.left && panel.top >= stage.top && panel.bottom <= stage.bottom
-    }))
+    closed,
+    toolbarWidth: toolbar.width,
+    gridClearsToolbar: grid.right <= toolbar.left,
+    panelsInsideStage: panels.every(panel => panel.left >= stage.left && panel.right <= stage.right)
 };
 """,
             width=1024,
             height=800,
         )
-        self.assertEqual(result["overflowX"], "visible")
-        self.assertEqual(result["overflowY"], "visible")
-        self.assertTrue(all(all(panel.values()) for panel in result["panels"]), result)
+        self.assertEqual(result["closed"], {"info": "none", "help": "none"})
+        self.assertGreaterEqual(result["toolbarWidth"], 220)
+        self.assertTrue(result["gridClearsToolbar"], result)
+        self.assertTrue(result["panelsInsideStage"], result)
+
+    def test_help_action_expands_toolbar_and_stage_without_leaking_state(self):
+        source = self.function_source("bindDashboardPreviewToolbar")
+        script = f"""
+const classes = (initial = []) => {{
+    const values = new Set(initial);
+    return {{
+        add: name => values.add(name),
+        remove: name => values.delete(name),
+        contains: name => values.has(name),
+        toggle(name, force) {{
+            const enabled = force === undefined ? !values.has(name) : force;
+            if (enabled) values.add(name); else values.delete(name);
+            return enabled;
+        }}
+    }};
+}};
+const help = {{ classList: classes(["hidden"]) }};
+const info = {{ classList: classes(["hidden"]) }};
+const toolbar = {{ dataset: {{ previewGroup: "overlay" }}, classList: classes(), querySelector: selector => selector.includes("preview-help") ? help : selector.includes("preview-info") ? info : null }};
+const stage = {{ classList: classes() }};
+toolbar.closest = selector => selector === ".dashboard-preview-stage" ? stage : null;
+const helpButton = {{ dataset: {{ previewAction: "help" }}, closest: selector => selector === "[data-preview-action]" ? helpButton : selector === "[data-preview-group]" ? toolbar : null, setAttribute(name, value) {{ this[name] = value; }} }};
+const listeners = new Map();
+const document = {{ addEventListener(type, listener) {{ listeners.set(type, listener); }} }};
+let dashboardPreviewToolbarBound = false;
+let dashboardPreviewKeyboardBound = true;
+const previewController = {{ groups: new Map([["overlay", {{ activePaneId: null, panes: new Map() }}]]) }};
+const updateDashboardPreviewToolbar = () => null;
+{source}
+bindDashboardPreviewToolbar();
+const click = () => listeners.get("click")({{ target: helpButton }});
+click();
+const opened = {{
+    toolbar: toolbar.classList.contains("help-open"),
+    stage: stage.classList.contains("preview-help-open"),
+    helpHidden: help.classList.contains("hidden"),
+    infoHidden: info.classList.contains("hidden"),
+    ariaExpanded: helpButton["aria-expanded"]
+}};
+click();
+const closed = {{
+    toolbar: toolbar.classList.contains("help-open"),
+    stage: stage.classList.contains("preview-help-open"),
+    helpHidden: help.classList.contains("hidden"),
+    infoHidden: info.classList.contains("hidden"),
+    ariaExpanded: helpButton["aria-expanded"]
+}};
+console.log(JSON.stringify({{ opened, closed }}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result["opened"], {
+            "toolbar": True,
+            "stage": True,
+            "helpHidden": False,
+            "infoHidden": False,
+            "ariaExpanded": "true",
+        })
+        self.assertEqual(result["closed"], {
+            "toolbar": False,
+            "stage": False,
+            "helpHidden": True,
+            "infoHidden": True,
+            "ariaExpanded": "false",
+        })
 
     def test_short_desktop_complete_toolbars_keep_every_control_reachable(self):
         for show_sync, expected_count in ((True, 11), (False, 10)):
