@@ -7,7 +7,7 @@ from .bad_cases import build_bad_case_stats, safe_load_json_list
 from .config import DIM_LABELS, get_task_config, normalize_task_type
 from .database import connect
 from .errors import InvalidDimensionError
-from .storage import get_prompt_text, get_ref_image_url
+from .storage import get_preview_prompt_text, get_ref_image_url
 
 
 def fetch_result_rows(task_type: str, v_a: Optional[str] = None, v_b: Optional[str] = None, scene: Optional[str] = None):
@@ -135,7 +135,7 @@ def detail_results(task_type: str, v1: str, v2: str, scene: str) -> list[dict]:
             "worker": row["worker"],
             "time": row["timestamp"],
             "duration": row["duration_seconds"],
-            "prompt": get_prompt_text(task_type, row["scene"], row["filename"]),
+            "prompt": get_preview_prompt_text(task_type, row["scene"], row["filename"]),
             "ref_img": get_ref_image_url(task_type, row["scene"], row["filename"]),
             "bad_case_tags_a": safe_load_json_list(row["bad_case_tags_a"]),
             "bad_case_tags_b": safe_load_json_list(row["bad_case_tags_b"]),
@@ -158,7 +158,7 @@ def bad_case_details(
     rows = fetch_result_rows(task_type, v_a, v_b, scene)
     results = []
     for row in sorted(rows, key=lambda item: item["timestamp"], reverse=True):
-        prompt = get_prompt_text(task_type, row["scene"], row["filename"])
+        prompt = get_preview_prompt_text(task_type, row["scene"], row["filename"])
         for model_name, tag_json, category_json in (
             (v_a, row["bad_case_tags_a"], row["bad_case_categories_a"]),
             (v_b, row["bad_case_tags_b"], row["bad_case_categories_b"]),

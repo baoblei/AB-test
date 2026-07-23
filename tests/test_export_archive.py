@@ -218,7 +218,7 @@ class ExportArchiveTests(unittest.TestCase):
         self.assertEqual(sheet.cell(3, headers.index("D 图片路径") + 1).value, "images/portrait/D/scene1.jpg")
         self.assertEqual(sheet.cell(3, headers.index("D 图片状态") + 1).value, "文件不存在")
 
-    def test_create_artifact_rejects_empty_overall_and_cleans_failed_temp_directory(self):
+    def test_create_artifact_rejects_empty_selected_union_and_cleans_failed_temp_directory(self):
         from app_core import export_service
 
         with patch.object(export_service, "fetch_base_rows", return_value=[]):
@@ -233,6 +233,37 @@ class ExportArchiveTests(unittest.TestCase):
                     with self.assertRaises(OSError):
                         export_service.create_export_artifact(self.request)
         self.assertFalse((temp_root / "artifact").exists())
+
+    def test_create_artifact_allows_dimension_only_result_filter_match(self):
+        from app_core import export_service
+
+        request = ExportRequest(
+            task_type="TI2I",
+            v1="D",
+            v2="E",
+            dimensions=["fidelity"],
+            result_filter="a",
+        )
+        rows = [make_row(overall="E", fidelity="D")]
+
+        with patch.object(export_service, "fetch_base_rows", return_value=rows):
+            try:
+                artifact = export_service.create_export_artifact(request)
+            except AppError as error:
+                self.fail(f"dimension-only export was rejected: {error}")
+
+        try:
+            workbook = load_workbook(artifact.path)
+            detail = workbook["portrait"]
+            headers = [cell.value for cell in detail[2]]
+            self.assertEqual(workbook["Overall"]["B9"].value, 0)
+            self.assertEqual(detail.max_row, 3)
+            self.assertIsNone(detail.cell(3, headers.index("整体") + 1).value)
+            self.assertEqual(detail.cell(3, headers.index("保真度") + 1).value, "D")
+            workbook.close()
+        finally:
+            Path(artifact.path).unlink(missing_ok=True)
+            Path(artifact.cleanup_dir).rmdir()
 
     def test_workbook_artifact_handles_invalid_timestamps_according_to_time_bounds(self):
         from app_core import export_service

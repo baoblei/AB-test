@@ -177,11 +177,21 @@ class TaskCompletionAtomicityTests(unittest.TestCase):
                 get_next_task("T2I", "worker", "model-a", "model-b", "scene", 2),
                 {"status": "finished"},
             )
-            with patch("app_core.task_service.get_prompt_text", return_value="prompt"):
+            with patch("app_core.task_service.get_preview_prompt_text", return_value="prompt"):
                 with patch("app_core.task_service.get_result_image_url", return_value="/image.png"):
                     task = get_next_task("T2I", "worker", "model-a", "model-b", "scene", 1)
 
         self.assertEqual(task["task_id"], self.task_id)
+
+    def test_get_next_task_normalizes_real_missing_prompt_for_preview(self):
+        missing_prompt_root = str(Path(self.temp_dir.name) / "missing-prompts")
+        with patch("app_core.task_service.ensure_pair_tasks"):
+            with patch("app_core.storage.get_prompt_root", return_value=missing_prompt_root):
+                with patch("app_core.storage.PROMPT_DIR", missing_prompt_root):
+                    with patch("app_core.task_service.get_result_image_url", return_value="/image.png"):
+                        task = get_next_task("T2I", "worker", "model-a", "model-b", "scene", 1)
+
+        self.assertEqual(task["prompt"], "")
 
     def test_concurrent_get_next_task_reuses_one_working_claim(self):
         conn = connect()
@@ -200,7 +210,7 @@ class TaskCompletionAtomicityTests(unittest.TestCase):
                 task_ids.append(task["task_id"])
 
         with patch("app_core.task_service.ensure_pair_tasks"):
-            with patch("app_core.task_service.get_prompt_text", return_value="prompt"):
+            with patch("app_core.task_service.get_preview_prompt_text", return_value="prompt"):
                 with patch("app_core.task_service.get_result_image_url", return_value="/image.png"):
                     threads = [threading.Thread(target=load_task) for _ in range(2)]
                     for thread in threads:

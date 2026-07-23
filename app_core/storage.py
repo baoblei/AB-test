@@ -282,6 +282,9 @@ def compact_resolution_stats(stats: dict) -> dict:
     }
 
 
+MISSING_PROMPT_TEXT = "Prompt content not found."
+
+
 def get_prompt_text(task_type: str, scene: str, filename: str) -> str:
     prompt_root = get_prompt_root(task_type)
     candidates = [os.path.join(prompt_root, f"{scene}.txt"), os.path.join(PROMPT_DIR, f"{scene}.txt")]
@@ -294,7 +297,12 @@ def get_prompt_text(task_type: str, scene: str, filename: str) -> str:
                 parts = line.strip().split("\t")
                 if len(parts) >= 2 and parts[0] == image_id:
                     return parts[1]
-    return "Prompt content not found."
+    return MISSING_PROMPT_TEXT
+
+
+def get_preview_prompt_text(task_type: str, scene: str, filename: str) -> str:
+    prompt = get_prompt_text(task_type, scene, filename)
+    return "" if prompt == MISSING_PROMPT_TEXT else prompt
 
 
 def get_prompt_file_path(task_type: str, scene: str) -> str:

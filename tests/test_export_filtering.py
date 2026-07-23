@@ -279,6 +279,20 @@ class ExportQueryTests(unittest.TestCase):
             {"overall": 3, "dimensions": {"aesthetic": 2}, "unique_images": 3},
         )
 
+    def test_preview_reports_dimension_only_matches_when_overall_result_misses(self):
+        request = ExportRequest(
+            task_type="T2I",
+            v1="A",
+            v2="B",
+            dimensions=["aesthetic"],
+            result_filter="a",
+        )
+
+        self.assertEqual(
+            preview_export(request),
+            {"overall": 0, "dimensions": {"aesthetic": 1}, "unique_images": 1},
+        )
+
     def test_preview_with_empty_dimensions_is_overall_only(self):
         request = ExportRequest(task_type="T2I", v1="A", v2="B", dimensions=[])
 

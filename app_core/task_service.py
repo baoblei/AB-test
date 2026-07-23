@@ -7,7 +7,7 @@ from .bad_cases import categories_from_tags, derive_overall_result, normalize_ba
 from .config import get_task_config, normalize_task_type
 from .database import connect
 from .errors import AppError, ConflictError
-from .storage import get_prompt_text, get_ref_image_url, get_result_image_url, get_scene_path, list_scene_files
+from .storage import get_preview_prompt_text, get_ref_image_url, get_result_image_url, get_scene_path, list_scene_files
 from .time_utils import now_beijing_iso
 
 
@@ -406,7 +406,7 @@ def get_next_task(
         "task_id": row[0],
         "scene": scene,
         "filename": filename,
-        "prompt": get_prompt_text(task_type, scene, filename),
+        "prompt": get_preview_prompt_text(task_type, scene, filename),
         "left_img": get_result_image_url(task_type, display[0], scene, filename),
         "right_img": get_result_image_url(task_type, display[1], scene, filename),
         "v_left": display[0],

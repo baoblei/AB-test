@@ -37,7 +37,7 @@ class DashboardExportUiTests(unittest.TestCase):
             }};
             const document = {{ getElementById: id => elements[id] }};
             const state = {{ exportPair: {{
-                previewOverall: 9,
+                previewAvailableCount: 9,
                 downloading: {str(downloading).lower()},
                 options: {{ dimensions: [{{ key: "aesthetic", label: "美学" }}, {{ key: "fidelity", label: "保真度" }}] }}
             }} }};
@@ -45,7 +45,7 @@ class DashboardExportUiTests(unittest.TestCase):
             {self.function_source("renderInvalidExportSelection")}
             renderInvalidExportSelection("请至少选择一个场景");
             console.log(JSON.stringify({{
-                previewOverall: state.exportPair.previewOverall,
+                previewAvailableCount: state.exportPair.previewAvailableCount,
                 preview: elements["export-preview-count"].textContent,
                 message: elements["export-message"].textContent,
                 disabled: elements["export-download"].disabled,
@@ -227,13 +227,48 @@ class DashboardExportUiTests(unittest.TestCase):
         )
         self.assertNotIn("new Date(value)", self.function_source("localInputToBeijingIso"))
 
-    def test_preview_ignores_stale_response_and_disables_empty_overall(self):
+    def test_preview_ignores_stale_response_and_gates_on_all_selected_results(self):
         self.assertIn("previewTimer", self.html)
         self.assertIn("previewController", self.html)
         self.assertIn("exportPreviewRequestId", self.html)
         self.assertIn("requestId !== state.exportPreviewRequestId", self.html)
-        self.assertIn("exportButton.disabled = preview.overall === 0;", self.html)
+        self.assertIn("function exportPreviewAvailableCount", self.html)
+        self.assertNotIn("exportButton.disabled = preview.overall === 0;", self.html)
         self.assertIn("setTimeout", self.function_source("scheduleExportPreview"))
+
+        script = f"""
+            const exportButton = {{ disabled: true }};
+            const previewCount = {{ textContent: "" }};
+            const message = {{ textContent: "" }};
+            const document = {{ getElementById: id => id === "export-download" ? exportButton : id === "export-preview-count" ? previewCount : message }};
+            const state = {{
+                exportPreviewRequestId: 0,
+                modalSessionId: 1,
+                exportPair: {{
+                    options: {{ dimensions: [{{ key: "aesthetic", label: "美学" }}] }},
+                    previewTimer: null,
+                    previewController: null,
+                    previewAvailableCount: 0,
+                    sessionId: 1,
+                    downloading: false
+                }}
+            }};
+            const collectExportRequest = () => ({{ scenes: ["portrait"], workers: ["alice"], eval_modes: ["full"] }});
+            const exportSelectionError = () => "";
+            const isCurrentExportSession = sessionId => sessionId === 1;
+            const setExportMessage = value => {{ message.textContent = value; }};
+            const api = async () => ({{ json: async () => ({{ overall: 0, dimensions: {{ aesthetic: 1 }}, unique_images: 1 }}) }});
+            {self.function_source("exportPreviewAvailableCount")}
+            {self.function_source("renderExportPreview")}
+            async {self.function_source("previewExport")}
+            previewExport().then(() => console.log(JSON.stringify({{
+                disabled: exportButton.disabled,
+                available: state.exportPair.previewAvailableCount,
+                message: message.textContent
+            }})));
+        """
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {"disabled": False, "available": 1, "message": ""})
 
     def test_empty_required_export_choices_are_blocked_before_preview_or_download(self):
         valid_request = {"scenes": ["portrait"], "workers": ["alice"], "eval_modes": ["full"]}
@@ -252,13 +287,13 @@ class DashboardExportUiTests(unittest.TestCase):
         self.assertLess(preview.index("if (selectionError)"), preview.index('api("/api/export/preview"'))
         self.assertLess(download.index("if (selectionError)"), download.index('fetch("/api/export"'))
         invalid_render = self.function_source("renderInvalidExportSelection")
-        self.assertIn("previewOverall = 0", invalid_render)
+        self.assertIn("previewAvailableCount = 0", invalid_render)
         self.assertIn("exportButton.disabled = true", invalid_render)
 
     def test_invalid_selection_updates_counts_and_message_while_download_is_running(self):
         rendered = self.run_invalid_export_render(downloading=True)
 
-        self.assertEqual(rendered["previewOverall"], 0)
+        self.assertEqual(rendered["previewAvailableCount"], 0)
         self.assertEqual(rendered["preview"], "Overall 0 条 · 美学 0 · 保真度 0 · 去重图片 0 张")
         self.assertEqual(rendered["message"], "请至少选择一个场景")
         self.assertTrue(rendered["disabled"])

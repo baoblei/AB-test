@@ -674,10 +674,10 @@ def create_export_artifact(request: ExportRequest) -> ExportArtifact:
     task_type, v_a, v_b = validate_export_request(request)
     rows = fetch_base_rows(task_type, v_a, v_b)
     overall_rows = filter_rows(rows, request, "overall")
-    if not overall_rows:
-        raise AppError("当前筛选条件下没有符合条件的评测记录，无法生成导出文件")
     dimension_rows = [filter_rows(rows, request, dimension) for dimension in request.dimensions]
     selected_rows = overall_rows + [row for items in dimension_rows for row in items]
+    if not selected_rows:
+        raise AppError("当前筛选条件下没有符合条件的评测记录，无法生成导出文件")
     cleanup_dir = tempfile.mkdtemp(prefix="ab-test-export-")
     try:
         manifest = build_image_manifest(request, selected_rows) if request.include_images else None

@@ -263,6 +263,35 @@ class ExportWorkbookTests(unittest.TestCase):
         self.assertNotIn("整体", headers)
         self.assertEqual(sheet.cell(3, headers.index("保真度") + 1).value, "tie")
 
+    @patch("app_core.export_service.get_prompt_text", return_value="prompt")
+    def test_zero_and_one_result_columns_keep_exact_headers_merges_and_autofilter(self, _prompt):
+        sample_headers = [
+            "任务类型", "模型 A", "模型 B", "场景", "图片名", "Prompt", "评测人", "评测模式", "评测时间（北京时间）",
+        ]
+        image_headers = ["A 图片路径", "A 图片状态", "B 图片路径", "B 图片状态"]
+        cases = [
+            ("zero", [], sample_headers + image_headers, {"A1:I1", "J1:M1"}, "A2:M3"),
+            ("one", ["aesthetic"], sample_headers + ["美学"] + image_headers, {"A1:I1", "K1:N1"}, "A2:N3"),
+        ]
+
+        for name, dimensions, expected_headers, expected_merges, expected_filter in cases:
+            with self.subTest(name=name):
+                request = ExportRequest(
+                    task_type="T2I",
+                    v1="A",
+                    v2="B",
+                    dimensions=dimensions,
+                    eval_modes=["full"],
+                    include_bad_cases=False,
+                    include_duration=False,
+                )
+                sheet = build_workbook(request, [make_row(1, aesthetic="A")])["city"]
+
+                self.assertEqual([cell.value for cell in sheet[2]], expected_headers)
+                self.assertEqual({str(cell_range) for cell_range in sheet.merged_cells.ranges}, expected_merges)
+                self.assertEqual(sheet.auto_filter.ref, expected_filter)
+                self.assertEqual(sheet.freeze_panes, "A3")
+
     @patch("app_core.export_service.get_prompt_text", return_value="=SUM(1, 1)")
     def test_external_text_is_not_written_as_excel_formula(self, _prompt):
         request = ExportRequest(

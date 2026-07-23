@@ -2956,7 +2956,7 @@
                 options: null,
                 previewTimer: null,
                 previewController: null,
-                previewOverall: null,
+                previewAvailableCount: null,
                 sessionId,
                 downloading: false,
                 downloadRequestId: null
@@ -3027,7 +3027,7 @@
         }
 
         function renderInvalidExportSelection(message) {
-            state.exportPair.previewOverall = 0;
+            state.exportPair.previewAvailableCount = 0;
             renderExportPreview({ overall: 0, dimensions: {}, unique_images: 0 });
             const messageElement = document.getElementById("export-message");
             if (messageElement.classList) {
@@ -3066,6 +3066,10 @@
             document.getElementById("export-preview-count").textContent = `Overall ${preview.overall} 条 · ${counts.join(" · ") || "未选择明细维度"} · 去重图片 ${preview.unique_images} 张`;
         }
 
+        function exportPreviewAvailableCount(preview) {
+            return Number(preview.unique_images) || 0;
+        }
+
         async function previewExport() {
             if (!state.exportPair.options) return;
             if (state.exportPair.previewTimer) {
@@ -3092,16 +3096,16 @@
                     signal: controller.signal
                 }).then(response => response.json());
                 if (requestId !== state.exportPreviewRequestId || !isCurrentExportSession(sessionId)) return;
-                state.exportPair.previewOverall = preview.overall;
+                state.exportPair.previewAvailableCount = exportPreviewAvailableCount(preview);
                 renderExportPreview(preview);
                 if (!state.exportPair.downloading) {
                     const exportButton = document.getElementById("export-download");
-                    exportButton.disabled = preview.overall === 0;
-                    setExportMessage(preview.overall === 0 ? "当前筛选没有可导出的评测记录" : "");
+                    exportButton.disabled = state.exportPair.previewAvailableCount === 0;
+                    setExportMessage(exportButton.disabled ? "当前筛选没有可导出的评测记录" : "");
                 }
             } catch (error) {
                 if (error.name === "AbortError" || requestId !== state.exportPreviewRequestId || !isCurrentExportSession(sessionId)) return;
-                state.exportPair.previewOverall = 0;
+                state.exportPair.previewAvailableCount = 0;
                 if (!state.exportPair.downloading) {
                     document.getElementById("export-download").disabled = true;
                     setExportMessage(error.message, "error");
@@ -3177,7 +3181,7 @@
                 state.exportPair.downloading = false;
                 state.exportPair.downloadRequestId = null;
                 button.textContent = "下载导出";
-                button.disabled = state.exportPair.previewOverall === 0;
+                button.disabled = state.exportPair.previewAvailableCount === 0;
             }
         }
 
