@@ -191,7 +191,7 @@ class DashboardExportUiTests(unittest.TestCase):
             "syncBadcaseTags",
             "loadBadcaseDetails",
             "openPreview",
-            "openSinglePreview",
+            "buildBadCasePreviewPayload",
         )
         for name in functions:
             with self.subTest(name=name):
