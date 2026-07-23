@@ -67,6 +67,39 @@ console.log(renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: {str(
 """
         return subprocess.check_output(["node", "-e", script], text=True)
 
+    def production_dashboard_overlay_markup(
+        self, toolbar="", grid_class="single", grid_content="", stage_classes=()
+    ):
+        overlay_start = self.html.index('<div id="image-overlay"')
+        overlay_end = self.html.index("\n\n    <script>", overlay_start)
+        body = self.html[overlay_start:overlay_end]
+        self.assertIn('<div id="image-overlay"', body)
+        self.assertIn('class="dashboard-preview-stage"', body)
+        self.assertIn('<div class="dashboard-preview-content">', body)
+        self.assertIn('<div id="dashboard-preview-toolbar"></div>', body)
+        self.assertIn(
+            '<div class="dashboard-preview-grid single" id="image-preview"></div>', body
+        )
+        body = body.replace(
+            '<div id="image-overlay"', '<div id="image-overlay" style="display:flex"', 1
+        )
+        body = body.replace(
+            'class="dashboard-preview-stage"',
+            f'class="dashboard-preview-stage{" " if stage_classes else ""}{" ".join(stage_classes)}"',
+            1,
+        )
+        body = body.replace(
+            '<div id="dashboard-preview-toolbar"></div>',
+            f'<div id="dashboard-preview-toolbar">{toolbar}</div>',
+            1,
+        )
+        body = body.replace(
+            '<div class="dashboard-preview-grid single" id="image-preview"></div>',
+            f'<div class="dashboard-preview-grid {grid_class}" id="image-preview">{grid_content}</div>',
+            1,
+        )
+        return body
+
     def run_browser_geometry_probe(self, body, scenario, width=700, height=1000):
         chrome = next((candidate for candidate in (
             shutil.which("google-chrome"),
@@ -520,7 +553,7 @@ console.log(JSON.stringify({{
     t2i: normalizeDashboardPreview({{ mode: "T2I", a: "a.jpg", b: "b.jpg", labels: ["A", "B"] }}),
     ti2i: normalizeDashboardPreview({{ mode: "TI2I", ref: "ref.jpg", a: "a.jpg", b: "b.jpg", labels: ["A", "B"] }}),
     missingRef: normalizeDashboardPreview({{ mode: "TI2I", ref: null, a: "a.jpg", b: "b.jpg", labels: ["A", "B"] }}),
-    single: normalizeDashboardPreview({{ single: true, src: "bad.jpg", label: "A" }})
+    single: normalizeDashboardPreview({{ single: true, src: "bad.jpg", label: "A", prompt: "single prompt" }})
 }}));
 """
         result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
@@ -532,6 +565,7 @@ console.log(JSON.stringify({{
         self.assertEqual([p["id"] for p in result["single"]["panes"]], ["single"])
         self.assertFalse(result["single"]["showSync"])
         self.assertFalse(result["single"]["showCompare"])
+        self.assertEqual(result["single"]["prompt"], "single prompt")
 
     def test_dashboard_preview_prompt_is_propagated_and_written_as_text(self):
         script = f"""
@@ -609,22 +643,15 @@ console.log(JSON.stringify({{
         )
 
     def test_dashboard_prompt_header_does_not_overlap_images(self):
-        prompt = "第一行 Prompt<br>第二行 Prompt，包含很长的说明文字以验证自动换行不会覆盖高清预览图片区域。<br>第三行 Prompt"
-        overlay_start = self.html.index('<div id="image-overlay"')
-        overlay_end = self.html.index("\n\n    <script>", overlay_start)
-        body = self.html[overlay_start:overlay_end]
-        prompt_placeholder = '<div id="dashboard-preview-prompt" class="preview-prompt hidden"></div>'
-        self.assertIn(prompt_placeholder, body)
-        body = body.replace(
-            prompt_placeholder,
-            f'<div id="dashboard-preview-prompt" class="preview-prompt">{prompt}</div>',
-        ).replace(
-            '<div class="dashboard-preview-grid single" id="image-preview"></div>',
-            '<div class="dashboard-preview-grid single" id="image-preview"><section class="dashboard-preview-viewport"></section></div>',
+        body = self.production_dashboard_overlay_markup(
+            grid_content='<section class="dashboard-preview-viewport"></section>'
         )
         result = self.run_browser_geometry_probe(
             body,
             """
+const promptNode = document.getElementById("dashboard-preview-prompt");
+promptNode.textContent = "第一行 Prompt\\n第二行 Prompt，包含很长的说明文字以验证自动换行不会覆盖高清预览图片区域。\\n第三行 Prompt";
+promptNode.classList.remove("hidden");
 const head = document.querySelector(".dashboard-preview-head").getBoundingClientRect();
 const grid = document.querySelector(".dashboard-preview-grid").getBoundingClientRect();
 const image = document.querySelector(".dashboard-preview-viewport").getBoundingClientRect();
@@ -670,8 +697,11 @@ console.log(JSON.stringify({{ ti2i, t2i, missingRef }}));
         self.assertEqual([pane["src"] for pane in result["ti2i"]["panes"]], ["ref.jpg", "bad.jpg"])
         self.assertTrue(result["ti2i"]["showSync"])
         self.assertTrue(result["ti2i"]["showCompare"])
+        self.assertEqual(result["ti2i"]["prompt"], "prompt")
         self.assertEqual([pane["id"] for pane in result["t2i"]["panes"]], ["single"])
+        self.assertEqual(result["t2i"]["prompt"], "prompt")
         self.assertEqual([pane["id"] for pane in result["missingRef"]["panes"]], ["single"])
+        self.assertEqual(result["missingRef"]["prompt"], "prompt")
 
     def test_direct_preview_rerender_resets_stale_help_layout_state(self):
         source = self.function_source("openDashboardPreview")
@@ -915,12 +945,16 @@ console.log(JSON.stringify({{ during, removed: layer.removed, activeAfter: butto
             """
 const classes = initial => {
     const values = new Set(initial);
-    return { contains: name => values.has(name), remove: name => values.delete(name) };
+    return {
+        add: name => values.add(name),
+        contains: name => values.has(name),
+        remove: name => values.delete(name)
+    };
 };
 const stage = { classList: classes(["preview-help-open"]) };
 const toolbar = { replaceChildren: () => null };
 const preview = { replaceChildren: () => null };
-const promptNode = { textContent: "prompt", classList: { add: () => null } };
+const promptNode = { textContent: "prompt", classList: classes([]) };
 const overlay = {
     style: { display: "flex" },
     attributes: { "aria-hidden": "false" },
@@ -944,7 +978,9 @@ closeImagePreview();
 console.log(JSON.stringify({
     stageOpen: stage.classList.contains("preview-help-open"),
     overlayDisplay: overlay.style.display,
-    overlayAriaHidden: overlay.attributes["aria-hidden"]
+    overlayAriaHidden: overlay.attributes["aria-hidden"],
+    promptText: promptNode.textContent,
+    promptHidden: promptNode.classList.contains("hidden")
 }));
 """
         )
@@ -952,6 +988,8 @@ console.log(JSON.stringify({
             "stageOpen": False,
             "overlayDisplay": "none",
             "overlayAriaHidden": "true",
+            "promptText": "",
+            "promptHidden": True,
         })
         for marker in (
             'releasePreviewPointers("overlay")',
@@ -1062,17 +1100,14 @@ return {
 
     def test_desktop_toolbar_text_panels_expand_left_without_clipping(self):
         toolbar = self.render_toolbar_markup(True)
-        body = f"""
-<div id="image-overlay" style="display:flex">
-  <div class="dashboard-preview-stage">
-    <div id="dashboard-preview-toolbar">{toolbar}</div>
-    <div id="image-preview" class="dashboard-preview-grid ti2i">
-      <section class="dashboard-preview-viewport"></section>
-      <section class="dashboard-preview-viewport"></section>
-      <section class="dashboard-preview-viewport"></section>
-    </div>
-  </div>
-</div>"""
+        body = self.production_dashboard_overlay_markup(
+            toolbar=toolbar,
+            grid_class="ti2i",
+            grid_content="""
+<section class="dashboard-preview-viewport"></section>
+<section class="dashboard-preview-viewport"></section>
+<section class="dashboard-preview-viewport"></section>""",
+        )
         result = self.run_browser_geometry_probe(
             body,
             """
@@ -1183,17 +1218,14 @@ console.log(JSON.stringify({{ opened, closed, refreshes, magnifierClears }}));
 
     def test_help_open_and_close_refit_images_and_info_after_real_chrome_layout(self):
         toolbar = self.render_toolbar_markup(True)
-        body = f"""
-<div id="image-overlay" style="display:flex">
-  <div class="dashboard-preview-stage">
-    <div id="dashboard-preview-toolbar">{toolbar}</div>
-    <div id="image-preview" class="dashboard-preview-grid ti2i">
-      <section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="reference"><img><span class="magnifier-layer visible"></span></section>
-      <section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="left"><img><span class="magnifier-layer visible"></span></section>
-      <section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="right"><img><span class="magnifier-layer visible"></span></section>
-    </div>
-  </div>
-</div>"""
+        body = self.production_dashboard_overlay_markup(
+            toolbar=toolbar,
+            grid_class="ti2i",
+            grid_content="""
+<section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="reference"><img><span class="magnifier-layer visible"></span></section>
+<section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="left"><img><span class="magnifier-layer visible"></span></section>
+<section class="dashboard-preview-viewport" data-preview-group-pane="overlay" data-preview-pane="right"><img><span class="magnifier-layer visible"></span></section>""",
+        )
         result = self.run_browser_geometry_probe(
             body,
             f"""
@@ -1273,12 +1305,10 @@ return {{
             for width, height in ((1024, 500), (700, 1000)):
                 with self.subTest(show_sync=show_sync, width=width, height=height):
                     toolbar = self.render_toolbar_markup(show_sync)
-                    body = f"""
-<div id="image-overlay" style="display:flex">
-  <div class="dashboard-preview-stage preview-help-open">
-    <div id="dashboard-preview-toolbar">{toolbar}</div>
-  </div>
-</div>"""
+                    body = self.production_dashboard_overlay_markup(
+                        toolbar=toolbar,
+                        stage_classes=("preview-help-open",),
+                    )
                     result = self.run_browser_geometry_probe(
                         body,
                         """
