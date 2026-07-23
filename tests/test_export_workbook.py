@@ -210,6 +210,25 @@ class ExportWorkbookTests(unittest.TestCase):
         loaded = load_workbook(BytesIO(workbook_bytes(workbook)))
         self.assertEqual(loaded.sheetnames, ["Overall", "portrait"])
 
+    @patch("app_core.export_service.get_prompt_text", return_value="portrait prompt")
+    def test_overall_evaluated_row_is_written_to_existing_scene_detail_without_fabricating_dimensions(self, _prompt):
+        request = ExportRequest(task_type="TI2I", v1="D", v2="E", dimensions=["fidelity"])
+        rows = [make_row(
+            1, task_type="TI2I", v_a="D", v_b="E", scene="portrait",
+            eval_mode="overall", overall="D", fidelity=None,
+        )]
+
+        sheet = build_workbook(request, rows)["portrait"]
+        headers = [cell.value for cell in sheet[2]]
+        fidelity_start = headers.index("D 胜") + 1
+
+        self.assertEqual(sheet.max_row, 3)
+        self.assertEqual(sheet.cell(3, headers.index("图片名") + 1).value, "image-1.png")
+        self.assertEqual(
+            [sheet.cell(3, column).value for column in range(fidelity_start, fidelity_start + 3)],
+            [None, None, None],
+        )
+
     @patch("app_core.export_service.get_prompt_text", return_value="=SUM(1, 1)")
     def test_external_text_is_not_written_as_excel_formula(self, _prompt):
         request = ExportRequest(

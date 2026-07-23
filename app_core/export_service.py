@@ -536,7 +536,12 @@ def build_workbook(
         dimension: {row["id"] for row in rows_for_dimension}
         for dimension, rows_for_dimension in dimension_rows.items()
     }
-    detail_row_ids = set().union(*matching_row_ids.values()) if matching_row_ids else set()
+    detail_row_ids = {row["id"] for row in overall_rows}
+    detail_row_ids.update(
+        row["id"]
+        for rows_for_dimension in dimension_rows.values()
+        for row in rows_for_dimension
+    )
     detail_scenes = {row["scene"] for row in overall_rows}
     detail_scenes.update(row["scene"] for rows_for_dimension in dimension_rows.values() for row in rows_for_dimension)
     prompt_cache = {}
