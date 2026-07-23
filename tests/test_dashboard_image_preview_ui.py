@@ -1347,6 +1347,47 @@ return {
                     self.assertTrue(result["toolbarInsideStage"], result)
                     self.assertTrue(all(result["reachable"]), result)
 
+    def test_long_prompt_keeps_short_desktop_toolbar_controls_scroll_reachable(self):
+        toolbar = self.render_toolbar_markup(True)
+        body = self.production_dashboard_overlay_markup(toolbar=toolbar)
+        for window_height in (650, 700):
+            with self.subTest(window_height=window_height):
+                result = self.run_browser_geometry_probe(
+                    body,
+                    """
+const promptNode = document.getElementById("dashboard-preview-prompt");
+promptNode.textContent = Array.from({ length: 20 }, (_, index) => `Prompt line ${index + 1}`).join("\\n");
+promptNode.classList.remove("hidden");
+const content = document.querySelector(".dashboard-preview-content").getBoundingClientRect();
+const toolbar = document.querySelector(".dashboard-preview-toolbar");
+const toolbarRect = toolbar.getBoundingClientRect();
+const buttons = [...toolbar.querySelectorAll("[data-preview-action]")];
+const reachable = buttons.map(button => {
+    const maxScroll = Math.max(0, toolbar.scrollHeight - toolbar.clientHeight);
+    toolbar.scrollTop = Math.min(maxScroll, Math.max(0, button.offsetTop - toolbar.clientHeight / 2));
+    const rect = button.getBoundingClientRect();
+    return rect.top >= toolbarRect.top && rect.bottom <= toolbarRect.bottom;
+});
+return {
+    viewportHeight: window.innerHeight,
+    buttonCount: buttons.length,
+    direction: getComputedStyle(toolbar).flexDirection,
+    overflowY: getComputedStyle(toolbar).overflowY,
+    contentContainsToolbar: toolbarRect.top >= content.top && toolbarRect.bottom <= content.bottom,
+    reachable
+};
+                    """,
+                    width=1024,
+                    height=window_height,
+                )
+                self.assertGreater(result["viewportHeight"], 560)
+                self.assertLessEqual(result["viewportHeight"], 700)
+                self.assertEqual(result["buttonCount"], 11)
+                self.assertEqual(result["direction"], "column")
+                self.assertEqual(result["overflowY"], "auto")
+                self.assertTrue(result["contentContainsToolbar"], result)
+                self.assertTrue(all(result["reachable"]), result)
+
     def test_global_shortcuts_preserve_button_space_and_compare_button_keydown(self):
         toolbar_source = self.function_source("bindDashboardPreviewToolbar")
         compare_source = self.function_source("bindDashboardPreviewCompareControls")
@@ -1711,6 +1752,9 @@ console.log(JSON.stringify({{
 
     def test_unused_legacy_preview_opener_is_removed(self):
         self.assertNotIn("function openPreviewOverlay(", self.html)
+
+    def test_unused_single_preview_helper_is_removed(self):
+        self.assertNotIn("function openSinglePreview(", self.html)
 
     def test_stale_image_callbacks_after_close_and_reopen_do_not_mutate_current_preview(self):
         close_source = self.function_source("closeImagePreview")

@@ -1891,6 +1891,7 @@
 
         function renderLightbox() {
             if (typeof stopHoldCompare === "function") stopHoldCompare();
+            syncLightboxPrompt();
             releasePreviewPointers("lightbox");
             const generation = beginPreviewRender("lightbox");
             const panes = [];
@@ -1990,6 +1991,9 @@
             if (typeof setPreviewSpacePan === "function") setPreviewSpacePan(false);
             if (typeof releasePreviewPointers === "function") releasePreviewPointers("lightbox", true);
             document.getElementById("lightbox").classList.remove("open");
+            const promptNode = document.getElementById("lightbox-prompt");
+            promptNode.textContent = "";
+            promptNode.classList.add("hidden");
             document.body.style.overflow = "";
         }
 

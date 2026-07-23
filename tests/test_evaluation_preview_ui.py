@@ -1281,6 +1281,89 @@ console.log(JSON.stringify({{
         self.assertIn("grid-row: 1", self.css_rule(".lightbox-dialog.preview-stage .lightbox-head"))
         self.assertIn("grid-row: 2", self.css_rule("#lightbox-grid"))
 
+    def test_open_lightbox_prompt_tracks_task_advance_and_close(self):
+        source = self.html[
+            self.html.index("function renderLightbox()") : self.html.index(
+                "function measurePreviewGeometry"
+            )
+        ]
+        script = f"""
+const makeClasses = initial => {{
+    const values = new Set(initial);
+    return {{
+        add: (...names) => names.forEach(name => values.add(name)),
+        remove: (...names) => names.forEach(name => values.delete(name)),
+        contains: name => values.has(name),
+        toggle(name, enabled) {{
+            if (enabled === undefined) enabled = !values.has(name);
+            enabled ? values.add(name) : values.delete(name);
+            return enabled;
+        }}
+    }};
+}};
+const promptNode = {{ textContent: "", classList: makeClasses(["hidden"]) }};
+const lightbox = {{ classList: makeClasses(["open"]) }};
+const grid = {{ className: "", innerHTML: "" }};
+const toolbar = {{ innerHTML: "" }};
+const document = {{
+    body: {{ style: {{ overflow: "hidden" }} }},
+    getElementById(id) {{
+        if (id === "lightbox-prompt") return promptNode;
+        if (id === "lightbox") return lightbox;
+        if (id === "lightbox-grid") return grid;
+        if (id === "lightbox-preview-toolbar") return toolbar;
+        return null;
+    }},
+    querySelector: () => null
+}};
+let state = {{
+    currentTask: {{ prompt: "old prompt", left_img: "old-a", right_img: "old-b" }},
+    config: {{ show_ref: false }},
+    taskType: "T2I"
+}};
+let activeLightboxPane = "left";
+const previewController = {{ groups: new Map([["lightbox", {{ activePaneId: "left" }}]]) }};
+const stopHoldCompare = () => null;
+const releasePreviewPointers = () => null;
+const beginPreviewRender = () => 1;
+const renderInlineCompareControls = () => "";
+const renderPreviewToolbar = () => "";
+const createPreviewGroup = () => null;
+const bindLightboxControls = () => null;
+const bindPreviewGroup = () => null;
+const hidePreviewMagnifiers = () => null;
+const setPreviewSpacePan = () => null;
+{source}
+syncLightboxPrompt();
+state.currentTask = {{ prompt: "next prompt", left_img: "next-a", right_img: "next-b" }};
+renderLightbox();
+const afterNext = {{ text: promptNode.textContent, hidden: promptNode.classList.contains("hidden") }};
+state.currentTask = {{ prompt: "", left_img: "empty-a", right_img: "empty-b" }};
+renderLightbox();
+const afterEmpty = {{ text: promptNode.textContent, hidden: promptNode.classList.contains("hidden") }};
+state.currentTask = {{ prompt: "close prompt", left_img: "close-a", right_img: "close-b" }};
+syncLightboxPrompt();
+closeLightbox();
+console.log(JSON.stringify({{
+    afterNext,
+    afterEmpty,
+    afterClose: {{
+        text: promptNode.textContent,
+        hidden: promptNode.classList.contains("hidden"),
+        open: lightbox.classList.contains("open")
+    }}
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(
+            result,
+            {
+                "afterNext": {"text": "next prompt", "hidden": False},
+                "afterEmpty": {"text": "", "hidden": True},
+                "afterClose": {"text": "", "hidden": True, "open": False},
+            },
+        )
+
     def test_lightbox_close_and_reopen_restores_toggle_state_and_controls(self):
         source = self.html[
             self.html.index("function renderLightbox()") : self.html.index(
@@ -1708,9 +1791,10 @@ const hidden = [];
 const hidePreviewMagnifiers = groupId => hidden.push(groupId === undefined ? "all" : groupId);
 const previewController = { groups: new Map([["lightbox", { magnifier: true }]]) };
 const lightbox = { classList: { remove() {} } };
+const promptNode = { textContent: "prompt", classList: { add() {} } };
 const document = {
     body: { style: {} },
-    getElementById: () => lightbox,
+    getElementById: id => id === "lightbox-prompt" ? promptNode : lightbox,
     querySelector: () => null
 };
 closeLightbox();
