@@ -1237,6 +1237,50 @@ console.log(JSON.stringify({ magnifierCalls, zoomCalls, centerCalls }));
         self.assertIn('previewController.setSync("lightbox", true)', self.html)
         self.assertIn('setPreviewMode("lightbox", "fit")', self.html)
 
+    def test_lightbox_prompt_is_synchronized_as_header_text(self):
+        self.assertIn('id="lightbox-prompt"', self.html)
+        sync_start = self.html.index("function syncLightboxPrompt()")
+        sync_end = self.html.index("function openLightbox(", sync_start)
+        sync_source = self.html[sync_start:sync_end]
+        script = f"""
+const classes = new Set(["hidden"]);
+const promptNode = {{
+    textContent: "stale prompt",
+    classList: {{
+        toggle(name, enabled) {{ enabled ? classes.add(name) : classes.delete(name); }}
+    }}
+}};
+const document = {{ getElementById: id => id === "lightbox-prompt" ? promptNode : null }};
+let state = {{ currentTask: {{ prompt: "line one\\nline two" }} }};
+{sync_source}
+syncLightboxPrompt();
+const shown = {{ text: promptNode.textContent, hidden: classes.has("hidden") }};
+state.currentTask.prompt = "";
+syncLightboxPrompt();
+console.log(JSON.stringify({{
+    shown,
+    hidden: {{ text: promptNode.textContent, hidden: classes.has("hidden") }}
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(
+            result,
+            {
+                "shown": {"text": "line one\nline two", "hidden": False},
+                "hidden": {"text": "", "hidden": True},
+            },
+        )
+
+        open_start = self.html.index("function openLightbox(")
+        open_end = self.html.index("function handlePreviewImageClick", open_start)
+        open_source = self.html[open_start:open_end]
+        self.assertLess(
+            open_source.index("syncLightboxPrompt()"),
+            open_source.index('classList.add("open")'),
+        )
+        self.assertIn("grid-row: 1", self.css_rule(".lightbox-dialog.preview-stage .lightbox-head"))
+        self.assertIn("grid-row: 2", self.css_rule("#lightbox-grid"))
+
     def test_lightbox_close_and_reopen_restores_toggle_state_and_controls(self):
         source = self.html[
             self.html.index("function renderLightbox()") : self.html.index(
@@ -1267,6 +1311,8 @@ const makeButton = (pressed, text, active) => ({{
 const syncButton = makeButton("false", "同步关", false);
 const magnifierButton = makeButton("true", "放大镜开", true);
 const lightbox = {{ classList: makeClasses([]) }};
+const promptNode = {{ textContent: "", classList: makeClasses(["hidden"]) }};
+const state = {{ currentTask: {{ prompt: "" }} }};
 const group = {{ sync: false, magnifier: true, activePaneId: "right" }};
 const previewController = {{
     groups: new Map([["lightbox", group]]),
@@ -1274,7 +1320,7 @@ const previewController = {{
 }};
 const document = {{
     body: {{ style: {{ overflow: "" }} }},
-    getElementById: id => id === "lightbox" ? lightbox : null,
+    getElementById: id => id === "lightbox" ? lightbox : id === "lightbox-prompt" ? promptNode : null,
     querySelector: selector => selector.includes('data-preview-action="sync"') ? syncButton : magnifierButton
 }};
 let activeLightboxPane = "right";

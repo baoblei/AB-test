@@ -374,6 +374,8 @@
         }
         .dashboard-preview-stage {
             position: relative;
+            display: flex;
+            flex-direction: column;
             width: 100%;
             height: calc(100dvh - 24px);
             overflow: hidden;
@@ -382,15 +384,32 @@
             color: white;
         }
         .dashboard-preview-head {
-            position: absolute;
-            inset: 12px 12px auto 12px;
+            position: relative;
+            inset: auto;
             z-index: 8;
             display: flex;
+            flex: 0 0 auto;
             justify-content: space-between;
-            align-items: center;
-            pointer-events: none;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 12px 12px 0;
         }
-        .dashboard-preview-head button { pointer-events: auto; }
+        .dashboard-preview-heading { min-width: 0; }
+        .preview-prompt {
+            margin-top: 6px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            max-height: 20dvh;
+            overflow: auto;
+            color: rgba(255, 255, 255, 0.78);
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        .dashboard-preview-content {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 0;
+        }
         .dashboard-preview-toolbar {
             position: absolute;
             top: 62px;
@@ -1057,11 +1076,16 @@
     <div id="image-overlay" role="dialog" aria-modal="true" aria-labelledby="dashboard-preview-title" aria-hidden="true">
         <div class="dashboard-preview-stage">
             <div class="dashboard-preview-head">
-                <strong id="dashboard-preview-title">高清预览</strong>
+                <div class="dashboard-preview-heading">
+                    <strong id="dashboard-preview-title">高清预览</strong>
+                    <div id="dashboard-preview-prompt" class="preview-prompt hidden"></div>
+                </div>
                 <button class="btn btn-outline" type="button" data-preview-close>关闭</button>
             </div>
-            <div id="dashboard-preview-toolbar"></div>
-            <div class="dashboard-preview-grid single" id="image-preview"></div>
+            <div class="dashboard-preview-content">
+                <div id="dashboard-preview-toolbar"></div>
+                <div class="dashboard-preview-grid single" id="image-preview"></div>
+            </div>
         </div>
     </div>
 
@@ -2550,6 +2574,9 @@
             document.querySelector?.(".dashboard-preview-stage")?.classList.remove("preview-help-open");
             document.getElementById("dashboard-preview-toolbar").replaceChildren();
             document.getElementById("image-preview").replaceChildren();
+            const promptNode = document.getElementById("dashboard-preview-prompt");
+            promptNode.textContent = "";
+            promptNode.classList.add("hidden");
             const overlay = document.getElementById("image-overlay");
             overlay.style.display = "none";
             overlay.setAttribute("aria-hidden", "true");
@@ -2570,7 +2597,8 @@
                 ref: row.ref_img,
                 a: imageUrl(v1, row.scene, row.filename),
                 b: imageUrl(v2, row.scene, row.filename),
-                labels: [v1, v2]
+                labels: [v1, v2],
+                prompt: row.prompt || ""
             };
         }
 
@@ -2594,6 +2622,7 @@
                 return {
                     kind: "single",
                     panes: [{ id: "single", src: payload.src, label: payload.label }],
+                    prompt: payload.prompt || "",
                     showSync: false,
                     showCompare: false
                 };
@@ -2627,7 +2656,13 @@
                 { id: "left", src: payload.a, label: payload.labels[0] },
                 { id: "right", src: payload.b, label: payload.labels[1] }
             );
-            return { kind: panes.length === 3 ? "ti2i" : "t2i", panes, showSync: true, showCompare: true };
+            return {
+                kind: panes.length === 3 ? "ti2i" : "t2i",
+                panes,
+                prompt: payload.prompt || "",
+                showSync: true,
+                showCompare: true
+            };
         }
 
         function buildHoldComparePairs(panes) {
@@ -2809,6 +2844,9 @@
             hidePreviewMagnifiers("overlay");
             beginDashboardPreviewRender();
             const normalized = normalizeDashboardPreview(payload);
+            const promptNode = document.getElementById("dashboard-preview-prompt");
+            promptNode.textContent = normalized.prompt || "";
+            promptNode.classList.toggle("hidden", !normalized.prompt);
             createPreviewGroup("overlay", { sync: normalized.showSync });
             const grid = document.getElementById("image-preview");
             grid.className = `dashboard-preview-grid ${normalized.kind}`;

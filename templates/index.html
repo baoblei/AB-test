@@ -693,10 +693,20 @@
         .lightbox-head {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
             padding: 18px 20px;
             color: white;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .lightbox-prompt {
+            margin-top: 8px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            max-height: 20dvh;
+            overflow: auto;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 0.84rem;
+            line-height: 1.45;
         }
         .lightbox-grid {
             position: relative;
@@ -941,6 +951,7 @@
                 <div>
                     <div style="font-weight:800;">高清预览</div>
                     <div style="font-size:0.8rem; color:rgba(255,255,255,0.72);">滚轮缩放，按住拖动平移</div>
+                    <div id="lightbox-prompt" class="lightbox-prompt hidden"></div>
                 </div>
                 <div style="display:flex; gap:8px;">
                     <button class="lightbox-btn" onclick="adjustZoom(-0.2)">缩小</button>
@@ -1938,7 +1949,15 @@
             updatePreviewToggleControl(groupId, "magnifier", group.magnifier, "放大镜开", "放大镜关");
         }
 
+        function syncLightboxPrompt() {
+            const promptNode = document.getElementById("lightbox-prompt");
+            const prompt = state.currentTask?.prompt || "";
+            promptNode.textContent = prompt;
+            promptNode.classList.toggle("hidden", !prompt);
+        }
+
         function openLightbox(sourcePaneId) {
+            syncLightboxPrompt();
             document.getElementById("lightbox").classList.add("open");
             activeLightboxPane = sourcePaneId || activeLightboxPane;
             previewController.groups.get("lightbox").activePaneId = activeLightboxPane;

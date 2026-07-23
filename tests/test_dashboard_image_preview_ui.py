@@ -192,6 +192,17 @@ document.getElementById("geometry-result").textContent = JSON.stringify((() => {
 {self.preview_event_delegation_source()}
 const makeNode = (dataset = {{}}, parent = null) => {{
     const node = {{ dataset, parent, style: {{}}, listeners: new Map(), children: [] }};
+    const classes = new Set();
+    node.classList = {{
+        add: (...names) => names.forEach(name => classes.add(name)),
+        remove: (...names) => names.forEach(name => classes.delete(name)),
+        contains: name => classes.has(name),
+        toggle(name, enabled) {{
+            if (enabled === undefined) enabled = !classes.has(name);
+            enabled ? classes.add(name) : classes.delete(name);
+            return enabled;
+        }}
+    }};
     node.addEventListener = (type, listener) => {{
         const listeners = node.listeners.get(type) || [];
         listeners.push(listener);
@@ -243,6 +254,7 @@ const ids = new Map([
     ["image-overlay", overlay],
     ["dashboard-preview-toolbar", toolbarContainer],
     ["image-preview", imagePreview],
+    ["dashboard-preview-prompt", makeNode()],
 ]);
 const beginDashboardPreviewRender = () => null;
 const releasePreviewPointers = () => null;
@@ -384,7 +396,8 @@ const overlay = {
     setAttribute: (name, value) => { overlay.attributes[name] = value; },
     addEventListener: (name, handler) => { handlers[name] = handler; }
 };
-const document = { getElementById: id => id === "image-overlay" ? overlay : { replaceChildren: () => null } };
+const promptNode = { textContent: "prompt", classList: { add: () => null } };
+const document = { getElementById: id => id === "image-overlay" ? overlay : id === "dashboard-preview-prompt" ? promptNode : { replaceChildren: () => null } };
 bindPreviewOverlayEvents();
 handlers.click({ target: overlay });
 const afterBackdrop = { display: overlay.style.display, ariaHidden: overlay.attributes["aria-hidden"] };
@@ -454,7 +467,8 @@ let normalizedPayload;
 const grid = {{ replaceChildren: (...children) => {{ grid.children = children; }} }};
 const toolbar = {{ innerHTML: "" }};
 const overlay = {{ style: {{}}, setAttribute: (name, value) => {{ overlay[name] = value; }} }};
-const document = {{ getElementById: id => id === "image-preview" ? grid : id === "dashboard-preview-toolbar" ? toolbar : overlay }};
+const promptNode = {{ textContent: "", classList: {{ toggle() {{}} }} }};
+const document = {{ getElementById: id => id === "image-preview" ? grid : id === "dashboard-preview-toolbar" ? toolbar : id === "dashboard-preview-prompt" ? promptNode : overlay }};
 const normalizeDashboardPreview = payload => {{
     normalizedPayload = payload;
     return {{ kind: "single", panes: [{{ id: "single", src: payload.src, label: payload.label }}], showSync: false, showCompare: false }};
@@ -519,6 +533,113 @@ console.log(JSON.stringify({{
         self.assertFalse(result["single"]["showSync"])
         self.assertFalse(result["single"]["showCompare"])
 
+    def test_dashboard_preview_prompt_is_propagated_and_written_as_text(self):
+        script = f"""
+const state = {{ taskType: "TI2I" }};
+const imageUrl = (model, scene, filename) => `/${{model}}/${{scene}}/${{filename}}`;
+{self.function_source("buildPreviewPayload")}
+{self.function_source("buildBadCasePreviewPayload")}
+{self.function_source("normalizeDashboardPreview")}
+const normalPayload = buildPreviewPayload({{
+    prompt: "normal prompt",
+    ref_img: "ref.jpg",
+    scene: "scene",
+    filename: "image.png"
+}}, "Model A", "Model B");
+const badPayload = buildBadCasePreviewPayload({{
+    task_type: "TI2I",
+    ref_img: "ref.jpg",
+    model: "Model A",
+    prompt: "bad prompt"
+}}, "bad.jpg");
+const promptClasses = new Set(["hidden"]);
+const promptNode = {{
+    textContent: "stale prompt",
+    classList: {{
+        toggle(name, enabled) {{
+            enabled ? promptClasses.add(name) : promptClasses.delete(name);
+        }}
+    }}
+}};
+const stage = {{ classList: {{ remove() {{}} }} }};
+const grid = {{ replaceChildren() {{}}, append() {{}} }};
+const toolbar = {{ innerHTML: "" }};
+const overlay = {{ style: {{}}, setAttribute() {{}} }};
+const document = {{
+    querySelector: selector => selector === ".dashboard-preview-stage" ? stage : null,
+    getElementById: id => ({{
+        "dashboard-preview-prompt": promptNode,
+        "image-preview": grid,
+        "dashboard-preview-toolbar": toolbar,
+        "image-overlay": overlay
+    }})[id]
+}};
+const stopHoldCompare = () => null;
+const releasePreviewPointers = () => null;
+const hidePreviewMagnifiers = () => null;
+const beginDashboardPreviewRender = () => null;
+const createPreviewGroup = () => null;
+const renderDashboardPreviewPane = pane => pane;
+const renderInlineCompareControls = () => null;
+const renderDashboardPreviewToolbar = () => "toolbar";
+const bindPreviewGroup = () => null;
+const updateDashboardPreviewToolbar = () => null;
+{self.function_source("openDashboardPreview")}
+const normal = normalizeDashboardPreview(normalPayload);
+const bad = normalizeDashboardPreview(badPayload);
+openDashboardPreview(normalPayload);
+console.log(JSON.stringify({{
+    normalPayloadPrompt: normalPayload.prompt,
+    normalPrompt: normal.prompt,
+    badPrompt: bad.prompt,
+    writtenPrompt: promptNode.textContent,
+    promptHidden: promptClasses.has("hidden")
+}}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(
+            result,
+            {
+                "normalPayloadPrompt": "normal prompt",
+                "normalPrompt": "normal prompt",
+                "badPrompt": "bad prompt",
+                "writtenPrompt": "normal prompt",
+                "promptHidden": False,
+            },
+        )
+
+    def test_dashboard_prompt_header_does_not_overlap_images(self):
+        prompt = "第一行 Prompt<br>第二行 Prompt，包含很长的说明文字以验证自动换行不会覆盖高清预览图片区域。<br>第三行 Prompt"
+        overlay_start = self.html.index('<div id="image-overlay"')
+        overlay_end = self.html.index("\n\n    <script>", overlay_start)
+        body = self.html[overlay_start:overlay_end]
+        prompt_placeholder = '<div id="dashboard-preview-prompt" class="preview-prompt hidden"></div>'
+        self.assertIn(prompt_placeholder, body)
+        body = body.replace(
+            prompt_placeholder,
+            f'<div id="dashboard-preview-prompt" class="preview-prompt">{prompt}</div>',
+        ).replace(
+            '<div class="dashboard-preview-grid single" id="image-preview"></div>',
+            '<div class="dashboard-preview-grid single" id="image-preview"><section class="dashboard-preview-viewport"></section></div>',
+        )
+        result = self.run_browser_geometry_probe(
+            body,
+            """
+const head = document.querySelector(".dashboard-preview-head").getBoundingClientRect();
+const grid = document.querySelector(".dashboard-preview-grid").getBoundingClientRect();
+const image = document.querySelector(".dashboard-preview-viewport").getBoundingClientRect();
+return {
+    headBottom: head.bottom,
+    gridTop: grid.top,
+    overlapsImage: head.bottom > image.top
+};
+""",
+            width=700,
+            height=700,
+        )
+        self.assertLessEqual(result["headBottom"], result["gridTop"])
+        self.assertFalse(result["overlapsImage"])
+
     def test_ti2i_bad_case_preview_contains_reference_and_selected_result(self):
         self.assertIn("function buildBadCasePreviewPayload", self.html)
         script = f"""
@@ -566,9 +687,10 @@ const stage = {{ classList: classes(["preview-help-open"]) }};
 const grid = {{ replaceChildren: (...children) => {{ grid.children = children; }} }};
 const toolbar = {{ innerHTML: '<div class="dashboard-preview-toolbar help-open"></div>' }};
 const overlay = {{ style: {{}}, setAttribute(name, value) {{ this[name] = value; }} }};
+const promptNode = {{ textContent: "", classList: {{ toggle() {{}} }} }};
 const document = {{
     querySelector: selector => selector === ".dashboard-preview-stage" ? stage : null,
-    getElementById: id => id === "image-preview" ? grid : id === "dashboard-preview-toolbar" ? toolbar : overlay
+    getElementById: id => id === "image-preview" ? grid : id === "dashboard-preview-toolbar" ? toolbar : id === "dashboard-preview-prompt" ? promptNode : overlay
 }};
 const stopHoldCompare = () => null;
 const releasePreviewPointers = () => null;
@@ -798,6 +920,7 @@ const classes = initial => {
 const stage = { classList: classes(["preview-help-open"]) };
 const toolbar = { replaceChildren: () => null };
 const preview = { replaceChildren: () => null };
+const promptNode = { textContent: "prompt", classList: { add: () => null } };
 const overlay = {
     style: { display: "flex" },
     attributes: { "aria-hidden": "false" },
@@ -808,6 +931,7 @@ const document = {
     getElementById: id => ({
         "dashboard-preview-toolbar": toolbar,
         "image-preview": preview,
+        "dashboard-preview-prompt": promptNode,
         "image-overlay": overlay
     })[id]
 };
@@ -1586,7 +1710,8 @@ const createNode = (tag, className = "", text = "") => {{
 const overlay = createNode("div");
 const toolbar = createNode("div");
 const grid = createNode("div");
-const document = {{ getElementById: id => id === "image-overlay" ? overlay : id === "image-preview" ? grid : toolbar }};
+const promptNode = createNode("div");
+const document = {{ getElementById: id => id === "image-overlay" ? overlay : id === "image-preview" ? grid : id === "dashboard-preview-prompt" ? promptNode : toolbar }};
 const previewController = {{ groups: new Map() }};
 let registrations = 0;
 let magnifierClears = 0;
@@ -1678,7 +1803,8 @@ const overlay = {{
 }};
 const toolbar = {{ replaceChildren: () => {{ counts.toolbar += 1; }} }};
 const grid = {{ replaceChildren: () => {{ counts.grid += 1; }} }};
-const document = {{ getElementById: id => id === "image-overlay" ? overlay : id === "image-preview" ? grid : toolbar }};
+const promptNode = {{ textContent: "prompt", classList: {{ add() {{}} }} }};
+const document = {{ getElementById: id => id === "image-overlay" ? overlay : id === "image-preview" ? grid : id === "dashboard-preview-prompt" ? promptNode : toolbar }};
 const previewController = {{ groups: new Map([["overlay", {{ panes: new Map() }}]]) }};
 const beginDashboardPreviewRender = () => {{ counts.begin += 1; }};
 const releasePreviewPointers = () => {{ counts.release += 1; }};
