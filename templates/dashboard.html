@@ -2517,7 +2517,7 @@
                 const image = createNode("img", "preview-img");
                 image.src = src;
                 image.alt = row.filename;
-                image.addEventListener("click", () => openSinglePreview(src, row.model));
+                image.addEventListener("click", () => openPreview(buildBadCasePreviewPayload(row, src)));
                 previewCell.append(image);
 
                 const promptCell = createCell(row.prompt || "-");
@@ -2574,6 +2574,17 @@
             };
         }
 
+        function buildBadCasePreviewPayload(row, resultSrc) {
+            return {
+                badCase: true,
+                mode: row.task_type || state.taskType,
+                ref: row.ref_img,
+                result: resultSrc,
+                resultLabel: row.model,
+                prompt: row.prompt || ""
+            };
+        }
+
         function imageUrl(model, scene, filename) {
             return `/images/${[state.taskType, model, scene, filename].map(encodeURIComponent).join("/")}`;
         }
@@ -2583,6 +2594,27 @@
                 return {
                     kind: "single",
                     panes: [{ id: "single", src: payload.src, label: payload.label }],
+                    showSync: false,
+                    showCompare: false
+                };
+            }
+            if (payload.badCase) {
+                if (payload.mode === "TI2I" && payload.ref) {
+                    return {
+                        kind: "t2i",
+                        panes: [
+                            { id: "reference", src: payload.ref, label: "参考图" },
+                            { id: "result", src: payload.result, label: payload.resultLabel }
+                        ],
+                        prompt: payload.prompt || "",
+                        showSync: true,
+                        showCompare: true
+                    };
+                }
+                return {
+                    kind: "single",
+                    panes: [{ id: "single", src: payload.result, label: payload.resultLabel }],
+                    prompt: payload.prompt || "",
                     showSync: false,
                     showCompare: false
                 };

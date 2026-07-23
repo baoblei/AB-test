@@ -519,6 +519,39 @@ console.log(JSON.stringify({{
         self.assertFalse(result["single"]["showSync"])
         self.assertFalse(result["single"]["showCompare"])
 
+    def test_ti2i_bad_case_preview_contains_reference_and_selected_result(self):
+        self.assertIn("function buildBadCasePreviewPayload", self.html)
+        script = f"""
+{self.function_source("buildBadCasePreviewPayload")}
+{self.function_source("normalizeDashboardPreview")}
+const ti2i = normalizeDashboardPreview(buildBadCasePreviewPayload({{
+    task_type: "TI2I",
+    ref_img: "ref.jpg",
+    model: "Model A",
+    prompt: "prompt"
+}}, "bad.jpg"));
+const t2i = normalizeDashboardPreview(buildBadCasePreviewPayload({{
+    task_type: "T2I",
+    ref_img: "ref.jpg",
+    model: "Model A",
+    prompt: "prompt"
+}}, "bad.jpg"));
+const missingRef = normalizeDashboardPreview(buildBadCasePreviewPayload({{
+    task_type: "TI2I",
+    ref_img: null,
+    model: "Model A",
+    prompt: "prompt"
+}}, "bad.jpg"));
+console.log(JSON.stringify({{ ti2i, t2i, missingRef }}));
+"""
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual([pane["id"] for pane in result["ti2i"]["panes"]], ["reference", "result"])
+        self.assertEqual([pane["src"] for pane in result["ti2i"]["panes"]], ["ref.jpg", "bad.jpg"])
+        self.assertTrue(result["ti2i"]["showSync"])
+        self.assertTrue(result["ti2i"]["showCompare"])
+        self.assertEqual([pane["id"] for pane in result["t2i"]["panes"]], ["single"])
+        self.assertEqual([pane["id"] for pane in result["missingRef"]["panes"]], ["single"])
+
     def test_direct_preview_rerender_resets_stale_help_layout_state(self):
         source = self.function_source("openDashboardPreview")
         script = f"""
@@ -734,12 +767,12 @@ console.log(JSON.stringify({{ during, removed: layer.removed, activeAfter: butto
         self.assertFalse(result["missingTarget"])
         self.assertEqual(result["layers"], 1)
 
-    def test_bad_case_click_stays_single_image(self):
-        source = self.function_source("openSinglePreview")
-        self.assertIn("single: true", source)
-        self.assertNotIn("state.currentBadcase", source)
-        self.assertNotIn("ref_img", source)
-        self.assertNotIn("imageUrl(", source)
+    def test_bad_case_click_uses_bad_case_payload(self):
+        start = self.html.index("function loadBadcaseDetails")
+        end = self.html.index("function closeImagePreview", start)
+        source = self.html[start:end]
+        self.assertIn("openPreview(buildBadCasePreviewPayload(row, src))", source)
+        self.assertNotIn("openSinglePreview(src, row.model)", source)
 
     def test_preview_lifecycle_has_loading_failure_and_stale_guards(self):
         for marker in (
