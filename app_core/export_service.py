@@ -373,6 +373,12 @@ def _write_overall_sheet(
         sheet.column_dimensions[get_column_letter(column)].width = min(max(max_length + 2, 10), 30)
 
 
+def _selected_result_dimensions(dimensions: list[str], request: ExportRequest) -> list[str]:
+    result = ["overall"] if "overall" in request.eval_modes else []
+    result.extend(dimensions)
+    return result
+
+
 def _scene_detail_groups(
     dimensions: list[str], request: ExportRequest, task_type: str, v_a: str, v_b: str
 ) -> list[tuple[str, list[str]]]:
@@ -382,7 +388,9 @@ def _scene_detail_groups(
     if request.include_duration:
         sample_headers.append("评测耗时（秒）")
     groups = [("样本信息", sample_headers)]
-    groups.extend((DIM_LABELS[dimension], [f"{v_a} 胜", "平局", f"{v_b} 胜"]) for dimension in dimensions)
+    result_dimensions = _selected_result_dimensions(dimensions, request)
+    if result_dimensions:
+        groups.append(("评测结果", [DIM_LABELS[dimension] for dimension in result_dimensions]))
     image_headers = [f"{v_a} 图片路径", f"{v_a} 图片状态", f"{v_b} 图片路径", f"{v_b} 图片状态"]
     if task_type == "TI2I":
         image_headers.extend(["参考图路径", "参考图状态"])
@@ -418,13 +426,8 @@ def _scene_detail_values(
     ]
     if request.include_duration:
         values.append(row["duration_seconds"])
-    for dimension in dimensions:
-        dimension_values = [None, None, None]
-        if row_id in matching_row_ids[dimension]:
-            result_index = {v_a: 0, "tie": 1, v_b: 2}.get(row[dimension])
-            if result_index is not None:
-                dimension_values[result_index] = 1
-        values.extend(dimension_values)
+    for dimension in _selected_result_dimensions(dimensions, request):
+        values.append(row[dimension] if row_id in matching_row_ids[dimension] else None)
     values.extend(
         [
             a_image.get("path", ""), a_image.get("status", "未导出"),
@@ -532,16 +535,12 @@ def build_workbook(
         dimension for dimension in TASK_CONFIGS[task_type]["eval_dims"] if dimension in requested_dimensions
     ]
     dimension_rows = {dimension: filter_rows(base_rows, request, dimension) for dimension in dimensions}
-    matching_row_ids = {
+    matching_row_ids = {"overall": {row["id"] for row in overall_rows}}
+    matching_row_ids.update({
         dimension: {row["id"] for row in rows_for_dimension}
         for dimension, rows_for_dimension in dimension_rows.items()
-    }
-    detail_row_ids = {row["id"] for row in overall_rows}
-    detail_row_ids.update(
-        row["id"]
-        for rows_for_dimension in dimension_rows.values()
-        for row in rows_for_dimension
-    )
+    })
+    detail_row_ids = set().union(*matching_row_ids.values()) if matching_row_ids else set()
     detail_scenes = {row["scene"] for row in overall_rows}
     detail_scenes.update(row["scene"] for rows_for_dimension in dimension_rows.values() for row in rows_for_dimension)
     prompt_cache = {}

@@ -101,13 +101,8 @@ class ExportWorkbookTests(unittest.TestCase):
         self.assertEqual(detail.max_row, 3)
         headers = [cell.value for cell in detail[2]]
         self.assertEqual(detail.cell(3, headers.index("图片名") + 1).value, "image-1.png")
-        aesthetic_start = headers.index("A 胜") + 1
-        consistency_start = headers.index("A 胜", aesthetic_start) + 1
-        self.assertEqual(detail.cell(3, aesthetic_start).value, 1)
-        self.assertEqual(
-            [detail.cell(3, column).value for column in range(consistency_start, consistency_start + 3)],
-            [None, None, None],
-        )
+        self.assertEqual(detail.cell(3, headers.index("美学") + 1).value, "A")
+        self.assertIsNone(detail.cell(3, headers.index("一致性") + 1).value)
 
     def test_overall_metadata_without_image_manifest_marks_images_unchecked_after_round_trip(self):
         overall = load_workbook(BytesIO(workbook_bytes(build_workbook(self.t2i_request, self.t2i_rows))))["Overall"]
@@ -161,15 +156,17 @@ class ExportWorkbookTests(unittest.TestCase):
         self.assertEqual(overall["A11"].value, "场景")
 
     @patch("app_core.export_service.get_prompt_text", return_value="a red car")
-    def test_scene_detail_contains_grouped_dimensions_and_required_fields(self, _prompt):
+    def test_scene_detail_contains_shared_result_group_and_required_fields(self, _prompt):
         sheet = build_workbook(self.t2i_request, self.t2i_rows)["zoo"]
         group_headers = [cell.value for cell in sheet[1]]
         headers = [cell.value for cell in sheet[2]]
 
         for header in ("任务类型", "模型 A", "模型 B", "场景", "图片名", "Prompt", "评测人", "评测模式", "评测时间（北京时间）"):
             self.assertIn(header, headers)
-        self.assertIn("美学", group_headers)
-        self.assertIn("一致性", group_headers)
+        self.assertEqual(group_headers.count("评测结果"), 1)
+        self.assertIn("整体", headers)
+        self.assertIn("美学", headers)
+        self.assertIn("一致性", headers)
         self.assertIn("评测耗时（秒）", headers)
         self.assertIn("A 坏例标签", headers)
         self.assertEqual(sheet.cell(3, headers.index("Prompt") + 1).value, "a red car")
@@ -178,9 +175,12 @@ class ExportWorkbookTests(unittest.TestCase):
         self.assertEqual(sheet.freeze_panes, "A3")
         self.assertEqual(sheet.auto_filter.ref, f"A2:{sheet.cell(2, sheet.max_column).coordinate[0:-1]}{sheet.max_row}")
         self.assertTrue(sheet.cell(3, headers.index("Prompt") + 1).alignment.wrap_text)
-        for dimension in ("美学", "一致性"):
-            cell_range = next(cell_range for cell_range in sheet.merged_cells.ranges if sheet.cell(cell_range.min_row, cell_range.min_col).value == dimension)
-            self.assertEqual(cell_range.max_col - cell_range.min_col + 1, 3)
+        result_range = next(
+            cell_range
+            for cell_range in sheet.merged_cells.ranges
+            if sheet.cell(cell_range.min_row, cell_range.min_col).value == "评测结果"
+        )
+        self.assertEqual(result_range.max_col - result_range.min_col + 1, 3)
 
     @patch("app_core.export_service.get_prompt_text", return_value="portrait prompt")
     def test_ti2i_workbook_has_fidelity_reference_columns_and_round_trips(self, _prompt):
@@ -192,20 +192,18 @@ class ExportWorkbookTests(unittest.TestCase):
         sheet = workbook["portrait"]
         headers = [cell.value for cell in sheet[2]]
 
-        self.assertIn("保真度", [cell.value for cell in sheet[1]])
+        self.assertEqual([cell.value for cell in sheet[1]].count("评测结果"), 1)
+        self.assertIn("整体", headers)
+        self.assertIn("保真度", headers)
         self.assertIn("参考图路径", headers)
         self.assertIn("参考图状态", headers)
         self.assertNotIn("评测耗时（秒）", headers)
         self.assertNotIn("D 坏例标签", headers)
         self.assertEqual(sheet.cell(3, headers.index("参考图路径") + 1).value, "")
         self.assertEqual(sheet.cell(3, headers.index("参考图状态") + 1).value, "未导出")
-        fidelity_start = headers.index("D 胜") + 1
         self.assertEqual(
-            [
-                [sheet.cell(row, column).value for column in range(fidelity_start, fidelity_start + 3)]
-                for row in range(3, 6)
-            ],
-            [[1, None, None], [None, 1, None], [None, None, 1]],
+            [sheet.cell(row, headers.index("保真度") + 1).value for row in range(3, 6)],
+            ["D", "tie", "E"],
         )
         loaded = load_workbook(BytesIO(workbook_bytes(workbook)))
         self.assertEqual(loaded.sheetnames, ["Overall", "portrait"])
@@ -220,14 +218,50 @@ class ExportWorkbookTests(unittest.TestCase):
 
         sheet = build_workbook(request, rows)["portrait"]
         headers = [cell.value for cell in sheet[2]]
-        fidelity_start = headers.index("D 胜") + 1
 
         self.assertEqual(sheet.max_row, 3)
         self.assertEqual(sheet.cell(3, headers.index("图片名") + 1).value, "image-1.png")
-        self.assertEqual(
-            [sheet.cell(3, column).value for column in range(fidelity_start, fidelity_start + 3)],
-            [None, None, None],
+        self.assertEqual(sheet.cell(3, headers.index("整体") + 1).value, "D")
+        self.assertIsNone(sheet.cell(3, headers.index("保真度") + 1).value)
+
+    @patch("app_core.export_service.get_prompt_text", return_value="portrait prompt")
+    def test_overall_and_dimensions_use_single_raw_result_columns(self, _prompt):
+        request = ExportRequest(
+            task_type="TI2I", v1="D", v2="E", dimensions=["fidelity"],
+            eval_modes=["full", "overall"],
         )
+        rows = [
+            make_row(1, task_type="TI2I", v_a="D", v_b="E", scene="portrait", eval_mode="overall", overall="D", fidelity=None),
+            make_row(2, task_type="TI2I", v_a="D", v_b="E", scene="portrait", eval_mode="full", overall="tie", fidelity="E"),
+        ]
+
+        sheet = build_workbook(request, rows)["portrait"]
+        groups = [cell.value for cell in sheet[1]]
+        headers = [cell.value for cell in sheet[2]]
+
+        self.assertEqual(groups.count("评测结果"), 1)
+        self.assertEqual(headers.count("整体"), 1)
+        self.assertEqual(headers.count("保真度"), 1)
+        self.assertNotIn("D 胜", headers)
+        self.assertNotIn("平局", headers)
+        self.assertNotIn("E 胜", headers)
+        self.assertEqual(
+            [[sheet.cell(row, headers.index(name) + 1).value for name in ("整体", "保真度")] for row in (3, 4)],
+            [["D", None], ["tie", "E"]],
+        )
+
+    @patch("app_core.export_service.get_prompt_text", return_value="portrait prompt")
+    def test_full_only_export_omits_overall_result_column(self, _prompt):
+        request = ExportRequest(
+            task_type="TI2I", v1="D", v2="E", dimensions=["fidelity"], eval_modes=["full"],
+        )
+        rows = [make_row(1, task_type="TI2I", v_a="D", v_b="E", scene="portrait", overall="D", fidelity="tie")]
+
+        sheet = build_workbook(request, rows)["portrait"]
+        headers = [cell.value for cell in sheet[2]]
+
+        self.assertNotIn("整体", headers)
+        self.assertEqual(sheet.cell(3, headers.index("保真度") + 1).value, "tie")
 
     @patch("app_core.export_service.get_prompt_text", return_value="=SUM(1, 1)")
     def test_external_text_is_not_written_as_excel_formula(self, _prompt):
