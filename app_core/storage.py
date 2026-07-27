@@ -396,15 +396,20 @@ def upload_dataset(task_type: str, scene: str, prompt_file, ref_file=None) -> di
 
 def get_ref_image_url(task_type: str, scene: str, filename: str) -> Optional[str]:
     ref_root = get_ref_root(task_type)
-    direct_path = os.path.join(ref_root, scene, filename)
-    if os.path.exists(direct_path):
-        rel = os.path.relpath(direct_path, REF_IMAGE_DIR).replace(os.sep, "/")
-        return f"/ref-images/{rel}"
+    candidates = [filename]
+    if get_task_config(task_type)["media_type"] == "video":
+        stem = os.path.splitext(filename)[0]
+        candidates.extend(f"{stem}{extension}" for extension in IMAGE_EXTENSIONS)
+    for candidate in dict.fromkeys(candidates):
+        direct_path = os.path.join(ref_root, scene, candidate)
+        if os.path.exists(direct_path):
+            rel = os.path.relpath(direct_path, REF_IMAGE_DIR).replace(os.sep, "/")
+            return f"/ref-images/{rel}"
 
-    fallback = os.path.join(REF_IMAGE_DIR, scene, filename)
-    if os.path.exists(fallback):
-        rel = os.path.relpath(fallback, REF_IMAGE_DIR).replace(os.sep, "/")
-        return f"/ref-images/{rel}"
+        fallback = os.path.join(REF_IMAGE_DIR, scene, candidate)
+        if os.path.exists(fallback):
+            rel = os.path.relpath(fallback, REF_IMAGE_DIR).replace(os.sep, "/")
+            return f"/ref-images/{rel}"
     return None
 
 
@@ -523,11 +528,16 @@ def get_ref_image_path(task_type: str, scene: str, filename: str) -> Optional[st
     task_type = validate_storage_component(normalize_task_type(task_type), "任务类型")
     scene = validate_storage_component(scene, "场景")
     filename = validate_storage_component(filename, "图片名")
+    candidates = [filename]
+    if get_task_config(task_type)["media_type"] == "video":
+        stem = os.path.splitext(filename)[0]
+        candidates.extend(f"{stem}{extension}" for extension in IMAGE_EXTENSIONS)
     roots = [get_ref_root(task_type), REF_IMAGE_DIR]
     for root in roots:
-        path = _safe_existing_file_path(root, scene, filename)
-        if path:
-            return path
+        for candidate in dict.fromkeys(candidates):
+            path = _safe_existing_file_path(root, scene, candidate)
+            if path:
+                return path
     return None
 
 

@@ -1,4 +1,5 @@
 from .auth import create_access_token
+from .bad_cases import safe_load_json_list
 from .database import connect, log_operation
 from .errors import AppError, UnauthorizedError
 from .passwords import hash_password, verify_password
@@ -88,7 +89,11 @@ def get_my_history(user_id: int) -> list[dict]:
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT task_type, v_a, v_b, scene, filename, overall, aesthetic, logic, consistency, fidelity, timestamp, duration_seconds, skipped
+        SELECT task_type, v_a, v_b, scene, filename,
+               overall, aesthetic, logic, consistency, fidelity,
+               text_consistency, motion_reasonableness, dynamism,
+               physical_plausibility, visual_quality, image_consistency,
+               selected_dimensions, timestamp, duration_seconds, skipped
         FROM results_log WHERE user_id=? ORDER BY timestamp DESC LIMIT 100
         """,
         (user_id,),
@@ -107,9 +112,16 @@ def get_my_history(user_id: int) -> list[dict]:
             "logic": row[7],
             "consistency": row[8],
             "fidelity": row[9],
-            "timestamp": row[10],
-            "duration_seconds": row[11],
-            "skipped": row[12],
+            "text_consistency": row[10],
+            "motion_reasonableness": row[11],
+            "dynamism": row[12],
+            "physical_plausibility": row[13],
+            "visual_quality": row[14],
+            "image_consistency": row[15],
+            "selected_dimensions": safe_load_json_list(row[16]),
+            "timestamp": row[17],
+            "duration_seconds": row[18],
+            "skipped": row[19],
         }
         for row in rows
     ]

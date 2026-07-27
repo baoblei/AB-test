@@ -5,6 +5,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from typing import Iterable, Optional
 
 from openpyxl import Workbook
@@ -12,7 +13,14 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .bad_cases import safe_load_json_list
-from .config import DIM_LABELS, TASK_CONFIGS, dim_payload, normalize_task_type
+from .config import (
+    DIM_LABELS,
+    TASK_CONFIGS,
+    dim_payload,
+    get_task_config,
+    is_video_task,
+    normalize_task_type,
+)
 from .database import connect
 from .errors import AppError, ValidationError
 from .schemas import ExportRequest
@@ -24,12 +32,13 @@ from .storage import (
     get_result_image_path,
     validate_storage_component,
 )
+from .thumbnail_service import get_image_thumbnail
 from .time_utils import is_canonical_beijing_iso, now_beijing_iso
 
 
 VALID_RESULT_FILTERS = {"all", "a", "tie_bad", "tie_good", "b"}
 VALID_BAD_CASE_FILTERS = {"all", "with", "without"}
-VALID_EVAL_MODES = {"full", "overall"}
+VALID_EVAL_MODES = {"full", "overall", "selected"}
 
 INVALID_SHEET_TITLE_CHARS = re.compile(r"[\[\]:*?/\\]")
 HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
@@ -64,8 +73,14 @@ def canonical_model_pair(v1: str, v2: str) -> tuple[str, str]:
 
 
 def _validate_ti2i_ref_model_collision(task_type: str, v_a: str, v_b: str) -> None:
-    if task_type == "TI2I" and any(model.casefold() == "ref" for model in (v_a, v_b)):
+    config = get_task_config(task_type)
+    if not config["upload_has_ref"] or not any(
+        model.casefold() == "ref" for model in (v_a, v_b)
+    ):
+        return
+    if task_type == "TI2I":
         raise ValidationError(TI2I_REF_MODEL_COLLISION_ERROR)
+    raise ValidationError(f"{task_type} 导出媒体时模型名称 ref 与参考图目录冲突")
 
 
 def validate_export_request(request: ExportRequest) -> tuple[str, str, str]:
@@ -76,7 +91,11 @@ def validate_export_request(request: ExportRequest) -> tuple[str, str, str]:
     v_a, v_b = canonical_models(request)
     if request.include_images:
         _validate_ti2i_ref_model_collision(task_type, v_a, v_b)
-    valid_dimensions = set(TASK_CONFIGS[task_type]["eval_dims"])
+    config = get_task_config(task_type)
+    video_task = config["media_type"] == "video"
+    valid_dimensions = set(
+        config["dashboard_dims"] if video_task else config["eval_dims"]
+    )
     if any(dimension not in valid_dimensions for dimension in request.dimensions):
         raise ValidationError("无效导出维度")
     if request.result_filter not in VALID_RESULT_FILTERS:
@@ -85,6 +104,10 @@ def validate_export_request(request: ExportRequest) -> tuple[str, str, str]:
         raise ValidationError("无效坏例筛选")
     if any(mode not in VALID_EVAL_MODES for mode in request.eval_modes):
         raise ValidationError("无效评测模式")
+    if video_task and request.eval_modes != ["selected"]:
+        raise ValidationError("视频导出仅支持自定义维度评测模式")
+    if not video_task and "selected" in request.eval_modes:
+        raise ValidationError("图片导出不支持自定义维度评测模式")
     if request.start_time and not is_canonical_beijing_iso(request.start_time):
         raise ValidationError("导出时间必须为北京时间 ISO 格式")
     if request.end_time and not is_canonical_beijing_iso(request.end_time):
@@ -116,7 +139,8 @@ def _is_canonical_export_timestamp(value) -> bool:
 
 def filter_rows(rows: Iterable, request: ExportRequest, dimension: str) -> list:
     task_type, v_a, v_b = validate_export_request(request)
-    if dimension != "overall" and dimension not in TASK_CONFIGS[task_type]["eval_dims"]:
+    configured_dimensions = get_task_config(task_type)["dashboard_dims"]
+    if dimension not in configured_dimensions:
         raise ValidationError("无效导出维度")
 
     wanted_result = expected_result(request, v_a, v_b)
@@ -149,7 +173,10 @@ def filter_rows(rows: Iterable, request: ExportRequest, dimension: str) -> list:
             continue
         if request.bad_case_filter == "without" and has_bad_case:
             continue
-        if dimension != "overall" and (mode != "full" or not row[dimension]):
+        if mode == "selected":
+            if row[dimension] is None:
+                continue
+        elif dimension != "overall" and (mode != "full" or row[dimension] is None):
             continue
         if wanted_result and row[dimension] != wanted_result:
             continue
@@ -186,7 +213,12 @@ def get_export_options(task_type: str, v1: str, v2: str) -> dict:
         "v_b": v_b,
         "scenes": sorted({row["scene"] for row in rows}),
         "workers": sorted({row["worker"] for row in rows}),
-        "dimensions": dim_payload(config["eval_dims"]),
+        "dimensions": dim_payload(
+            config["dashboard_dims"]
+            if config["media_type"] == "video"
+            else config["eval_dims"]
+        ),
+        "media_type": config["media_type"],
         "min_time": min(timestamps) if timestamps else None,
         "max_time": max(timestamps) if timestamps else None,
         "total": len(rows),
@@ -196,9 +228,15 @@ def get_export_options(task_type: str, v1: str, v2: str) -> dict:
 def preview_export(request: ExportRequest) -> dict:
     task_type, v_a, v_b = validate_export_request(request)
     rows = fetch_base_rows(task_type, v_a, v_b)
-    overall_rows = filter_rows(rows, request, "overall")
+    overall_rows = (
+        filter_rows(rows, request, "overall")
+        if not is_video_task(task_type) or "overall" in request.dimensions
+        else []
+    )
     dimension_rows = {
-        dimension: filter_rows(rows, request, dimension) for dimension in request.dimensions
+        dimension: filter_rows(rows, request, dimension)
+        for dimension in request.dimensions
+        if dimension != "overall"
     }
     selected_rows = overall_rows + [row for rows_for_dimension in dimension_rows.values() for row in rows_for_dimension]
     unique_images = {(row["scene"], row["filename"]) for row in selected_rows}
@@ -304,15 +342,17 @@ def _write_overall_metadata(
     sheet["A1"] = "评测结果导出"
     sheet["A1"].font = Font(bold=True, size=14)
     image_status, missing_image_count = _image_manifest_summary(image_manifest)
+    video_task = is_video_task(task_type)
+    media_label = "视频" if video_task else "图片"
     metadata = [
         ("生成时间", generated_at),
         ("任务类型", task_type),
         ("模型对", f"{v_a} vs {v_b}"),
         ("场景", _selected_values(request.scenes), "维度", _selected_values(request.dimensions, DIM_LABELS), "评测人", _selected_values(request.workers)),
         ("开始时间", request.start_time or "不限", "结束时间", request.end_time or "不限", "评测模式", _selected_values(request.eval_modes)),
-        ("结果筛选", request.result_filter, "坏例筛选", request.bad_case_filter, "导出图片", _flag_value(request.include_images)),
-        ("包含坏例", _flag_value(request.include_bad_cases), "包含耗时", _flag_value(request.include_duration), "图片状态", image_status),
-        ("最终评测记录数", final_record_count, "缺失图片数量", missing_image_count),
+        ("结果筛选", request.result_filter, "坏例筛选", request.bad_case_filter, f"导出{media_label}", _flag_value(request.include_images)),
+        ("包含坏例", _flag_value(request.include_bad_cases), "包含耗时", _flag_value(request.include_duration), f"{media_label}状态", image_status),
+        ("最终评测记录数", final_record_count, f"缺失{media_label}数量", missing_image_count),
     ]
     for row_number, values in enumerate(metadata, start=2):
         for column, value in enumerate(values, start=1):
@@ -386,7 +426,16 @@ def _write_overall_sheet(
         sheet.column_dimensions[get_column_letter(column)].width = min(max(max_length + 2, 10), 30)
 
 
-def _selected_result_dimensions(dimensions: list[str], request: ExportRequest) -> list[str]:
+def _selected_result_dimensions(
+    dimensions: list[str], request: ExportRequest, task_type: str
+) -> list[str]:
+    if is_video_task(task_type):
+        requested = set(dimensions)
+        return [
+            dimension
+            for dimension in get_task_config(task_type)["dashboard_dims"]
+            if dimension in requested
+        ]
     result = ["overall"] if "overall" in request.eval_modes else []
     result.extend(dimensions)
     return result
@@ -395,19 +444,29 @@ def _selected_result_dimensions(dimensions: list[str], request: ExportRequest) -
 def _scene_detail_groups(
     dimensions: list[str], request: ExportRequest, task_type: str, v_a: str, v_b: str
 ) -> list[tuple[str, list[str]]]:
+    video_task = is_video_task(task_type)
+    filename_label = "文件名" if video_task else "图片名"
     sample_headers = [
-        "任务类型", "模型 A", "模型 B", "场景", "图片名", "Prompt", "评测人", "评测模式", "评测时间（北京时间）",
+        "任务类型", "模型 A", "模型 B", "场景", filename_label, "Prompt", "评测人", "评测模式", "评测时间（北京时间）",
     ]
     if request.include_duration:
         sample_headers.append("评测耗时（秒）")
     groups = [("样本信息", sample_headers)]
-    result_dimensions = _selected_result_dimensions(dimensions, request)
+    result_dimensions = _selected_result_dimensions(dimensions, request, task_type)
     if result_dimensions:
         groups.append(("评测结果", [DIM_LABELS[dimension] for dimension in result_dimensions]))
-    image_headers = [f"{v_a} 图片路径", f"{v_a} 图片状态", f"{v_b} 图片路径", f"{v_b} 图片状态"]
-    if task_type == "TI2I":
+    if video_task:
+        image_headers = [
+            f"{v_a} 视频路径", f"{v_a} 视频状态", f"{v_a} 首帧路径",
+            f"{v_b} 视频路径", f"{v_b} 视频状态", f"{v_b} 首帧路径",
+        ]
+        group_label = "视频信息"
+    else:
+        image_headers = [f"{v_a} 图片路径", f"{v_a} 图片状态", f"{v_b} 图片路径", f"{v_b} 图片状态"]
+        group_label = "图片信息"
+    if get_task_config(task_type)["upload_has_ref"]:
         image_headers.extend(["参考图路径", "参考图状态"])
-    groups.append(("图片信息", image_headers))
+    groups.append((group_label, image_headers))
     if request.include_bad_cases:
         groups.append(
             ("坏例信息", [f"{v_a} 坏例标签", f"{v_a} 坏例类别", f"{v_b} 坏例标签", f"{v_b} 坏例类别"])
@@ -440,16 +499,24 @@ def _scene_detail_values(
     if request.include_duration:
         values.append(row["duration_seconds"])
     result_labels = {"tie_bad": "一样差", "tie_good": "一样好"}
-    for dimension in _selected_result_dimensions(dimensions, request):
+    for dimension in _selected_result_dimensions(dimensions, request, task_type):
         result = row[dimension] if row_id in matching_row_ids[dimension] else None
         values.append(result_labels.get(result, result))
-    values.extend(
-        [
-            a_image.get("path", ""), a_image.get("status", "未导出"),
-            b_image.get("path", ""), b_image.get("status", "未导出"),
-        ]
-    )
-    if task_type == "TI2I":
+    if is_video_task(task_type):
+        values.extend(
+            [
+                a_image.get("path", ""), a_image.get("status", "未导出"), a_image.get("poster_path", ""),
+                b_image.get("path", ""), b_image.get("status", "未导出"), b_image.get("poster_path", ""),
+            ]
+        )
+    else:
+        values.extend(
+            [
+                a_image.get("path", ""), a_image.get("status", "未导出"),
+                b_image.get("path", ""), b_image.get("status", "未导出"),
+            ]
+        )
+    if get_task_config(task_type)["upload_has_ref"]:
         ref_image = image_info.get("ref", {})
         values.extend([ref_image.get("path", ""), ref_image.get("status", "未导出")])
     if request.include_bad_cases:
@@ -533,7 +600,11 @@ def build_workbook(
     workbook = Workbook()
     overall = workbook.active
     overall.title = "Overall"
-    overall_rows = filter_rows(base_rows, request, "overall")
+    overall_rows = (
+        filter_rows(base_rows, request, "overall")
+        if not is_video_task(task_type) or "overall" in request.dimensions
+        else []
+    )
     _write_overall_sheet(
         overall,
         request,
@@ -546,10 +617,21 @@ def build_workbook(
     )
 
     requested_dimensions = set(request.dimensions)
+    configured_dimensions = (
+        get_task_config(task_type)["dashboard_dims"]
+        if is_video_task(task_type)
+        else get_task_config(task_type)["eval_dims"]
+    )
     dimensions = [
-        dimension for dimension in TASK_CONFIGS[task_type]["eval_dims"] if dimension in requested_dimensions
+        dimension
+        for dimension in configured_dimensions
+        if dimension in requested_dimensions
     ]
-    dimension_rows = {dimension: filter_rows(base_rows, request, dimension) for dimension in dimensions}
+    dimension_rows = {
+        dimension: filter_rows(base_rows, request, dimension)
+        for dimension in dimensions
+        if dimension != "overall"
+    }
     matching_row_ids = {"overall": {row["id"] for row in overall_rows}}
     matching_row_ids.update({
         dimension: {row["id"] for row in rows_for_dimension}
@@ -584,8 +666,30 @@ def workbook_bytes(workbook: Workbook) -> bytes:
     return output.getvalue()
 
 
-def _archive_path(scene: str, model: str, filename: str) -> str:
-    return "/".join(("images", scene, model, filename))
+def _archive_path(
+    task_type: str,
+    scene: str,
+    model: str,
+    filename: str,
+    source_path: Optional[str] = None,
+) -> str:
+    if not is_video_task(task_type):
+        return "/".join(("images", scene, model, filename))
+    source_extension = Path(source_path or filename).suffix.lower()
+    media_filename = f"{Path(filename).stem}{source_extension}"
+    return "/".join(("videos", scene, model, media_filename))
+
+
+def _poster_archive_path(scene: str, model: str, filename: str) -> str:
+    return "/".join(("posters", scene, model, f"{Path(filename).stem}.webp"))
+
+
+def _default_poster_path_resolver(
+    task_type: str, model: str, scene: str, filename: str
+) -> str:
+    return get_image_thumbnail(
+        "result", task_type, scene, filename, model=model
+    )
 
 
 def build_image_manifest(
@@ -593,9 +697,12 @@ def build_image_manifest(
     selected_rows: Iterable,
     result_path_resolver=get_result_image_path,
     ref_path_resolver=get_ref_image_path,
+    poster_path_resolver=_default_poster_path_resolver,
 ) -> dict:
     task_type, v_a, v_b = validate_export_request(request)
     _validate_ti2i_ref_model_collision(task_type, v_a, v_b)
+    config = get_task_config(task_type)
+    video_task = config["media_type"] == "video"
     manifest = {}
     for row in selected_rows:
         scene = validate_storage_component(row["scene"], "场景")
@@ -609,16 +716,41 @@ def build_image_manifest(
             source_path = result_path_resolver(task_type, model, scene, filename)
             source_identity = get_regular_file_identity(source_path) if source_path else None
             entry[model] = {
-                "path": _archive_path(scene, model, filename),
+                "path": _archive_path(task_type, scene, model, filename, source_path),
                 "status": "已导出" if source_identity else "文件不存在",
                 "source_path": source_path if source_identity else None,
                 "_source_identity": source_identity,
             }
-        if task_type == "TI2I":
+            if video_task:
+                poster_source_path = None
+                if source_identity:
+                    try:
+                        poster_source_path = poster_path_resolver(
+                            task_type, model, scene, filename
+                        )
+                    except (AppError, OSError):
+                        poster_source_path = None
+                poster_identity = (
+                    get_regular_file_identity(poster_source_path)
+                    if poster_source_path
+                    else None
+                )
+                entry[model].update(
+                    {
+                        "poster_path": _poster_archive_path(scene, model, filename),
+                        "poster_status": "已导出" if poster_identity else "文件不存在",
+                        "poster_source_path": poster_source_path if poster_identity else None,
+                        "_poster_source_identity": poster_identity,
+                    }
+                )
+        if config["upload_has_ref"]:
             source_path = ref_path_resolver(task_type, scene, filename)
             source_identity = get_regular_file_identity(source_path) if source_path else None
+            reference_filename = filename
+            if video_task and source_path:
+                reference_filename = f"{Path(filename).stem}{Path(source_path).suffix.lower()}"
             entry["ref"] = {
-                "path": "/".join(("images", scene, "ref", filename)),
+                "path": "/".join(("images", scene, "ref", reference_filename)),
                 "status": "已导出" if source_identity else "文件不存在",
                 "source_path": source_path if source_identity else None,
                 "_source_identity": source_identity,
@@ -651,6 +783,22 @@ def snapshot_image_manifest(image_manifest: dict, snapshot_dir: str) -> dict:
                     snapshot_image["source_path"] = None
                     snapshot_image["status"] = "文件不存在"
                     snapshot_image["_source_identity"] = None
+            poster_source_path = image.get("poster_source_path")
+            if poster_source_path:
+                destination = os.path.join(snapshot_dir, f"{image_index}.bin")
+                image_index += 1
+                if copy_regular_file_without_symlinks(
+                    poster_source_path,
+                    destination,
+                    image.get("_poster_source_identity"),
+                ):
+                    snapshot_image["poster_source_path"] = destination
+                    snapshot_image["poster_status"] = "已导出"
+                    snapshot_image["_poster_source_identity"] = get_regular_file_identity(destination)
+                else:
+                    snapshot_image["poster_source_path"] = None
+                    snapshot_image["poster_status"] = "文件不存在"
+                    snapshot_image["_poster_source_identity"] = None
             snapshot_images[model] = snapshot_image
         snapshot[key] = snapshot_images
     return snapshot
@@ -680,7 +828,9 @@ def build_archive(
                     image = entry[model]
                     if image["source_path"]:
                         archive.write(image["source_path"], image["path"])
-                if task_type == "TI2I" and entry["ref"]["source_path"]:
+                    if image.get("poster_source_path"):
+                        archive.write(image["poster_source_path"], image["poster_path"])
+                if get_task_config(task_type)["upload_has_ref"] and entry["ref"]["source_path"]:
                     archive.write(entry["ref"]["source_path"], entry["ref"]["path"])
     return archive_path
 
@@ -688,8 +838,16 @@ def build_archive(
 def create_export_artifact(request: ExportRequest) -> ExportArtifact:
     task_type, v_a, v_b = validate_export_request(request)
     rows = fetch_base_rows(task_type, v_a, v_b)
-    overall_rows = filter_rows(rows, request, "overall")
-    dimension_rows = [filter_rows(rows, request, dimension) for dimension in request.dimensions]
+    overall_rows = (
+        filter_rows(rows, request, "overall")
+        if not is_video_task(task_type) or "overall" in request.dimensions
+        else []
+    )
+    dimension_rows = [
+        filter_rows(rows, request, dimension)
+        for dimension in request.dimensions
+        if dimension != "overall"
+    ]
     selected_rows = overall_rows + [row for items in dimension_rows for row in items]
     if not selected_rows:
         raise AppError("当前筛选条件下没有符合条件的评测记录，无法生成导出文件")
