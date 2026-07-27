@@ -173,7 +173,7 @@ def create_dataset_artifact(task_type: str, scene: str, include_ref: bool = Fals
     task_type = normalize_task_type(task_type)
     scene = validate_storage_component(scene, "场景")
     prompt_bytes = _prompt_bytes(task_type, scene)
-    if task_type == "T2I" or not include_ref:
+    if not app_config.get_task_config(task_type)["upload_has_ref"] or not include_ref:
         return _create_txt_artifact(scene, prompt_bytes)
     parsed = parse_prompt_file_bytes(prompt_bytes)
     scene_fd, ref_names = _open_reference_scene(task_type, scene, parsed["ids"])

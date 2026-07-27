@@ -7,3 +7,4 @@ python-jose
 jinja2
 openpyxl
 Pillow>=11,<12
+imageio-ffmpeg>=0.6,<0.7

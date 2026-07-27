@@ -8,8 +8,10 @@ from typing import Optional
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .config import is_video_task
 from .errors import AppError, NotFoundError
 from .storage import get_ref_image_path, get_result_image_path
+from .video_media import extract_first_frame_webp
 
 
 THUMBNAIL_CACHE_DIR = Path(".thumbnails")
@@ -61,6 +63,26 @@ def _write_thumbnail(source: str, destination: Path, max_size: int) -> None:
             pass
 
 
+def _write_video_thumbnail(source: str, destination: Path, max_size: int) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=destination.parent,
+        prefix="thumbnail-",
+        suffix=".webp",
+    )
+    os.close(descriptor)
+    try:
+        Path(temporary_name).write_bytes(extract_first_frame_webp(source, max_size))
+        os.replace(temporary_name, destination)
+    except (OSError, ValueError) as exc:
+        raise AppError("视频无法生成首帧缩略图") from exc
+    finally:
+        try:
+            os.remove(temporary_name)
+        except FileNotFoundError:
+            pass
+
+
 def get_image_thumbnail(
     kind: str,
     task_type: str,
@@ -89,5 +111,14 @@ def get_image_thumbnail(
     if destination.is_file():
         return os.fspath(destination)
 
-    _write_thumbnail(source, destination, max_size)
+    if kind == "result" and is_video_task(task_type):
+        _write_video_thumbnail(source, destination, max_size)
+    else:
+        _write_thumbnail(source, destination, max_size)
     return os.fspath(destination)
+
+
+def warm_result_thumbnail(
+    task_type: str, model: str, scene: str, filename: str
+) -> str:
+    return get_image_thumbnail("result", task_type, scene, filename, model=model)

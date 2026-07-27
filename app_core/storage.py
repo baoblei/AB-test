@@ -3,6 +3,7 @@ import os
 import shutil
 import stat
 import struct
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import List, Optional
 from . import config as app_config
 from .config import IMAGE_EXTENSIONS, PROMPT_DIR, REF_IMAGE_DIR, RESULT_DIR, get_task_config, normalize_task_type
 from .errors import AppError
+from .video_media import extract_first_frame_webp
 
 
 def get_result_root(task_type: str) -> str:
@@ -111,7 +113,8 @@ def list_scene_files(task_type: str, version: str, scene: str) -> List[str]:
     scene_path = get_scene_path(task_type, version, scene)
     if not os.path.isdir(scene_path):
         return []
-    return sorted([f for f in os.listdir(scene_path) if f.lower().endswith(IMAGE_EXTENSIONS)])
+    extensions = get_task_config(task_type)["result_extensions"]
+    return sorted([f for f in os.listdir(scene_path) if f.lower().endswith(extensions)])
 
 
 def get_image_dimensions(image_path: str) -> Optional[tuple[int, int]]:
@@ -378,9 +381,10 @@ def upload_dataset(task_type: str, scene: str, prompt_file, ref_file=None) -> di
     prompt_bytes = read_upload_bytes(prompt_file)
     prompt_info = parse_prompt_file_bytes(prompt_bytes)
 
-    if task_type == "TI2I":
+    config = get_task_config(task_type)
+    if config["upload_has_ref"]:
         if not ref_file:
-            raise AppError("TI2I 测评集需要上传参考图 zip")
+            raise AppError(f"{task_type} 测评集需要上传参考图 zip")
         ref_bytes = read_upload_bytes(ref_file)
         validate_image_zip_against_ids(ref_bytes, prompt_info["ids"], "参考图")
         ref_root = get_task_config(task_type)["ref_root"]
@@ -554,7 +558,9 @@ def clean_zip_basename(name: str) -> str:
     return name.replace("\\", "/").split("/")[-1]
 
 
-def zip_image_infos(zip_bytes: bytes) -> list[dict]:
+def zip_media_infos(
+    zip_bytes: bytes, extensions: tuple[str, ...], media_label: str
+) -> list[dict]:
     infos = []
     seen_basenames = set()
     try:
@@ -566,17 +572,21 @@ def zip_image_infos(zip_bytes: bytes) -> list[dict]:
                 if not basename or basename.startswith(".") or "__MACOSX" in info.filename:
                     continue
                 stem, ext = os.path.splitext(basename)
-                if ext.lower() not in IMAGE_EXTENSIONS:
+                if ext.lower() not in extensions:
                     continue
                 if basename in seen_basenames:
-                    raise AppError(f"zip 中存在重复图片文件名: {basename}")
+                    raise AppError(f"zip 中存在重复{media_label}文件名: {basename}")
                 seen_basenames.add(basename)
                 infos.append({"entry": info.filename, "basename": basename, "stem": stem, "ext": ext.lower()})
     except zipfile.BadZipFile as exc:
         raise AppError("上传文件不是有效 zip") from exc
     if not infos:
-        raise AppError("zip 中没有可用图片文件")
+        raise AppError(f"zip 中没有可用{media_label}文件")
     return infos
+
+
+def zip_image_infos(zip_bytes: bytes) -> list[dict]:
+    return zip_media_infos(zip_bytes, IMAGE_EXTENSIONS, "图片")
 
 
 def build_exact_name_map(image_infos: list[dict], expected_ids: list[str]) -> Optional[dict]:
@@ -634,10 +644,14 @@ def validate_image_zip_against_ids(zip_bytes: bytes, expected_ids: list[str], la
 
 def validate_result_zip(task_type: str, scene: str, zip_bytes: bytes, auto_rename: bool = False) -> dict:
     expected_ids = get_prompt_ids(task_type, scene)
-    infos = zip_image_infos(zip_bytes)
+    config = get_task_config(task_type)
+    video = config["media_type"] == "video"
+    media_label = "视频" if video else "图片"
+    count_key = "media_count" if video else "image_count"
+    infos = zip_media_infos(zip_bytes, config["result_extensions"], media_label)
     exact_map = build_exact_name_map(infos, expected_ids)
     if exact_map:
-        return {"status": "exact", "rename_map": exact_map, "image_count": len(infos)}
+        return {"status": "exact", "rename_map": exact_map, count_key: len(infos)}
 
     prefix_map = build_prefix_name_map(infos, expected_ids)
     if prefix_map:
@@ -645,15 +659,15 @@ def validate_result_zip(task_type: str, scene: str, zip_bytes: bytes, auto_renam
             examples = [f"{clean_zip_basename(src)} -> {dst}" for src, dst in list(prefix_map.items())[:5]]
             return {
                 "status": "requires_rename_confirmation",
-                "message": "当前图片名称前缀匹配 prompt 文件中的图片名，可以自动格式化名称后上传。是否继续？"
+                "message": f"当前{media_label}名称前缀匹配 prompt 文件中的名称，可以自动格式化名称后上传。是否继续？"
                 + (f"\n示例：{'; '.join(examples)}" if examples else ""),
-                "image_count": len(infos),
+                count_key: len(infos),
             }
-        return {"status": "renamed", "rename_map": prefix_map, "image_count": len(infos)}
+        return {"status": "renamed", "rename_map": prefix_map, count_key: len(infos)}
 
     diff = image_name_diff(infos, expected_ids)
     raise AppError(
-        f"结果图图片名和 prompt 不匹配：缺少 {diff['missing_count']} 个，多出 {diff['extra_count']} 个"
+        f"结果{media_label}名称和 prompt 不匹配：缺少 {diff['missing_count']} 个，多出 {diff['extra_count']} 个"
         + (f"；缺少示例: {', '.join(diff['missing'])}" if diff["missing"] else "")
         + (f"；多出示例: {', '.join(diff['extra'])}" if diff["extra"] else "")
     )
@@ -669,6 +683,15 @@ def upload_ref_zip(task_type: str, scene: str, upload_file) -> dict:
 
 
 def save_zip_images(target_path: str, zip_bytes: bytes, rename_map: Optional[dict] = None):
+    save_zip_media(target_path, zip_bytes, IMAGE_EXTENSIONS, rename_map)
+
+
+def save_zip_media(
+    target_path: str,
+    zip_bytes: bytes,
+    extensions: tuple[str, ...],
+    rename_map: Optional[dict] = None,
+):
     if os.path.exists(target_path):
         shutil.rmtree(target_path)
     os.makedirs(target_path, exist_ok=True)
@@ -682,7 +705,7 @@ def save_zip_images(target_path: str, zip_bytes: bytes, rename_map: Optional[dic
             if not basename or basename.startswith(".") or "__MACOSX" in info.filename:
                 continue
             stem, ext = os.path.splitext(basename)
-            if ext.lower() not in IMAGE_EXTENSIONS:
+            if ext.lower() not in extensions:
                 continue
             output_name = rename_map.get(info.filename, basename)
             with zf.open(info, "r") as src, open(os.path.join(target_path, output_name), "wb") as dst:
@@ -708,13 +731,78 @@ def upload_result_zip(
     if validation["status"] == "requires_rename_confirmation":
         return validation
     result_root = get_task_config(task_type)["result_root"]
-    save_zip_images(os.path.join(result_root, full_name, scene), zip_bytes, validation.get("rename_map"))
-    return {
+    config = get_task_config(task_type)
+    target_path = os.path.join(result_root, full_name, scene)
+    if config["media_type"] == "video":
+        _save_staged_video_scene(
+            target_path,
+            zip_bytes,
+            config["result_extensions"],
+            validation.get("rename_map"),
+            task_type,
+            full_name,
+            scene,
+        )
+    else:
+        save_zip_images(target_path, zip_bytes, validation.get("rename_map"))
+    result = {
         "message": "Success",
         "status": validation["status"],
-        "image_count": validation["image_count"],
         "full_name": full_name,
     }
+    count_key = "media_count" if config["media_type"] == "video" else "image_count"
+    result[count_key] = validation[count_key]
+    return result
+
+
+def _save_staged_video_scene(
+    target_path: str,
+    zip_bytes: bytes,
+    extensions: tuple[str, ...],
+    rename_map: Optional[dict],
+    task_type: str,
+    model: str,
+    scene: str,
+) -> None:
+    target = Path(target_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(dir=target.parent, prefix=f".{scene}-staging-"))
+    backup: Optional[Path] = None
+    installed = False
+    try:
+        save_zip_media(os.fspath(staging), zip_bytes, extensions, rename_map)
+        filenames = sorted(path.name for path in staging.iterdir() if path.is_file())
+        for filename in filenames:
+            extract_first_frame_webp(os.fspath(staging / filename))
+
+        if target.exists():
+            backup = Path(
+                tempfile.mkdtemp(dir=target.parent, prefix=f".{scene}-backup-")
+            )
+            backup.rmdir()
+            os.replace(target, backup)
+        os.replace(staging, target)
+        installed = True
+
+        from .thumbnail_service import warm_result_thumbnail
+
+        for filename in filenames:
+            warm_result_thumbnail(task_type, model, scene, filename)
+        if backup is not None:
+            shutil.rmtree(backup)
+            backup = None
+    except Exception:
+        if installed and target.exists():
+            shutil.rmtree(target)
+        if backup is not None and backup.exists():
+            os.replace(backup, target)
+            backup = None
+        raise
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        if backup is not None and backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
 
 
 def save_uploaded_zip(target_path: str, upload_file):
