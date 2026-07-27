@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -155,6 +156,16 @@ console.log(JSON.stringify({{
         detail_filter = self.html.split('id="detail-result-filter"', 1)[1].split(
             "</select>", 1
         )[0]
+        self.assertEqual(
+            re.findall(r'<option value="([^"]*)">([^<]*)</option>', detail_filter),
+            [
+                ("", "全部"),
+                ("a_win", "A 胜"),
+                ("tie_bad", "一样差"),
+                ("tie_good", "一样好"),
+                ("b_win", "B 胜"),
+            ],
+        )
         self.assertIn('<option value="tie_bad">一样差</option>', detail_filter)
         self.assertIn('<option value="tie_good">一样好</option>', detail_filter)
         self.assertNotIn('<option value="tie">平局</option>', detail_filter)
