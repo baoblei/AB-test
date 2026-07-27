@@ -119,7 +119,7 @@ def init_db():
     ensure_column(cursor, "results_log", "task_id", "INTEGER")
     ensure_column(cursor, "results_log", "eval_mode", "TEXT DEFAULT 'full'")
     ensure_column(cursor, "results_log", "task_type", "TEXT DEFAULT 'T2I'")
-    ensure_column(cursor, "results_log", "fidelity", "TEXT DEFAULT 'tie'")
+    ensure_column(cursor, "results_log", "fidelity", "TEXT")
     ensure_column(cursor, "results_log", "bad_case_tags_a", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_tags_b", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_categories_a", "TEXT DEFAULT '[]'")

@@ -3,10 +3,11 @@ import os
 import random
 from typing import Any, Optional
 
-from .bad_cases import categories_from_tags, derive_overall_result, normalize_bad_case_tags
+from .bad_cases import categories_from_tags, normalize_bad_case_tags
 from .config import get_task_config, normalize_task_type
 from .database import connect
 from .errors import AppError, ConflictError
+from .result_choices import resolve_vote_choice
 from .storage import get_preview_prompt_text, get_ref_image_url, get_result_image_url, get_scene_path, list_scene_files
 from .time_utils import now_beijing_iso
 
@@ -544,13 +545,6 @@ def submit_vote(vote: Any, user_id: int, worker: str) -> dict:
     eval_mode = normalize_eval_mode(getattr(vote, "eval_mode", "full"))
     config = get_task_config(task_type)
 
-    def resolve(choice: Optional[str]) -> str:
-        if choice == "left":
-            return vote.v_left
-        if choice == "right":
-            return vote.v_right
-        return "tie"
-
     left_tags = normalize_bad_case_tags(vote.bad_case_left)
     right_tags = normalize_bad_case_tags(vote.bad_case_right)
     if vote.v_left < vote.v_right:
@@ -560,19 +554,23 @@ def submit_vote(vote: Any, user_id: int, worker: str) -> dict:
 
     v_a, v_b = sorted([vote.v_left, vote.v_right])
     if eval_mode == "overall":
-        overall = resolve(vote.overall)
+        overall = resolve_vote_choice(vote.overall, vote.v_left, vote.v_right)
         dim_values = {"aesthetic": None, "logic": None, "consistency": None, "fidelity": None}
     else:
-        missing_dims = [dim for dim in config["eval_dims"] if not getattr(vote, dim, None)]
+        required_dims = ["overall", *config["eval_dims"]]
+        missing_dims = [dim for dim in required_dims if not getattr(vote, dim, None)]
         if missing_dims:
             raise AppError("请完成所有评分维度")
+        overall = resolve_vote_choice(vote.overall, vote.v_left, vote.v_right)
         dim_values = {
-            "aesthetic": resolve(vote.aesthetic),
-            "logic": resolve(vote.logic),
-            "consistency": resolve(vote.consistency),
-            "fidelity": resolve(vote.fidelity) if "fidelity" in config["eval_dims"] else "tie",
+            "aesthetic": resolve_vote_choice(vote.aesthetic, vote.v_left, vote.v_right),
+            "logic": resolve_vote_choice(vote.logic, vote.v_left, vote.v_right),
+            "consistency": resolve_vote_choice(vote.consistency, vote.v_left, vote.v_right),
+            "fidelity": (
+                resolve_vote_choice(vote.fidelity, vote.v_left, vote.v_right)
+                if "fidelity" in config["eval_dims"] else None
+            ),
         }
-        overall = derive_overall_result([dim_values[dim] for dim in config["eval_dims"]])
 
     conn = connect()
     try:
@@ -661,7 +659,7 @@ def skip_task(
                 worker, timestamp, skipped, user_id,
                 bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'skipped', 'skipped', 'skipped', 'skipped', 'skipped', ?, ?, 1, ?, '[]', '[]', '[]', '[]')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, '[]', '[]', '[]', '[]')
             """,
             (
                 task_id,
@@ -671,6 +669,11 @@ def skip_task(
                 task[1],
                 task[2],
                 task[3],
+                None,
+                None,
+                None,
+                None,
+                None,
                 authenticated_worker,
                 now_beijing_iso(),
                 user_id,

@@ -52,7 +52,7 @@ class TaskModeIntegrityTests(unittest.TestCase):
             (task_id, eval_mode, task_type, v_a, v_b, scene, filename, overall, worker, skipped, user_id)
             VALUES (?, ?, 'T2I', 'model-a', 'model-b', 'scene', 'sample.png', ?, ?, ?, ?)
             """,
-            (task_id, mode, "skipped" if skipped else "model-a", worker, skipped, user_id),
+            (task_id, mode, None if skipped else "model-a", worker, skipped, user_id),
         )
         conn.commit()
         conn.close()
@@ -69,7 +69,7 @@ class TaskModeIntegrityTests(unittest.TestCase):
             worker=worker,
             overall="left",
             aesthetic="left",
-            logic="tie",
+            logic="tie_bad",
             consistency="right",
             fidelity=None,
             bad_case_left=[],
@@ -345,7 +345,7 @@ class TaskModeIntegrityTests(unittest.TestCase):
             (task_id, eval_mode, task_type, v_a, v_b, scene, filename, overall,
              worker, skipped, user_id)
             VALUES (NULL, 'full', 'T2I', 'model-a', 'model-b', 'scene',
-                    'removed.png', 'skipped', 'worker', 1, 1)
+                    'removed.png', NULL, 'worker', 1, 1)
             """
         )
         conn.commit()

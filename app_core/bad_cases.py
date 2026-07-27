@@ -34,22 +34,6 @@ def safe_load_json_list(value: Optional[str]) -> List[str]:
     return data if isinstance(data, list) else []
 
 
-def derive_overall_result(dim_results: List[str]) -> str:
-    counts = {}
-    for result in dim_results:
-        counts[result] = counts.get(result, 0) + 1
-    if not counts:
-        return "tie"
-
-    best_choice = max(counts.items(), key=lambda item: item[1])[0]
-    top_count = counts[best_choice]
-    if top_count == 1:
-        return "tie"
-    if sum(1 for count in counts.values() if count == top_count) > 1:
-        return "tie"
-    return best_choice
-
-
 def build_bad_case_stats(rows):
     stats = {
         "v_a": {"bad_count": 0, "total": 0, "rate": 0.0, "categories": {}, "tags": {}},
