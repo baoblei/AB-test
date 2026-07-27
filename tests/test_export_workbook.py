@@ -17,10 +17,10 @@ def make_row(row_id, **overrides):
         "v_b": "B",
         "scene": "city",
         "filename": f"image-{row_id}.png",
-        "overall": "tie",
-        "aesthetic": "tie",
-        "logic": "tie",
-        "consistency": "tie",
+        "overall": "tie_good",
+        "aesthetic": "tie_good",
+        "logic": "tie_good",
+        "consistency": "tie_good",
         "fidelity": None,
         "worker": "alice",
         "timestamp": "2026-07-15T12:00:00+08:00",
@@ -63,7 +63,7 @@ class ExportWorkbookTests(unittest.TestCase):
             include_duration=True,
         )
         self.t2i_rows = [
-            make_row(1, scene="zoo", overall="tie", aesthetic="A", consistency="B", bad_case_tags_a='["模糊失焦"]'),
+            make_row(1, scene="zoo", overall="tie_good", aesthetic="A", consistency="B", bad_case_tags_a='["模糊失焦"]'),
             make_row(2, eval_mode="overall", scene="city", overall="A", aesthetic=None, logic=None, consistency=None),
             make_row(3, scene="city", overall="B", aesthetic="B", consistency="A", worker="bob"),
             make_row(4, scene="city", overall="A", aesthetic="A", consistency="A", skipped=1),
@@ -185,7 +185,7 @@ class ExportWorkbookTests(unittest.TestCase):
     @patch("app_core.export_service.get_prompt_text", return_value="portrait prompt")
     def test_ti2i_workbook_has_fidelity_reference_columns_and_round_trips(self, _prompt):
         rows = self.ti2i_rows + [
-            make_row(2, task_type="TI2I", v_a="D", v_b="E", scene="portrait", fidelity="tie"),
+            make_row(2, task_type="TI2I", v_a="D", v_b="E", scene="portrait", fidelity="tie_bad"),
             make_row(3, task_type="TI2I", v_a="D", v_b="E", scene="portrait", fidelity="E"),
         ]
         workbook = build_workbook(self.ti2i_request, rows)
@@ -203,7 +203,7 @@ class ExportWorkbookTests(unittest.TestCase):
         self.assertEqual(sheet.cell(3, headers.index("参考图状态") + 1).value, "未导出")
         self.assertEqual(
             [sheet.cell(row, headers.index("保真度") + 1).value for row in range(3, 6)],
-            ["D", "tie", "E"],
+            ["D", "一样差", "E"],
         )
         loaded = load_workbook(BytesIO(workbook_bytes(workbook)))
         self.assertEqual(loaded.sheetnames, ["Overall", "portrait"])
@@ -232,7 +232,7 @@ class ExportWorkbookTests(unittest.TestCase):
         )
         rows = [
             make_row(1, task_type="TI2I", v_a="D", v_b="E", scene="portrait", eval_mode="overall", overall="D", fidelity=None),
-            make_row(2, task_type="TI2I", v_a="D", v_b="E", scene="portrait", eval_mode="full", overall="tie", fidelity="E"),
+            make_row(2, task_type="TI2I", v_a="D", v_b="E", scene="portrait", eval_mode="full", overall="tie_good", fidelity="E"),
         ]
 
         sheet = build_workbook(request, rows)["portrait"]
@@ -247,7 +247,7 @@ class ExportWorkbookTests(unittest.TestCase):
         self.assertNotIn("E 胜", headers)
         self.assertEqual(
             [[sheet.cell(row, headers.index(name) + 1).value for name in ("整体", "保真度")] for row in (3, 4)],
-            [["D", None], ["tie", "E"]],
+            [["D", None], ["一样好", "E"]],
         )
 
     @patch("app_core.export_service.get_prompt_text", return_value="portrait prompt")
@@ -255,13 +255,13 @@ class ExportWorkbookTests(unittest.TestCase):
         request = ExportRequest(
             task_type="TI2I", v1="D", v2="E", dimensions=["fidelity"], eval_modes=["full"],
         )
-        rows = [make_row(1, task_type="TI2I", v_a="D", v_b="E", scene="portrait", overall="D", fidelity="tie")]
+        rows = [make_row(1, task_type="TI2I", v_a="D", v_b="E", scene="portrait", overall="D", fidelity="tie_good")]
 
         sheet = build_workbook(request, rows)["portrait"]
         headers = [cell.value for cell in sheet[2]]
 
         self.assertNotIn("整体", headers)
-        self.assertEqual(sheet.cell(3, headers.index("保真度") + 1).value, "tie")
+        self.assertEqual(sheet.cell(3, headers.index("保真度") + 1).value, "一样好")
 
     @patch("app_core.export_service.get_prompt_text", return_value="prompt")
     def test_zero_and_one_result_columns_keep_exact_headers_merges_and_autofilter(self, _prompt):
@@ -369,18 +369,18 @@ class ExportWorkbookTests(unittest.TestCase):
     def test_overall_statistics_cover_empty_winners_ties_and_single_side_bad_cases(self):
         request = ExportRequest(task_type="T2I", v1="A", v2="B")
         cases = [
-            ("empty", [], [0, 0, 0, 0, 0, 0, 0, "-", "-", 0, 0, 0, 0]),
-            ("a_wins", [make_row(1, overall="A")], [1, 1, 1, 0, 0, 0, 0, "∞", 0, 0, 0, 0, 0]),
-            ("b_wins", [make_row(1, overall="B")], [1, 0, 0, 0, 0, 1, 1, 0, "∞", 0, 0, 0, 0]),
+            ("empty", [], [0, 0, 0, 0, 0, 0, 0, 0, 0, "-", "-", 0, 0, 0, 0]),
+            ("a_wins", [make_row(1, overall="A")], [1, 1, 1, 0, 0, 0, 0, 0, 0, "∞", 0, 0, 0, 0, 0]),
+            ("b_wins", [make_row(1, overall="B")], [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, "∞", 0, 0, 0, 0]),
             (
                 "ties",
-                [make_row(1, overall="tie"), make_row(2, overall="tie")],
-                [2, 0, 0, 2, 1, 0, 0, 1, 1, 0, 0, 0, 0],
+                [make_row(1, overall="tie_bad"), make_row(2, overall="tie_good")],
+                [2, 0, 0, 1, 0.5, 1, 0.5, 0, 0, 1, 1, 0, 0, 0, 0],
             ),
             (
                 "a_bad_only",
-                [make_row(1, overall="tie", bad_case_tags_a='["模糊失焦"]')],
-                [1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0],
+                [make_row(1, overall="tie_good", bad_case_tags_a='["模糊失焦"]')],
+                [1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0],
             ),
         ]
 
@@ -388,17 +388,35 @@ class ExportWorkbookTests(unittest.TestCase):
             with self.subTest(name=name):
                 workbook = build_workbook(request, rows)
                 overall = workbook["Overall"]
-                values = [overall.cell(12, column).value for column in range(2, 15)]
+                values = [overall.cell(12, column).value for column in range(2, 17)]
                 self.assertEqual(values, expected)
-                for column in (4, 6, 8, 12, 14):
+                for column in (4, 6, 8, 10, 14, 16):
                     self.assertEqual(overall.cell(12, column).number_format, "0.0%")
 
                 loaded = load_workbook(BytesIO(workbook_bytes(workbook)), data_only=False)["Overall"]
-                for column in (2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14):
+                for column in (2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16):
                     self.assertEqual(loaded.cell(12, column).data_type, "n")
-                for column in (9, 10):
+                for column in (11, 12):
                     expected_type = "s" if isinstance(overall.cell(12, column).value, str) else "n"
                     self.assertEqual(loaded.cell(12, column).data_type, expected_type)
+
+    def test_overall_summary_splits_tie_subtypes_and_combines_them_for_suppression(self):
+        request = ExportRequest(task_type="T2I", v1="A", v2="B")
+        rows = [
+            make_row(1, overall="A"),
+            make_row(2, overall="tie_bad"),
+            make_row(3, overall="tie_good"),
+            make_row(4, overall="tie_good"),
+            make_row(5, overall="B"),
+        ]
+
+        overall = build_workbook(request, rows)["Overall"]
+
+        self.assertEqual(
+            [cell.value for cell in overall[11]],
+            ["场景", "总数", "A 胜数", "A 胜率", "一样差数", "一样差率", "一样好数", "一样好率", "B 胜数", "B 胜率", "A 抑制比", "B 抑制比", "A 坏例数", "A 坏例率", "B 坏例数", "B 坏例率"],
+        )
+        self.assertEqual([overall.cell(12, column).value for column in range(2, 17)], [5, 1, 0.2, 1, 0.2, 2, 0.4, 1, 0.2, 1, 1, 0, 0, 0, 0])
 
 
 if __name__ == "__main__":

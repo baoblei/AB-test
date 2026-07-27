@@ -90,6 +90,11 @@ class DashboardExportUiTests(unittest.TestCase):
         ):
             self.assertIn(marker, self.html)
 
+    def test_export_result_selector_has_four_outcomes(self):
+        self.assertIn('<option value="tie_bad">一样差</option>', self.html)
+        self.assertIn('<option value="tie_good">一样好</option>', self.html)
+        self.assertNotIn('<option value="tie">', self.html)
+
     def test_export_options_supply_dynamic_t2i_and_ti2i_dimensions(self):
         self.assertIn("options.dimensions", self.html)
         self.assertIn("renderExportChoices(\"export-dimensions\"", self.html)

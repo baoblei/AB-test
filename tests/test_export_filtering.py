@@ -23,10 +23,10 @@ def make_row(row_id, **overrides):
         "v_b": "B",
         "scene": "open",
         "filename": f"image-{row_id}.png",
-        "overall": "tie",
-        "aesthetic": "tie",
-        "logic": "tie",
-        "consistency": "tie",
+        "overall": "tie_good",
+        "aesthetic": "tie_good",
+        "logic": "tie_good",
+        "consistency": "tie_good",
         "fidelity": None,
         "worker": "alice",
         "timestamp": "2026-07-15T12:00:00+08:00",
@@ -63,6 +63,16 @@ class ExportFilteringTests(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in filter_rows(self.rows, request, "overall")], [2])
         self.assertEqual([row["id"] for row in filter_rows(self.rows, request, "aesthetic")], [1])
+
+    def test_tie_subtype_filters_are_independent(self):
+        rows = [make_row(1, overall="tie_bad"), make_row(2, overall="tie_good"), make_row(3, overall="A")]
+        for result_filter, expected_ids in (("tie_bad", [1]), ("tie_good", [2])):
+            with self.subTest(result_filter=result_filter):
+                request = ExportRequest(task_type="T2I", v1="A", v2="B", result_filter=result_filter)
+                self.assertEqual(
+                    [row["id"] for row in filter_rows(rows, request, "overall")],
+                    expected_ids,
+                )
 
     def test_filter_rows_enforces_base_row_invariants_for_mixed_input(self):
         rows = [

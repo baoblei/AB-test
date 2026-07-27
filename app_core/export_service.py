@@ -27,7 +27,7 @@ from .storage import (
 from .time_utils import is_canonical_beijing_iso, now_beijing_iso
 
 
-VALID_RESULT_FILTERS = {"all", "a", "tie", "b"}
+VALID_RESULT_FILTERS = {"all", "a", "tie_bad", "tie_good", "b"}
 VALID_BAD_CASE_FILTERS = {"all", "with", "without"}
 VALID_EVAL_MODES = {"full", "overall"}
 
@@ -97,7 +97,13 @@ def validate_export_request(request: ExportRequest) -> tuple[str, str, str]:
 def expected_result(request: ExportRequest, v_a: Optional[str] = None, v_b: Optional[str] = None) -> Optional[str]:
     if v_a is None or v_b is None:
         v_a, v_b = canonical_models(request)
-    return {"all": None, "a": v_a, "tie": "tie", "b": v_b}[request.result_filter]
+    return {
+        "all": None,
+        "a": v_a,
+        "tie_bad": "tie_bad",
+        "tie_good": "tie_good",
+        "b": v_b,
+    }[request.result_filter]
 
 
 def row_has_bad_case(row) -> bool:
@@ -212,17 +218,22 @@ def suppression_ratio(numerator: int, denominator: int):
 def summarize_overall(rows, v_a: str, v_b: str) -> dict:
     total = len(rows)
     a_wins = sum(row["overall"] == v_a for row in rows)
-    ties = sum(row["overall"] == "tie" for row in rows)
+    tie_bad = sum(row["overall"] == "tie_bad" for row in rows)
+    tie_good = sum(row["overall"] == "tie_good" for row in rows)
+    ties = tie_bad + tie_good
     b_wins = sum(row["overall"] == v_b for row in rows)
     bad_a = sum(bool(safe_load_json_list(row["bad_case_tags_a"])) for row in rows)
     bad_b = sum(bool(safe_load_json_list(row["bad_case_tags_b"])) for row in rows)
     return {
         "total": total,
         "a_wins": a_wins,
+        "tie_bad": tie_bad,
+        "tie_good": tie_good,
         "ties": ties,
         "b_wins": b_wins,
         "a_rate": a_wins / total if total else 0,
-        "tie_rate": ties / total if total else 0,
+        "tie_bad_rate": tie_bad / total if total else 0,
+        "tie_good_rate": tie_good / total if total else 0,
         "b_rate": b_wins / total if total else 0,
         "a_suppression": suppression_ratio(a_wins + ties, b_wins + ties),
         "b_suppression": suppression_ratio(b_wins + ties, a_wins + ties),
@@ -317,8 +328,10 @@ def _summary_values(scene: str, rows: list, v_a: str, v_b: str) -> list:
         stats["total"],
         stats["a_wins"],
         stats["a_rate"],
-        stats["ties"],
-        stats["tie_rate"],
+        stats["tie_bad"],
+        stats["tie_bad_rate"],
+        stats["tie_good"],
+        stats["tie_good_rate"],
         stats["b_wins"],
         stats["b_rate"],
         stats["a_suppression"],
@@ -351,8 +364,8 @@ def _write_overall_sheet(
         image_manifest,
     )
     headers = [
-        "场景", "总数", f"{v_a} 胜数", f"{v_a} 胜率", "平局数", "平局率", f"{v_b} 胜数", f"{v_b} 胜率",
-        f"{v_a} 抑制比", f"{v_b} 抑制比", f"{v_a} 坏例数", f"{v_a} 坏例率", f"{v_b} 坏例数", f"{v_b} 坏例率",
+        "场景", "总数", f"{v_a} 胜数", f"{v_a} 胜率", "一样差数", "一样差率", "一样好数", "一样好率",
+        f"{v_b} 胜数", f"{v_b} 胜率", f"{v_a} 抑制比", f"{v_b} 抑制比", f"{v_a} 坏例数", f"{v_a} 坏例率", f"{v_b} 坏例数", f"{v_b} 坏例率",
     ]
     for column, header in enumerate(headers, start=1):
         sheet.cell(11, column, excel_safe_text(header))
@@ -364,7 +377,7 @@ def _write_overall_sheet(
             sheet.cell(row_number, column, excel_safe_text(value) if column == 1 else value)
     _style_header(sheet, 11, len(headers))
     for row in range(12, sheet.max_row + 1):
-        for column in (4, 6, 8, 12, 14):
+        for column in (4, 6, 8, 10, 14, 16):
             sheet.cell(row, column).number_format = "0.0%"
     sheet.auto_filter.ref = f"A11:{get_column_letter(len(headers))}{sheet.max_row}"
     sheet.freeze_panes = "A12"
@@ -426,8 +439,10 @@ def _scene_detail_values(
     ]
     if request.include_duration:
         values.append(row["duration_seconds"])
+    result_labels = {"tie_bad": "一样差", "tie_good": "一样好"}
     for dimension in _selected_result_dimensions(dimensions, request):
-        values.append(row[dimension] if row_id in matching_row_ids[dimension] else None)
+        result = row[dimension] if row_id in matching_row_ids[dimension] else None
+        values.append(result_labels.get(result, result))
     values.extend(
         [
             a_image.get("path", ""), a_image.get("status", "未导出"),

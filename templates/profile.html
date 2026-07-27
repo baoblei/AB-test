@@ -130,7 +130,8 @@
         }
         .badge-a { background: #e8f5e9; color: #2e7d32; }
         .badge-b { background: #e3f2fd; color: #1565c0; }
-        .badge-tie { background: #f5f5f5; color: #757575; }
+        .badge-tie-bad { background: #fff3e0; color: #d97706; }
+        .badge-tie-good { background: #f3e8ff; color: #7c3aed; }
         .badge-skip { background: #fff3e0; color: #e65100; }
 
         /* 修改密码表单 */
@@ -338,8 +339,9 @@
 
             tbody.innerHTML = data.map(r => {
                 const badge = r.skipped ? '<span class="badge badge-skip">跳过</span>' :
-                    (r.overall === 'tie' ? '<span class="badge badge-tie">平局</span>' :
-                    (r.overall ? `<span class="badge badge-a">${r.overall} 胜</span>` : '-'));
+                    (r.overall === 'tie_bad' ? '<span class="badge badge-tie-bad">一样差</span>' :
+                    (r.overall === 'tie_good' ? '<span class="badge badge-tie-good">一样好</span>' :
+                    (r.overall ? `<span class="badge badge-a">${r.overall} 胜</span>` : '-')));
 
                 return `
                     <tr>
