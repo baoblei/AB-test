@@ -1,3 +1,4 @@
+import json
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -187,10 +188,40 @@ def start_eval_session(
     scene: str,
     eval_mode: str = "full",
     overwrite_overall: bool = False,
+    dimensions: Optional[str] = None,
+    overwrite_dimensions: bool = False,
     user: dict = Depends(require_login),
 ):
+    selected_dimensions = None
+    if dimensions is not None:
+        try:
+            selected_dimensions = json.loads(dimensions)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise AppError("评测维度格式无效") from exc
+        if not isinstance(selected_dimensions, list):
+            raise AppError("评测维度格式无效")
+    if dimensions is None and not overwrite_dimensions:
+        return start_eval_session_service(
+            task_type,
+            user["username"],
+            v1,
+            v2,
+            scene,
+            eval_mode,
+            user["id"],
+            overwrite_overall,
+        )
     return start_eval_session_service(
-        task_type, user["username"], v1, v2, scene, eval_mode, user["id"], overwrite_overall
+        task_type,
+        user["username"],
+        v1,
+        v2,
+        scene,
+        eval_mode,
+        user["id"],
+        overwrite_overall,
+        selected_dimensions,
+        overwrite_dimensions,
     )
 
 
