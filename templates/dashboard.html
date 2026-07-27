@@ -752,7 +752,7 @@
         <div class="navbar">
             <div>
                 <h1>评测看板</h1>
-                <p>T2I / TI2I 统一看板，按任务类型切换对应的专属维度和编辑视图。</p>
+                <p>T2I / TI2I / T2V / TI2V 统一看板，按任务类型切换对应的专属维度和编辑视图。</p>
             </div>
             <div class="nav-links">
                 <span id="status-tag" style="color:var(--muted); font-size:0.85rem;">正在同步...</span>
@@ -766,13 +766,13 @@
             <div class="card-title">
                 <div>
                     <h2>发布新测试任务</h2>
-                    <p>先上传测评集建立场景，再按场景上传模型结果图。</p>
+                    <p>先上传测评集建立场景，再按场景上传模型结果媒体。</p>
                 </div>
             </div>
             <div class="publish-grid">
                 <div class="upload-section">
                     <h3>上传新测评集</h3>
-                    <p>T2I 需要 prompt txt；TI2I 需要 prompt txt 和参考图 zip，并检查图片名是否和 prompt 中的图片名前缀一致。</p>
+                    <p>T2I / T2V 需要 prompt txt；TI2I / TI2V 还需要参考图 zip，并检查媒体 ID 是否和 prompt、参考图一致。</p>
                     <form id="dataset-form" class="upload-form">
                         <div class="upload-row dataset-upload-primary">
                             <div class="input-group">
@@ -854,7 +854,7 @@
             <div class="card-title">
                 <div>
                     <h2>下载测评集</h2>
-                    <p>T2I 下载 prompt TXT；TI2I 可选择同时打包参考图为 ZIP。</p>
+                    <p>T2I / T2V 下载 prompt TXT；TI2I / TI2V 可选择同时打包参考图为 ZIP。</p>
                 </div>
             </div>
             <div class="dataset-download-grid">

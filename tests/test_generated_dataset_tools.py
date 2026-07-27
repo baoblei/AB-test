@@ -171,6 +171,20 @@ class GeneratedDatasetToolTests(unittest.TestCase):
 
         self.assertEqual(validate_dataset(self.root, manifest), [])
 
+    def test_image_fixture_validator_ignores_other_task_families(self):
+        manifest = self.build_valid_fixture()
+        video_prompt = self.root / "prompt/T2V/motion_basics.txt"
+        video_prompt.parent.mkdir(parents=True)
+        video_prompt.write_text("motion_01\tA moving subject.\n", encoding="utf-8")
+        video_result = self.root / "results/T2V/model/motion_basics/motion_01.mp4"
+        video_result.parent.mkdir(parents=True)
+        video_result.write_bytes(b"video")
+        video_reference = self.root / "ref_images/TI2V/image_animation/animation_01.png"
+        video_reference.parent.mkdir(parents=True)
+        video_reference.write_bytes(b"reference")
+
+        self.assertEqual(validate_dataset(self.root, manifest), [])
+
     def test_validator_reports_missing_result_by_relative_path(self):
         manifest = self.build_valid_fixture()
         missing = self.root / "results/T2I/test_Atlas_default/portrait_anatomy/portrait_01.jpg"

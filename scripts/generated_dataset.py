@@ -209,7 +209,9 @@ def _validate_prompt_contract(
     errors: list[str],
 ) -> None:
     prompt_tree_root = prompt_root / "prompt"
-    actual_prompt_files = _all_files(prompt_tree_root)
+    actual_prompt_files = _all_files_excluding_task_dirs(
+        prompt_tree_root, {"T2V", "TI2V"}
+    )
     expected_prompt_files_by_task = {
         task: {
             prompt_tree_root / task / f"{scene}.txt"
@@ -330,6 +332,14 @@ def _all_files(root: Path) -> set[Path]:
     return {path for path in root.rglob("*") if path.is_file()} if root.is_dir() else set()
 
 
+def _all_files_excluding_task_dirs(root: Path, excluded_tasks: set[str]) -> set[Path]:
+    return {
+        path
+        for path in _all_files(root)
+        if path.relative_to(root).parts[0] not in excluded_tasks
+    }
+
+
 def _validate_image(path: Path, relative_path: str, contract: tuple[str, str, tuple[int, int]], errors: list[str]) -> None:
     expected_format, expected_mode, expected_size = contract
     try:
@@ -390,10 +400,11 @@ def validate_dataset(
         for sample_id in sample_ids
     }
     expected_images = expected_results | expected_references
+    actual_media_paths = _all_files_excluding_task_dirs(
+        repo_root / "results", {"T2V", "TI2V"}
+    ) | _all_files_excluding_task_dirs(repo_root / "ref_images", {"TI2V"})
     actual_images = {
-        _relative(path, repo_root)
-        for data_root in (repo_root / "results", repo_root / "ref_images")
-        for path in _all_files(data_root)
+        _relative(path, repo_root) for path in actual_media_paths
     }
     for relative_path in sorted(expected_images - actual_images):
         errors.append(f"missing {relative_path}")
