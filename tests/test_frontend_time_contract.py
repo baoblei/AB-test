@@ -62,7 +62,7 @@ let state = {
     worker: "worker", taskType: "T2I", scene: "scene", v1: "model-a", v2: "model-b",
     currentTask: null, config: {}, overallOnly: false
 };
-let currentVotes = { overall: "tie" };
+let currentVotes = { overall: "tie_good" };
 let timerInterval = null;
 let startTime = null;
 let badCaseSelections = { left: new Set(), right: new Set() };

@@ -53,15 +53,15 @@ console.log(JSON.stringify({{ clicked }}));
         return json.loads(result.stdout)
 
     def test_shortcut_uses_first_unselected_dimension(self):
-        for key, choice in (("1", "left"), ("2", "tie"), ("3", "right")):
+        for key, choice in (("1", "left"), ("2", "tie_bad"), ("3", "tie_good"), ("4", "right")):
             with self.subTest(key=key):
                 result = self.run_shortcut(selected={"overall": "left"}, key=key)
                 self.assertEqual(result["clicked"], [f"opt-aesthetic-{choice}"])
 
     def test_shortcut_does_not_overwrite_when_all_dimensions_are_selected(self):
         result = self.run_shortcut(
-            selected={"overall": "left", "aesthetic": "tie", "logic": "right"},
-            key="3",
+            selected={"overall": "left", "aesthetic": "tie_bad", "logic": "right"},
+            key="4",
         )
         self.assertEqual(result["clicked"], [])
 

@@ -924,15 +924,16 @@
         <div class="panel eval-card">
             <div class="eval-header">
                 <div class="eyebrow">Evaluation</div>
-                <p id="eval-desc">完成所有维度后提交。快捷键仍支持 `1 / 2 / 3 / Enter`。</p>
+                <p id="eval-desc">完成所有维度后提交。快捷键仍支持 `1 / 2 / 3 / 4 / Enter`。</p>
             </div>
             <table>
                 <thead>
                     <tr>
                         <th style="width:170px;">评价维度</th>
-                        <th>A 更好</th>
-                        <th>平局 / 难分伯仲</th>
-                        <th>B 更好</th>
+                        <th>A 好</th>
+                        <th>一样差</th>
+                        <th>一样好</th>
+                        <th>B 好</th>
                     </tr>
                 </thead>
                 <tbody id="eval-body"></tbody>
@@ -941,7 +942,7 @@
                 <button class="submit-btn" id="submit-task" onclick="submitVote()">提交并加载下一组</button>
                 <button class="skip-btn" id="skip-task" onclick="skipTask()">跳过此任务</button>
             </div>
-            <div class="shortcut-hint">快捷键：1 / 2 / 3 逐维打分，Enter 提交</div>
+            <div class="shortcut-hint">快捷键：1 / 2 / 3 / 4 逐维打分，Enter 提交</div>
         </div>
     </div>
 
@@ -1201,7 +1202,9 @@
         }
 
         function getActiveEvalDims() {
-            return state.overallOnly ? [{ key: "overall", label: "整体" }] : state.config.eval_dims;
+            return state.overallOnly
+                ? [{ key: "overall", label: "整体" }]
+                : [{ key: "overall", label: "整体" }, ...state.config.eval_dims];
         }
 
         function handleEvalModeChange() {
@@ -1369,21 +1372,24 @@
             const dims = getActiveEvalDims();
             currentVotes = {};
             const body = document.getElementById("eval-body");
-            body.innerHTML = dims.map((item) => `
+            const choices = [
+                ["left", "A 好"],
+                ["tie_bad", "一样差"],
+                ["tie_good", "一样好"],
+                ["right", "B 好"]
+            ];
+            body.innerHTML = dims.map(item => `
                 <tr>
                     <td class="dim-name">${item.label}</td>
-                    <td class="radio-cell">
-                        <input type="radio" name="${item.key}" id="opt-${item.key}-left" onchange="handleVote('${item.key}', 'left')">
-                        <label class="radio-label" for="opt-${item.key}-left"><span class="radio-dot"></span><span>A 更好</span></label>
-                    </td>
-                    <td class="radio-cell">
-                        <input type="radio" name="${item.key}" id="opt-${item.key}-tie" onchange="handleVote('${item.key}', 'tie')">
-                        <label class="radio-label" for="opt-${item.key}-tie"><span class="radio-dot"></span><span>平局</span></label>
-                    </td>
-                    <td class="radio-cell">
-                        <input type="radio" name="${item.key}" id="opt-${item.key}-right" onchange="handleVote('${item.key}', 'right')">
-                        <label class="radio-label" for="opt-${item.key}-right"><span class="radio-dot"></span><span>B 更好</span></label>
-                    </td>
+                    ${choices.map(([value, label]) => `
+                        <td class="radio-cell">
+                            <input type="radio" name="${item.key}" id="opt-${item.key}-${value}"
+                                   onchange="handleVote('${item.key}', '${value}')">
+                            <label class="radio-label" for="opt-${item.key}-${value}">
+                                <span class="radio-dot"></span><span>${label}</span>
+                            </label>
+                        </td>
+                    `).join("")}
                 </tr>
             `).join("");
         }
@@ -1549,13 +1555,14 @@
             const task = state.currentTask;
             const cards = [];
             const panes = [];
+            cards.push(renderImageCard("left", "候选图 A", task.left_img, true));
+            panes.push({ id: "left", label: "候选图 A" });
             if (state.config.show_ref) {
                 cards.push(renderImageCard("reference", "参考图", task.ref_img, true));
                 panes.push({ id: "reference", label: "参考图" });
             }
-            cards.push(renderImageCard("left", "候选图 A", task.left_img, true));
             cards.push(renderImageCard("right", "候选图 B", task.right_img, true));
-            panes.push({ id: "left", label: "候选图 A" }, { id: "right", label: "候选图 B" });
+            panes.push({ id: "right", label: "候选图 B" });
             const grid = document.getElementById("compare-grid");
             grid.className = `compare-grid ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
             grid.innerHTML = cards.join("") + renderInlineCompareControls("main", panes);
@@ -1895,10 +1902,10 @@
             releasePreviewPointers("lightbox");
             const generation = beginPreviewRender("lightbox");
             const panes = [];
+            panes.push({ side: "left", label: "候选图 A", src: state.currentTask.left_img });
             if (state.config.show_ref && state.currentTask.ref_img) {
                 panes.push({ side: "reference", label: "参考图", src: state.currentTask.ref_img });
             }
-            panes.push({ side: "left", label: "候选图 A", src: state.currentTask.left_img });
             panes.push({ side: "right", label: "候选图 B", src: state.currentTask.right_img });
             const grid = document.getElementById("lightbox-grid");
             grid.className = `lightbox-grid preview-viewport ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
@@ -2552,8 +2559,9 @@
             const dims = state.config ? getActiveEvalDims() : [];
             if (!dims.length) return;
             const shortcutChoice = event.key === "1" ? "left"
-                : event.key === "2" ? "tie"
-                : event.key === "3" ? "right"
+                : event.key === "2" ? "tie_bad"
+                : event.key === "3" ? "tie_good"
+                : event.key === "4" ? "right"
                 : null;
             if (shortcutChoice) {
                 const current = firstUnselectedDimension(dims);

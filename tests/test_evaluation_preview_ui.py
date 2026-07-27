@@ -70,8 +70,8 @@ console.log(JSON.stringify({
         { id: "right", label: "候选图 B" }
     ]),
     three: buildHoldComparePairs([
-        { id: "reference", label: "参考图" },
         { id: "left", label: "候选图 A" },
+        { id: "reference", label: "参考图" },
         { id: "right", label: "候选图 B" }
     ])
 }));
@@ -100,49 +100,49 @@ console.log(JSON.stringify({
                 ],
                 "three": [
                     {
-                        "sourceId": "left",
-                        "targetId": "reference",
-                        "label": "候选图 A 覆盖参考图",
+                        "sourceId": "reference",
+                        "targetId": "left",
+                        "label": "参考图 覆盖候选图 A",
                         "slot": "left-upper",
                         "kind": "adjacent",
                         "symbol": "←",
                     },
                     {
-                        "sourceId": "reference",
-                        "targetId": "left",
-                        "label": "参考图 覆盖候选图 A",
+                        "sourceId": "left",
+                        "targetId": "reference",
+                        "label": "候选图 A 覆盖参考图",
                         "slot": "left-middle",
                         "kind": "adjacent",
                         "symbol": "→",
                     },
                     {
                         "sourceId": "right",
-                        "targetId": "reference",
-                        "label": "候选图 B 覆盖参考图",
+                        "targetId": "left",
+                        "label": "候选图 B 覆盖候选图 A",
                         "slot": "left-lower",
                         "kind": "folded",
                         "symbol": "└←",
                     },
                     {
                         "sourceId": "right",
-                        "targetId": "left",
-                        "label": "候选图 B 覆盖候选图 A",
+                        "targetId": "reference",
+                        "label": "候选图 B 覆盖参考图",
                         "slot": "right-upper",
                         "kind": "adjacent",
                         "symbol": "←",
                     },
                     {
-                        "sourceId": "left",
+                        "sourceId": "reference",
                         "targetId": "right",
-                        "label": "候选图 A 覆盖候选图 B",
+                        "label": "参考图 覆盖候选图 B",
                         "slot": "right-middle",
                         "kind": "adjacent",
                         "symbol": "→",
                     },
                     {
-                        "sourceId": "reference",
+                        "sourceId": "left",
                         "targetId": "right",
-                        "label": "参考图 覆盖候选图 B",
+                        "label": "候选图 A 覆盖候选图 B",
                         "slot": "right-lower",
                         "kind": "folded",
                         "symbol": "→┘",
@@ -160,8 +160,8 @@ console.log(JSON.stringify({
         script = f"""
 {source}
 console.log(renderInlineCompareControls("main", [
-    {{ id: "reference", label: "参考图" }},
     {{ id: "left", label: "候选图 A" }},
+    {{ id: "reference", label: "参考图" }},
     {{ id: "right", label: "候选图 B" }}
 ]));
 """
