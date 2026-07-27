@@ -1,0 +1,3 @@
+animation_01	Animate the coral circle gliding across the scene while preserving its appearance.
+animation_02	Animate the cyan diamond orbiting the central light without changing the image style.
+animation_03	Animate the three golden bars bouncing rhythmically with consistent colors and details.

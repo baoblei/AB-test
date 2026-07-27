@@ -1,6 +1,6 @@
 # MLLM A/B 盲测评测平台
 
-一个面向图像生成模型对比评测的 Web 平台，支持 `T2I` 和 `TI2I` 两类任务，提供盲测评测终端、坏例标注、统计看板、个人中心、管理后台，以及结果数据上传与导出能力。
+一个面向图像/视频生成模型对比评测的 Web 平台，支持 `T2I`、`TI2I`、`T2V` 和 `TI2V` 四类任务，提供盲测评测终端、坏例标注、统计看板、个人中心、管理后台，以及结果数据上传与导出能力。
 
 当前实现基于：
 
@@ -10,17 +10,23 @@
 
 ## 功能概览
 
-- 支持两类任务：
+- 支持四类任务：
   - `T2I`：文生图
   - `TI2I`：图像编辑
+  - `T2V`：文生视频
+  - `TI2V`：图生视频
 - 盲测评测：
   - 左右候选图随机展示
   - `TI2I` 额外展示参考图
+  - `TI2V` 展示静态参考图和两侧候选视频
   - 支持逐张评测、跳过、断点续评
   - 支持只进行整体评价的快速评测模式
+  - 视频支持自定义维度多选、透明底部播放控件，以及按侧边栏“同步”按钮联动播放、暂停和进度拖动
 - 多维度评测：
   - `T2I`：美学、合理性、一致性
   - `TI2I`：美学、合理性、一致性、保真度
+  - `T2V`：整体、文本一致性、运动合理性、动态度、物理规律与常识、画面细节与美感
+  - `TI2V`：在 T2V 维度上增加图像一致性
 - 严重坏例记录：
   - 按类别展开具体标签
   - 支持一张图多标签记录
@@ -30,6 +36,7 @@
   - 按评测人统计
   - 坏例占比与坏例详情筛选
   - 明细预览与对比查看
+  - 视频明细和坏例列表只加载首帧，打开高清预览时才加载原视频
 - 用户与管理：
   - 注册、登录、退出
   - 三级角色权限：超级管理员、管理员、评测员
@@ -38,16 +45,16 @@
 - 数据管理：
   - 上传模型结果 zip
   - 上传编辑任务参考图 zip
-  - 看板按筛选导出 Excel 或图片归档 ZIP
+  - 看板按筛选导出 Excel 或图片/视频归档 ZIP（视频归档保留原始媒体并附首帧）
   - 保留 JSON / CSV 旧版导出接口
   - 旧版 `results/<version>/<scene>` 数据迁移到 `results/T2I/<version>/<scene>`
 
 ### 下载测评集
 
 - 看板一次选择并下载一个测评集。
-- T2I 和未选择参考图的 TI2I 直接下载场景 Prompt TXT。
-- TI2I 可勾选“包含参考图”；勾选后下载 ZIP，包内包含场景 TXT 和 `ref_images/`。
-- TI2I 的“包含参考图”默认不勾选。
+- T2I/T2V 和未选择参考图的 TI2I/TI2V 直接下载场景 Prompt TXT。
+- TI2I/TI2V 可勾选“包含参考图”；勾选后下载 ZIP，包内包含场景 TXT 和 `ref_images/`。
+- “包含参考图”默认不勾选。
 - 下载前会校验 Prompt 与参考图 ID 是否完整对应；不完整时拒绝生成 ZIP。
 
 ## 页面说明
@@ -58,9 +65,11 @@
 - `/profile`：个人中心
 - `/admin`：管理后台
 
-### 图片预览工具
+### 图片与视频预览工具
 
 评测页和高清预览支持默认同步的 Ref/A/B 缩放与平移、适应窗口/宽度/高度、1:1、局部放大镜、背景切换和复位。滚轮或触屏双指缩放，拖动平移，空格可临时进入平移模式，`+`/`-` 调整缩放，`Esc` 关闭高清预览；工具栏可折叠，并内置快捷键帮助。
+
+视频的播放/暂停、时间和进度控件位于画面底部并在鼠标离开时隐藏。侧边栏“同步”开启后，两侧视频的播放、暂停和进度拖动保持同步；关闭后各自独立控制。放大镜和按住对照等逐帧工具只能在视频暂停时使用。
 
 ## 目录结构
 
@@ -86,7 +95,8 @@ ab_test/
 ├── requirements.txt
 ├── README.md
 ├── scripts/
-│   └── migrate_legacy_results_to_t2i.py
+│   ├── migrate_legacy_results_to_t2i.py
+│   └── generate_mock_video_dataset.py
 ├── templates/
 │   ├── index.html
 │   ├── dashboard.html
@@ -96,17 +106,27 @@ ab_test/
 ├── results/
 │   ├── T2I/
 │   │   └── <version>/<scene>/<image>
-│   └── TI2I/
-│       └── <version>/<scene>/<image>
+│   ├── TI2I/
+│   │   └── <version>/<scene>/<image>
+│   ├── T2V/
+│   │   └── <version>/<scene>/<video>
+│   └── TI2V/
+│       └── <version>/<scene>/<video>
 ├── prompt/
 │   ├── T2I/
 │   │   └── <scene>.txt
-│   └── TI2I/
+│   ├── TI2I/
+│   │   └── <scene>.txt
+│   ├── T2V/
+│   │   └── <scene>.txt
+│   └── TI2V/
 │       └── <scene>.txt
 └── ref_images/
     ├── T2I/
     │   └── <scene>/<image>
-    └── TI2I/
+    ├── TI2I/
+    │   └── <scene>/<image>
+    └── TI2V/
         └── <scene>/<image>
 ```
 
@@ -114,9 +134,11 @@ ab_test/
 
 - `results/T2I` 保存文生图模型输出
 - `results/TI2I` 保存编辑模型输出
-- `prompt/T2I`、`prompt/TI2I` 分别保存对应任务的 prompt
-- `ref_images/TI2I` 保存编辑任务参考图
+- `results/T2V`、`results/TI2V` 保存文生视频和图生视频模型输出，仅接受 `.mp4`、`.webm`
+- `prompt/T2I`、`prompt/TI2I`、`prompt/T2V`、`prompt/TI2V` 分别保存对应任务的 prompt
+- `ref_images/TI2I`、`ref_images/TI2V` 保存带参考图任务的静态参考图
 - 仓库自带的示例数据也按任务拆分：T2I 使用 `test_Atlas_default`、`test_Beacon_default`、`test_Cipher_default` 三个模型和 `portrait_anatomy`、`spatial_composition`、`text_product` 三个场景；TI2I 使用 `test_Mosaic_default`、`test_Prism_default` 两个模型和 `appearance_edit`、`background_style`、`object_edit` 三个场景。TI2I prompt ID 与对应场景的 `ref_images/TI2I/<scene>` 严格一一对应。
+- 视频 mock 数据包含 T2V 的 `test_Nova_default` / `test_Orbit_default` 和 TI2V 的 `test_Frame_default` / `test_Flow_default`；每个模型各有 3 段 640×360、12 fps、4 秒、H.264/yuv420p 静音 MP4。
 - 模型结果目录统一采用 `<class>_<model>_<version>`。例如 `test_Atlas_default` 在界面中拆分为 `class=test`、`model=Atlas`、`version=default`；三个字段自身均不能包含下划线。
 - `ref_images/T2I` 当前不是必须目录，但系统已预留
 - `main.py` 只保留 FastAPI 应用、路由和页面入口
@@ -158,7 +180,21 @@ results/TI2I/
 
 `test_Mosaic_default`、`test_Prism_default` 每个模型目录都包含上述三个完整场景。
 
-### 3. Prompt 文件
+### 3. T2V / TI2V 结果目录
+
+```text
+results/T2V/
+├── test_Nova_default/motion_basics/motion_01.mp4 ... motion_03.mp4
+└── test_Orbit_default/motion_basics/motion_01.mp4 ... motion_03.mp4
+
+results/TI2V/
+├── test_Frame_default/image_animation/animation_01.mp4 ... animation_03.mp4
+└── test_Flow_default/image_animation/animation_01.mp4 ... animation_03.mp4
+```
+
+视频结果 ZIP 允许 `.mp4`、`.webm`，同一模型对和场景的文件 stem 必须与 Prompt ID 一一对应。仓库 mock 使用兼容性更好的 H.264 MP4；运行 `python3 scripts/generate_mock_video_dataset.py` 可重新生成，运行时加 `--check` 可只检查素材是否齐全。
+
+### 4. Prompt 文件
 
 Prompt 文件按场景存储，一个场景一个 `.txt` 文件。
 
@@ -178,13 +214,13 @@ portrait_02    这里是 portrait_02 对应的 prompt
 
 要求：
 
-- 第一列为图片文件名去掉扩展名后的 key
+- 第一列为图片或视频文件名去掉扩展名后的 key
 - 第二列为 prompt 文本
 - 使用制表符 `\t` 分隔
 
-例如图片是 `portrait_01.jpg`，系统会用 `portrait_01` 去匹配 prompt。
+例如图片是 `portrait_01.jpg`、视频是 `motion_01.mp4`，系统会分别用 `portrait_01`、`motion_01` 去匹配 prompt。
 
-### 4. TI2I 参考图目录
+### 5. TI2I / TI2V 参考图目录
 
 ```text
 ref_images/TI2I/
@@ -193,7 +229,7 @@ ref_images/TI2I/
     └── object_edit_02.jpg
 ```
 
-参考图文件名需要和结果图文件名一致，这样评测页和看板才能正确关联展示。
+TI2I 参考图文件名需要和结果图文件名一致。TI2V 参考图与结果视频的 stem 必须一致，例如 `animation_01.png` 对应 `animation_01.mp4`；扩展名无需相同。
 
 ## 评测维度与坏例标签
 
@@ -209,6 +245,22 @@ ref_images/TI2I/
 - 合理性
 - 一致性
 - 保真度
+
+### T2V 评测维度
+
+- 整体
+- 文本一致性
+- 运动合理性
+- 动态度
+- 物理规律与常识
+- 画面细节与美感
+
+### TI2V 评测维度
+
+- T2V 的全部六个维度
+- 图像一致性
+
+视频任务在创建评测时多选维度，至少选择一项，默认全选。维度集合按“用户 + 任务类型 + 排序后的模型对 + 场景”保存：再次进入时集合相同则续评；新集合是旧集合的严格超集时，经确认后清空该范围旧结果并按新集合重评；新集合是子集或与旧集合互有增减时禁止开始，避免已经评过的数据被部分覆盖。
 
 ### T2I 坏例标签
 
@@ -237,7 +289,7 @@ ref_images/TI2I/
 pip install -r requirements.txt
 ```
 
-该命令会安装 Excel 导出所需的 `openpyxl`；不要只安装 Web 服务依赖后再单独运行导出。
+该命令会安装 Excel 导出所需的 `openpyxl`，以及视频首帧提取和 mock 生成所需的 `imageio-ffmpeg`；不要只安装 Web 服务依赖后再单独运行导出或视频功能。
 
 ### 2. 启动服务
 
@@ -303,7 +355,7 @@ python main.py
 1. 登录管理员账号
 2. 打开看板页查看整体对战结果
 3. 如需新增场景，先上传测评集
-4. 按已上传的场景下拉选择并上传模型结果图 zip
+4. 按已上传的场景下拉选择并上传模型结果图片/视频 zip
 5. 在管理后台查看用户、活跃情况和操作日志
 
 ## 上传规则
@@ -317,10 +369,10 @@ python main.py
 
 表单字段：
 
-- `task_type`：`T2I` 或 `TI2I`
+- `task_type`：`T2I`、`TI2I`、`T2V` 或 `TI2V`
 - `scene`：场景名
 - `prompt_file`：prompt txt 文件
-- `ref_file`：参考图 zip，仅 `TI2I` 必填
+- `ref_file`：参考图 zip，`TI2I`、`TI2V` 必填
 
 Prompt 格式：
 
@@ -333,7 +385,7 @@ Prompt 格式：
 - 每行必须使用 tab 分隔图片名和 prompt
 - 图片名不能带路径和扩展名
 - 图片名不能重复
-- `TI2I` 参考图 zip 中每个图片文件名去掉扩展名后，必须与 prompt 中的图片 ID 完全一致
+- `TI2I`、`TI2V` 参考图 zip 中每个图片文件名去掉扩展名后，必须与 prompt 中的图片 ID 完全一致
 
 ### 上传/补传参考图
 
@@ -344,11 +396,11 @@ Prompt 格式：
 
 该接口使用 `multipart/form-data`，表单字段为：
 
-- `task_type`：`T2I` 或 `TI2I`
+- `task_type`：`T2I`、`TI2I`、`T2V` 或 `TI2V`
 - `scene`：场景名
 - `file`：参考图 zip
 
-该入口用于在已有场景中独立补传参考图；与 `POST /api/upload_dataset` 在上传 `TI2I` 测评集时通过 `ref_file` 一体上传参考图，是两种上传入口。
+该入口用于在已有场景中独立补传参考图；与 `POST /api/upload_dataset` 在上传 `TI2I` / `TI2V` 测评集时通过 `ref_file` 一体上传参考图，是两种上传入口。
 
 参考图 zip 会按目标 `task_type` 和 `scene` 的现有 prompt 校验：
 
@@ -360,24 +412,24 @@ Prompt 格式：
 
 上传成功后，该场景现有的参考图目录会被本次 zip 内容替换。
 
-### 上传新结果图
+### 上传新结果图片/视频
 
 接口对应功能：
 
-- 看板页 `发布新测试任务 / 上传新结果图`
+- 看板页 `发布新测试任务 / 上传新结果`
 - 后端接口：`POST /api/upload`
 
 表单字段：
 
-- `task_type`：`T2I` 或 `TI2I`
+- `task_type`：`T2I`、`TI2I`、`T2V` 或 `TI2V`
 - `class_name`：模型类别，不允许包含下划线
 - `model_name`：模型名称，不允许包含下划线
 - `version`：模型版本，不允许包含下划线
 - `scene`：从已上传测评集场景中下拉选择
-- `file`：结果图 zip
-- `auto_rename`：是否允许按 prompt 图片名前缀自动格式化文件名
+- `file`：结果 zip；图片任务允许 PNG/JPG/JPEG/WebP，视频任务允许 MP4/WebM
+- `auto_rename`：是否允许按 prompt ID 前缀自动格式化文件名
 
-上传时会检查结果图 zip 的图片名：
+上传时会检查结果 zip 的媒体文件名：
 
 - 图片名和 prompt 图片名完全一致时直接上传
 - 图片名前缀能唯一匹配 prompt 图片名时，前端会弹窗提示可自动格式化名称
@@ -388,7 +440,7 @@ Prompt 格式：
 
 看板支持：
 
-- 按任务类型切换 `T2I / TI2I`
+- 按任务类型切换 `T2I / TI2I / T2V / TI2V`
 - 查看模型对战汇总
 - 按维度查看 A 胜 / 一样差 / 一样好 / B 胜占比
 - 同时显示百分比和具体数量
@@ -398,13 +450,13 @@ Prompt 格式：
 - 按坏例类别或具体标签筛选
 - 在坏例明细中显示 prompt
 - 查看按评测人拆分的统计
-- 预览图片对比结果
+- 预览图片或视频对比结果；视频列表只显示首帧，高清弹窗才加载原视频
 
 预览逻辑：
 
 - 对战明细：显示对比图
 - 坏例明细：显示单图预览
-- `TI2I` 明细中可带参考图一起查看
+- `TI2I`、`TI2V` 明细中可带参考图一起查看
 
 ### 评测结果导出
 
@@ -412,14 +464,14 @@ Prompt 格式：
 
 - 场景、明细维度、评测人（均可多选）
 - 开始和结束时间（北京时间）
-- 评测模式：多维度评测、整体快速评测
+- 图片任务评测模式：多维度评测、整体快速评测；视频任务固定为创建时选择的自定义维度模式
 - 判定结果：A 胜、一样差、一样好、B 胜
 - 坏例范围：全部、存在坏例、不存在坏例；“存在坏例”表示 A 或 B 至少一侧有坏例标签
-- 导出图片、包含坏例字段、包含评测耗时
+- 导出图片/视频、包含坏例字段、包含评测耗时
 
-筛选变化会调用预览并显示 Overall、每个维度和去重图片的预计数量；没有 Overall 记录时不能下载。场景、评测人、时间、评测模式和坏例范围筛选评测记录；判定结果在 Overall 中按 `overall` 判定，在场景明细中按各维度独立判定。整体快速评测仅进入 Overall；场景明细只包含多维度评测且至少一个已选维度命中的记录。
+筛选变化会调用预览并显示 Overall、每个维度和去重媒体的预计数量；只要至少一个已选维度存在记录即可下载。场景、评测人、时间、评测模式和坏例范围筛选评测记录；判定结果在 Overall 中按 `overall` 判定，在场景明细中按各维度独立判定。整体快速评测仅进入 Overall；视频自定义维度按每条记录中的非空评分统计，不会补造未选择维度的结果。
 
-每次导出固定生成 `Overall` 汇总 Sheet，其余 Sheet 按场景生成。Overall 将 A 胜、一样差、一样好、B 胜的数量和比率分列展示；A/B 抑制比仍将两类“一样”合并计算。场景明细使用两级横向表头：第一行合并显示样本信息、各评测维度、图片信息和坏例信息，第二行显示具体字段；每个维度使用单列结果，A/B 胜保留模型名称，“一样差”和“一样好”显示为对应中文标签。`T2I` 可选美学、合理性、一致性 3 个维度，`TI2I` 还可选保真度。明细字段包括图片名、Prompt、评测人、评测时间（北京时间）、评测模式、A/B 图片路径和图片状态；启用相应选项后还包括坏例标签/类别和评测耗时。`TI2I` 明细额外包含参考图路径和状态。
+每次导出固定生成 `Overall` 汇总 Sheet，其余 Sheet 按场景生成。Overall 将 A 胜、一样差、一样好、B 胜的数量和比率分列展示；A/B 抑制比仍将两类“一样”合并计算。场景明细使用两级横向表头，视频任务显示“视频信息”、A/B 视频路径/状态与首帧路径；TI2V 另含参考图路径和状态。每个维度使用单列结果，A/B 胜保留模型名称，“一样差”和“一样好”显示为对应中文标签，未评维度保持为空。
 
 - 不勾选“导出图片”时，下载 `.xlsx` 文件。
 - 勾选“导出图片”时，下载 ZIP，内部结构严格为：
@@ -428,6 +480,15 @@ Prompt 格式：
 评测结果.xlsx
 images/<scene>/<model>/<filename>
 images/<scene>/ref/<filename>  # 仅 TI2I
+```
+
+视频任务勾选“导出视频”时，ZIP 保留原始 MP4/WebM，并附带 WebP 首帧：
+
+```text
+评测结果.xlsx
+videos/<scene>/<model>/<filename>
+posters/<scene>/<model>/<stem>.webp
+images/<scene>/ref/<image>  # 仅 TI2V
 ```
 
 `TI2I` 打包图片时，`ref` 是参考图保留目录，模型版本名大小写无关不能为 `ref`；不勾选“导出图片”的纯 XLSX 导出不受此限制。

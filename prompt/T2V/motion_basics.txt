@@ -1,0 +1,3 @@
+motion_01	A coral sphere rolls smoothly from left to right on a navy track.
+motion_02	A cyan satellite follows a clean circular orbit around a glowing center.
+motion_03	Three golden blocks bounce in sequence while keeping their shape.
