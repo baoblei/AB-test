@@ -2352,13 +2352,11 @@
                 const imageGroup = createNode("div");
                 Object.assign(imageGroup.style, { display: "flex", gap: "6px" });
                 const preview = buildPreviewPayload(row, v1, v2);
-                const imageSources = [];
+                const imageSources = [detailThumbnailUrl("result", v1, scene, row.filename)];
                 if (state.taskType === "TI2I" && row.ref_img) {
                     imageSources.push(detailThumbnailUrl("ref", "", scene, row.filename));
                 }
-                [v1, v2].forEach(model => {
-                    imageSources.push(detailThumbnailUrl("result", model, scene, row.filename));
-                });
+                imageSources.push(detailThumbnailUrl("result", v2, scene, row.filename));
                 imageSources.forEach(src => {
                     const image = createNode("img", "preview-img");
                     image.src = src;
@@ -2659,14 +2657,13 @@
                     showCompare: false
                 };
             }
-            const panes = [];
+            const panes = [
+                { id: "left", src: payload.a, label: payload.labels[0] }
+            ];
             if (payload.mode === "TI2I" && payload.ref) {
                 panes.push({ id: "reference", src: payload.ref, label: "参考图" });
             }
-            panes.push(
-                { id: "left", src: payload.a, label: payload.labels[0] },
-                { id: "right", src: payload.b, label: payload.labels[1] }
-            );
+            panes.push({ id: "right", src: payload.b, label: payload.labels[1] });
             return {
                 kind: panes.length === 3 ? "ti2i" : "t2i",
                 panes,
@@ -2688,8 +2685,8 @@
                     { sourceId: panes[1].id, targetId: panes[0].id, label: `${panes[1].label} 覆盖${panes[0].label}`, slot: "left-upper", kind: "adjacent", symbol: "←" },
                     { sourceId: panes[0].id, targetId: panes[1].id, label: `${panes[0].label} 覆盖${panes[1].label}`, slot: "left-middle", kind: "adjacent", symbol: "→" },
                     { sourceId: panes[2].id, targetId: panes[0].id, label: `${panes[2].label} 覆盖${panes[0].label}`, slot: "left-lower", kind: "folded", symbol: "└←" },
-                    { sourceId: panes[2].id, targetId: panes[1].id, label: `${panes[2].label} 覆盖${panes[1].label}`, slot: "right-upper", kind: "adjacent", symbol: "←" },
-                    { sourceId: panes[1].id, targetId: panes[2].id, label: `${panes[1].label} 覆盖${panes[2].label}`, slot: "right-middle", kind: "adjacent", symbol: "→" },
+                    { sourceId: panes[1].id, targetId: panes[2].id, label: `${panes[1].label} 覆盖${panes[2].label}`, slot: "right-upper", kind: "adjacent", symbol: "→" },
+                    { sourceId: panes[2].id, targetId: panes[1].id, label: `${panes[2].label} 覆盖${panes[1].label}`, slot: "right-middle", kind: "adjacent", symbol: "←" },
                     { sourceId: panes[0].id, targetId: panes[2].id, label: `${panes[0].label} 覆盖${panes[2].label}`, slot: "right-lower", kind: "folded", symbol: "→┘" }
                 ];
             }

@@ -558,7 +558,7 @@ console.log(JSON.stringify({{
 """
         result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
         self.assertEqual([p["id"] for p in result["t2i"]["panes"]], ["left", "right"])
-        self.assertEqual([p["id"] for p in result["ti2i"]["panes"]], ["reference", "left", "right"])
+        self.assertEqual([p["id"] for p in result["ti2i"]["panes"]], ["left", "reference", "right"])
         self.assertEqual([p["id"] for p in result["missingRef"]["panes"]], ["left", "right"])
         self.assertTrue(result["t2i"]["showSync"])
         self.assertTrue(result["t2i"]["showCompare"])
@@ -765,7 +765,7 @@ console.log(JSON.stringify({{
 {source}
 console.log(JSON.stringify({{
     two: buildHoldComparePairs([{{ id: "left", label: "A" }}, {{ id: "right", label: "B" }}]),
-    three: buildHoldComparePairs([{{ id: "reference", label: "参考图" }}, {{ id: "left", label: "A" }}, {{ id: "right", label: "B" }}])
+    three: buildHoldComparePairs([{{ id: "left", label: "A" }}, {{ id: "reference", label: "参考图" }}, {{ id: "right", label: "B" }}])
 }}));
 """
         result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
@@ -776,12 +776,12 @@ console.log(JSON.stringify({{
         self.assertEqual(
             [(item["sourceId"], item["targetId"], item["slot"], item["kind"], item["symbol"]) for item in result["three"]],
             [
-                ("left", "reference", "left-upper", "adjacent", "←"),
-                ("reference", "left", "left-middle", "adjacent", "→"),
-                ("right", "reference", "left-lower", "folded", "└←"),
-                ("right", "left", "right-upper", "adjacent", "←"),
-                ("left", "right", "right-middle", "adjacent", "→"),
-                ("reference", "right", "right-lower", "folded", "→┘"),
+                ("reference", "left", "left-upper", "adjacent", "←"),
+                ("left", "reference", "left-middle", "adjacent", "→"),
+                ("right", "left", "left-lower", "folded", "└←"),
+                ("reference", "right", "right-upper", "adjacent", "→"),
+                ("right", "reference", "right-middle", "adjacent", "←"),
+                ("left", "right", "right-lower", "folded", "→┘"),
             ],
         )
 
@@ -816,8 +816,8 @@ const document = {{
     createElement: tag => ({{ tag, dataset: {{}}, attributes: {{}}, textContent: "", innerHTML: "", setAttribute(name, value) {{ this.attributes[name] = value; }} }})
 }};
 const controls = renderInlineCompareControls("overlay", [
-    {{ id: "reference", label: "参考图" }},
     {{ id: "left", label: "A" }},
+    {{ id: "reference", label: "参考图" }},
     {{ id: "right", label: "B" }}
 ]);
 console.log(JSON.stringify(controls.children.map(button => ({{
@@ -834,15 +834,15 @@ console.log(JSON.stringify(controls.children.map(button => ({{
         self.assertEqual(
             [(button["slot"], button["source"], button["target"], button["kind"]) for button in buttons],
             [
-                ("left-upper", "left", "reference", "adjacent"),
-                ("left-middle", "reference", "left", "adjacent"),
-                ("left-lower", "right", "reference", "folded"),
-                ("right-upper", "right", "left", "adjacent"),
-                ("right-middle", "left", "right", "adjacent"),
-                ("right-lower", "reference", "right", "folded"),
+                ("left-upper", "reference", "left", "adjacent"),
+                ("left-middle", "left", "reference", "adjacent"),
+                ("left-lower", "right", "left", "folded"),
+                ("right-upper", "reference", "right", "adjacent"),
+                ("right-middle", "right", "reference", "adjacent"),
+                ("right-lower", "left", "right", "folded"),
             ],
         )
-        self.assertEqual([button["text"] for button in buttons[:2] + buttons[3:5]], ["←", "→", "←", "→"])
+        self.assertEqual([button["text"] for button in buttons[:2] + buttons[3:5]], ["←", "→", "→", "←"])
         self.assertEqual([button["html"].count("<polyline") for button in buttons], [0, 0, 2, 0, 0, 2])
         self.assertIn('points="21,18 12,5 4,18"', buttons[2]["html"])
         self.assertIn('points="3,18 12,5 20,18"', buttons[5]["html"])

@@ -112,9 +112,12 @@ console.log(JSON.stringify({{
 
     def test_detail_list_loads_thumbnails_but_click_preview_keeps_originals(self):
         renderer = self.function_source("renderDetailTable")
-        for marker in (
+        ordered_thumbnail_sources = (
+            'detailThumbnailUrl("result", v1, scene, row.filename)',
             'detailThumbnailUrl("ref", "", scene, row.filename)',
-            'detailThumbnailUrl("result", model, scene, row.filename)',
+            'detailThumbnailUrl("result", v2, scene, row.filename)',
+        )
+        for marker in ordered_thumbnail_sources + (
             'image.loading = "lazy"',
             'image.decoding = "async"',
             'image.fetchPriority = "low"',
@@ -123,6 +126,10 @@ console.log(JSON.stringify({{
             'image.addEventListener("click", () => openPreview(preview))',
         ):
             self.assertIn(marker, renderer)
+        self.assertEqual(
+            [renderer.index(marker) for marker in ordered_thumbnail_sources],
+            sorted(renderer.index(marker) for marker in ordered_thumbnail_sources),
+        )
         self.assertNotIn("image.src = imageUrl(", renderer)
         self.assertNotIn("image.src = row.ref_img", renderer)
 
