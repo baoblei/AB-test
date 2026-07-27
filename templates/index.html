@@ -130,6 +130,27 @@
             font-size: 0.78rem;
             margin-top: 2px;
         }
+        .video-dimension-selector {
+            display: grid;
+            gap: 8px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(12, 123, 108, 0.08);
+            border: 1px solid rgba(12, 123, 108, 0.14);
+        }
+        .video-dimension-options {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .video-dimension-chip {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: var(--text);
+            font-size: 0.82rem;
+        }
+        .video-dimension-chip input { accent-color: var(--accent); }
         .main {
             max-width: 1920px;
             margin: 0 auto;
@@ -433,6 +454,49 @@
             object-fit: contain;
             cursor: zoom-in;
         }
+        .video-shell video {
+            width: 100%;
+            max-height: 700px;
+            object-fit: contain;
+            background: #171310;
+        }
+        .video-controls {
+            position: absolute;
+            z-index: 14;
+            left: 12px;
+            right: 12px;
+            bottom: 12px;
+            display: grid;
+            grid-template-columns: auto auto minmax(80px, 1fr);
+            align-items: center;
+            gap: 9px;
+            padding: 8px 10px;
+            border-radius: 12px;
+            color: white;
+            background: rgba(23, 19, 16, 0.62);
+            backdrop-filter: blur(8px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.18s ease;
+        }
+        .video-shell:hover .video-controls,
+        .video-shell:focus-within .video-controls,
+        .video-shell.controls-visible .video-controls {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .video-play-button {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            color: white;
+            background: rgba(255, 255, 255, 0.16);
+            cursor: pointer;
+        }
+        .video-time { min-width: 76px; font: 0.72rem ui-monospace, monospace; }
+        .video-seek { width: 100%; accent-color: var(--primary); cursor: pointer; }
         .image-loading, .preview-loading, .image-error-message {
             position: absolute;
             inset: 0;
@@ -445,6 +509,7 @@
         }
         .image-error-message { display: none; color: #b91c1c; }
         [data-preview-group-pane].image-error img,
+        [data-preview-group-pane].image-error video,
         [data-preview-group-pane]:not(.loading) .image-loading,
         [data-preview-group-pane]:not(.loading) .preview-loading { display: none; }
         [data-preview-group-pane].image-error .image-error-message { display: flex; }
@@ -842,7 +907,7 @@
     <div class="navbar">
         <div>
             <div class="brand-title">A/B Blind Evaluation</div>
-            <div class="brand-subtitle">支持 T2I 与 TI2I 两种评测流</div>
+            <div class="brand-subtitle">支持 T2I、TI2I、T2V 与 TI2V 评测流</div>
         </div>
         <div class="navbar-right">
             <span class="timer" id="timer">00:00</span>
@@ -879,13 +944,17 @@
                     <div class="label">评测场景</div>
                     <select id="scene-select" onchange="handleSceneChange()"></select>
                 </div>
-                <label class="quick-mode">
+                <label class="quick-mode" id="overall-mode-selector">
                     <input type="checkbox" id="overall-only-checkbox" onchange="handleEvalModeChange()">
                     <div>
                         <strong>只进行整体评价</strong>
                         <span>勾选后每张图只评“整体”一项，用于快速完成评测。</span>
                     </div>
                 </label>
+                <div class="video-dimension-selector hidden" id="video-dimension-selector">
+                    <div class="label">选择评测维度（至少一项）</div>
+                    <div class="video-dimension-options" id="video-dimension-options"></div>
+                </div>
                 <div class="resolution-warning" id="resolution-warning"></div>
                 <button class="submit-btn" onclick="startTest()">进入评测</button>
             </div>
@@ -966,6 +1035,7 @@
         </div>
     </div>
 
+    <script src="/static/video_media.js"></script>
     <script>
         class PreviewController {
             constructor() { this.groups = new Map(); }
@@ -1123,7 +1193,8 @@
             currentTask: null,
             config: null,
             availableVersions: [],
-            overallOnly: false
+            overallOnly: false,
+            selectedDimensions: []
         };
         let currentVotes = {};
         let timerInterval = null;
@@ -1138,6 +1209,8 @@
         let resolutionRequestId = 0;
         let loadGeneration = 0;
         let taskActionInFlight = false;
+        let mainVideoPlayback = null;
+        let lightboxVideoPlayback = null;
         const previewPointerCleanups = new Map();
 
         async function api(url, options) {
@@ -1197,11 +1270,19 @@
             warning.classList.remove("show");
         }
 
+        function isVideoTask() {
+            return state.config?.media_type === "video";
+        }
+
         function getEvalMode() {
-            return state.overallOnly ? "overall" : "full";
+            return isVideoTask() ? "selected" : (state.overallOnly ? "overall" : "full");
         }
 
         function getActiveEvalDims() {
+            if (isVideoTask()) {
+                const selected = new Set(state.selectedDimensions);
+                return state.config.dashboard_dims.filter(dimension => selected.has(dimension.key));
+            }
             return state.overallOnly
                 ? [{ key: "overall", label: "整体" }]
                 : [{ key: "overall", label: "整体" }, ...state.config.eval_dims];
@@ -1212,6 +1293,33 @@
             document.getElementById("eval-desc").textContent = state.overallOnly
                 ? "当前为整体快速评测模式，每张图只需要完成整体判断。"
                 : (state.taskType === "TI2I" ? "TI2I 增加保真度维度，同时支持参考图对照。" : "T2I 使用美学、合理性、一致性三个维度。");
+        }
+
+        function renderVideoDimensionSelector() {
+            const selector = document.getElementById("video-dimension-selector");
+            const overallSelector = document.getElementById("overall-mode-selector");
+            const videoTask = state.config.media_type === "video";
+            selector.classList.toggle("hidden", !videoTask);
+            overallSelector.classList.toggle("hidden", videoTask);
+            if (!videoTask) return;
+            const selected = new Set(state.selectedDimensions);
+            document.getElementById("video-dimension-options").innerHTML = state.config.dashboard_dims.map(dimension => `
+                <label class="video-dimension-chip">
+                    <input type="checkbox" value="${dimension.key}" ${selected.has(dimension.key) ? "checked" : ""}
+                           onchange="handleVideoDimensionChange()">
+                    <span>${dimension.label}</span>
+                </label>
+            `).join("");
+        }
+
+        function handleVideoDimensionChange() {
+            const checked = new Set(
+                [...document.querySelectorAll('#video-dimension-options input:checked')]
+                    .map(input => input.value)
+            );
+            state.selectedDimensions = state.config.dashboard_dims
+                .map(dimension => dimension.key)
+                .filter(key => checked.has(key));
         }
 
         async function handleTaskTypeChange() {
@@ -1225,13 +1333,21 @@
             document.getElementById("scene-select").innerHTML = '<option value="">选择场景...</option>';
             document.getElementById("overall-only-checkbox").checked = false;
             state.overallOnly = false;
+            state.selectedDimensions = state.config.media_type === "video"
+                ? state.config.dashboard_dims.map(dimension => dimension.key)
+                : [];
+            renderVideoDimensionSelector();
             clearResolutionHints();
-            document.getElementById("task-hint").textContent = state.taskType === "TI2I"
-                ? "参考图 + A/B 编辑结果会同步展示，点击图片可打开高清三图预览。"
-                : "点击图片可打开高清对比预览。";
-            document.getElementById("eval-desc").textContent = state.taskType === "TI2I"
-                ? "TI2I 增加保真度维度，同时支持参考图对照。"
-                : "T2I 使用美学、合理性、一致性三个维度。";
+            document.getElementById("task-hint").textContent = isVideoTask()
+                ? "视频底部可播放、暂停和拖动进度；侧边栏同步按钮控制 A/B 联动，暂停后可使用画面对照工具。"
+                : (state.taskType === "TI2I"
+                    ? "参考图 + A/B 编辑结果会同步展示，点击图片可打开高清三图预览。"
+                    : "点击图片可打开高清对比预览。");
+            document.getElementById("eval-desc").textContent = isVideoTask()
+                ? "仅需完成创建评测时选择的视频维度。"
+                : (state.taskType === "TI2I"
+                    ? "TI2I 增加保真度维度，同时支持参考图对照。"
+                    : "T2I 使用美学、合理性、一致性三个维度。");
         }
 
         function handleVersionInput() {
@@ -1261,6 +1377,7 @@
             const v1 = getSelectedVersion("v1-input");
             const v2 = getSelectedVersion("v2-input");
             if (!scene || !v1 || !v2 || !isKnownVersion(v1) || !isKnownVersion(v2)) return;
+            if (isVideoTask()) return;
             await updateResolutionStats(v1, v2, scene);
         }
 
@@ -1325,6 +1442,10 @@
                 alert("请输入并选择已有的模型版本");
                 return;
             }
+            if (isVideoTask() && !state.selectedDimensions.length) {
+                alert("请至少选择一个评测维度");
+                return;
+            }
             const canStart = await prepareEvalSession(false);
             if (!canStart) return;
             document.getElementById("setup-overlay").classList.add("hidden");
@@ -1345,7 +1466,7 @@
             }
         }
 
-        async function prepareEvalSession(overwriteOverall) {
+        async function prepareEvalSession(overwriteOverall, overwriteDimensions = false) {
             const params = new URLSearchParams({
                 task_type: state.taskType,
                 worker: state.worker,
@@ -1355,11 +1476,20 @@
                 eval_mode: getEvalMode(),
                 overwrite_overall: overwriteOverall ? "true" : "false"
             });
+            if (isVideoTask()) {
+                params.set("dimensions", JSON.stringify(state.selectedDimensions));
+                params.set("overwrite_dimensions", overwriteDimensions ? "true" : "false");
+            }
             try {
                 const result = await api(`/api/start_eval_session?${params.toString()}`, { method: "POST" }).then(r => r.json());
                 if (result.status === "requires_confirmation") {
-                    if (!confirm(result.message || "继续会覆盖之前的整体评测结果，是否继续？")) return false;
-                    return prepareEvalSession(true);
+                    if (!confirm(result.message || "继续会覆盖之前的评测结果，是否继续？")) return false;
+                    return isVideoTask()
+                        ? prepareEvalSession(false, true)
+                        : prepareEvalSession(true, false);
+                }
+                if (isVideoTask() && result.selected_dimensions) {
+                    state.selectedDimensions = result.selected_dimensions;
                 }
                 return true;
             } catch (err) {
@@ -1549,34 +1679,54 @@
 
         function renderCompareGrid() {
             if (typeof stopHoldCompare === "function") stopHoldCompare();
+            if (typeof mainVideoPlayback !== "undefined" && mainVideoPlayback) {
+                mainVideoPlayback.destroy();
+                mainVideoPlayback = null;
+            }
             releasePreviewPointers("main");
             hidePreviewMagnifiers();
             const generation = beginPreviewRender("main");
             const task = state.currentTask;
             const cards = [];
             const panes = [];
-            cards.push(renderImageCard("left", "候选图 A", task.left_img, true));
+            const videoTask = typeof isVideoTask === "function" && isVideoTask();
+            if (videoTask) cards.push(renderMediaCard("left", "候选视频 A", task.left_img, task.v_left, true));
+            else cards.push(renderImageCard("left", "候选图 A", task.left_img, true));
             panes.push({ id: "left", label: "候选图 A" });
             if (state.config.show_ref) {
                 cards.push(renderImageCard("reference", "参考图", task.ref_img, true));
                 panes.push({ id: "reference", label: "参考图" });
             }
-            cards.push(renderImageCard("right", "候选图 B", task.right_img, true));
+            if (videoTask) cards.push(renderMediaCard("right", "候选视频 B", task.right_img, task.v_right, true));
+            else cards.push(renderImageCard("right", "候选图 B", task.right_img, true));
             panes.push({ id: "right", label: "候选图 B" });
             const grid = document.getElementById("compare-grid");
-            grid.className = `compare-grid ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
+            grid.className = `compare-grid ${state.config.show_ref ? "ti2i" : "t2i"}`;
             grid.innerHTML = cards.join("") + renderInlineCompareControls("main", panes);
             document.getElementById("main-preview-toolbar").innerHTML = renderPreviewToolbar("main", false);
             createPreviewGroup("main");
+            if (videoTask) {
+                mainVideoPlayback = new VideoPlaybackGroup({ sync: true });
+                ["left", "right"].forEach(key => {
+                    const video = grid.querySelector(`[data-video-id="main-${key}"]`);
+                    if (video) mainVideoPlayback.add(key, video);
+                });
+                bindVideoControls("main", mainVideoPlayback);
+            }
             grid.querySelectorAll('[data-preview-group-pane="main"]').forEach(container => {
                 const key = container.dataset.previewPane;
-                const img = container.querySelector("img");
+                const img = container.querySelector("img, video");
                 const register = () => {
                     if (!isPreviewGenerationCurrent("main", generation)) return;
                     registerPreviewPane("main", key, container, img);
                 };
-                addPreviewImageListener("main", img, "load", register, { once: true });
-                if (img.complete && img.naturalWidth) register();
+                const videoElement = typeof isVideoElement === "function" && isVideoElement(img);
+                const loadEvent = videoElement ? "loadedmetadata" : "load";
+                addPreviewImageListener("main", img, loadEvent, register, { once: true });
+                const ready = typeof isMediaReady === "function"
+                    ? isMediaReady(img)
+                    : Boolean(img.complete && img.naturalWidth);
+                if (ready) register();
             });
             refreshPreviewGroup("main");
             bindPreviewGroup("main", generation);
@@ -1601,6 +1751,106 @@
                     </div>
                 </div>
             `;
+        }
+
+        function resultThumbnailUrl(model, scene, filename) {
+            const params = new URLSearchParams({
+                kind: "result",
+                task_type: state.taskType,
+                model,
+                scene,
+                filename
+            });
+            return `/api/image-thumbnail?${params.toString()}`;
+        }
+
+        function renderMediaCard(key, title, src, model, previewable, groupId = "main") {
+            const poster = resultThumbnailUrl(model, state.currentTask.scene, state.currentTask.filename);
+            return `
+                <div class="panel image-card">
+                    <div class="image-head">
+                        <strong>${title}</strong>
+                        ${previewable ? `<button class="preview-btn" onclick="openLightbox('${key}')">高清预览</button>` : ""}
+                    </div>
+                    <div class="image-shell video-shell loading" data-preview-group-pane="${groupId}" data-preview-pane="${key}" data-preview-label="${title}">
+                        <video data-video-id="${groupId}-${key}" src="${src || ""}" poster="${poster}" preload="metadata" playsinline muted></video>
+                        <span class="image-loading">视频加载中…</span>
+                        <span class="image-error-message">视频加载失败</span>
+                        <span class="magnifier-layer"></span>
+                        <div class="video-controls">
+                            <button type="button" class="video-play-button" data-video-action="play" data-video-key="${key}" aria-label="播放">▶</button>
+                            <span class="video-time" data-video-time="${key}">00:00 / 00:00</span>
+                            <input class="video-seek" type="range" min="0" max="1000" value="0" step="1" data-video-seek="${key}" aria-label="视频进度">
+                        </div>
+                    </div>
+                    <div class="image-meta">
+                        <span>${title}</span>
+                        <span>${state.currentTask ? state.currentTask.filename : "-"}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function isVideoElement(media) {
+            return Boolean(media && String(media.tagName || "").toUpperCase() === "VIDEO");
+        }
+
+        function isMediaReady(media) {
+            return isVideoElement(media)
+                ? media.readyState >= 1 && media.videoWidth > 0
+                : Boolean(media && media.complete && media.naturalWidth);
+        }
+
+        function formatVideoTime(seconds) {
+            const safe = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
+            const minutes = String(Math.floor(safe / 60)).padStart(2, "0");
+            const remainder = String(Math.floor(safe % 60)).padStart(2, "0");
+            return `${minutes}:${remainder}`;
+        }
+
+        function bindVideoControls(groupId, playback) {
+            const root = groupId === "main"
+                ? document.getElementById("compare-grid")
+                : document.getElementById("lightbox-grid");
+            if (!root || !playback) return;
+            root.querySelectorAll("[data-video-action=\"play\"]").forEach(button => {
+                const key = button.dataset.videoKey;
+                const video = root.querySelector(`[data-video-id="${groupId}-${key}"]`);
+                if (!video) return;
+                button.addEventListener("click", event => {
+                    event.stopPropagation();
+                    if (video.paused) playback.play(key);
+                    else playback.pause(key);
+                });
+                const render = () => {
+                    button.textContent = video.paused ? "▶" : "❚❚";
+                    button.setAttribute("aria-label", video.paused ? "播放" : "暂停");
+                    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+                    const time = root.querySelector(`[data-video-time="${key}"]`);
+                    const seek = root.querySelector(`[data-video-seek="${key}"]`);
+                    if (time) time.textContent = `${formatVideoTime(video.currentTime)} / ${formatVideoTime(duration)}`;
+                    if (seek) seek.value = duration > 0 ? String(Math.round(video.currentTime / duration * 1000)) : "0";
+                };
+                ["play", "pause", "timeupdate", "durationchange", "loadedmetadata"].forEach(eventName => {
+                    video.addEventListener(eventName, render);
+                });
+                video.addEventListener("play", () => {
+                    if (typeof stopHoldCompare === "function") stopHoldCompare();
+                    if (typeof setPreviewMagnifierState === "function") {
+                        setPreviewMagnifierState(groupId, false);
+                    }
+                    if (typeof hidePreviewMagnifiers === "function") hidePreviewMagnifiers(groupId);
+                });
+                render();
+            });
+            root.querySelectorAll("[data-video-seek]").forEach(input => {
+                input.addEventListener("input", event => {
+                    const key = event.currentTarget.dataset.videoSeek;
+                    const video = root.querySelector(`[data-video-id="${groupId}-${key}"]`);
+                    const duration = video && Number.isFinite(video.duration) ? video.duration : 0;
+                    playback.seek(key, duration * Number(event.currentTarget.value) / 1000);
+                });
+            });
         }
 
         function renderBadcasePanels() {
@@ -1691,26 +1941,39 @@
 
         function waitForTaskImages(timeoutMs = 15000) {
             const images = [...document.querySelectorAll("#compare-grid img")];
-            return Promise.all(images.map(img => new Promise(resolve => {
-                if (img.complete) {
+            const videos = [...document.querySelectorAll("#compare-grid video")];
+            const mediaItems = [
+                ...images.map(media => ({ media, ready: () => media.complete, event: "load" })),
+                ...videos.map(media => ({ media, ready: () => media.readyState >= 2, event: "loadeddata" }))
+            ];
+            return Promise.all(mediaItems.map(({ media, ready, event }) => new Promise(resolve => {
+                if (ready()) {
                     resolve();
                     return;
                 }
                 const finish = () => {
                     clearTimeout(timeout);
-                    img.removeEventListener("load", finish);
-                    img.removeEventListener("error", finish);
+                    media.removeEventListener(event, finish);
+                    media.removeEventListener("error", finish);
                     resolve();
                 };
                 const timeout = setTimeout(finish, timeoutMs);
-                img.addEventListener("load", finish, { once: true });
-                img.addEventListener("error", finish, { once: true });
+                media.addEventListener(event, finish, { once: true });
+                media.addEventListener("error", finish, { once: true });
             })));
         }
 
         async function loadNextTask() {
             const generation = ++loadGeneration;
             stopTimer();
+            if (typeof mainVideoPlayback !== "undefined" && mainVideoPlayback) {
+                mainVideoPlayback.destroy();
+                mainVideoPlayback = null;
+            }
+            if (typeof lightboxVideoPlayback !== "undefined" && lightboxVideoPlayback) {
+                lightboxVideoPlayback.destroy();
+                lightboxVideoPlayback = null;
+            }
             if (typeof resetPreviewGroup === "function") {
                 resetPreviewGroup("main");
                 resetPreviewGroup("lightbox");
@@ -1734,6 +1997,10 @@
                     return task;
                 }
                 state.currentTask = task;
+                if (typeof isVideoTask === "function" && isVideoTask() && Array.isArray(task.selected_dimensions)) {
+                    state.selectedDimensions = task.selected_dimensions;
+                    if (typeof renderEvalTable === "function") renderEvalTable();
+                }
                 renderCompareGrid();
                 renderLightbox();
                 currentVotes = {};
@@ -1869,6 +2136,15 @@
                 logic: currentVotes.logic || null,
                 consistency: currentVotes.consistency || null,
                 fidelity: currentVotes.fidelity || null,
+                text_consistency: currentVotes.text_consistency || null,
+                motion_reasonableness: currentVotes.motion_reasonableness || null,
+                dynamism: currentVotes.dynamism || null,
+                physical_plausibility: currentVotes.physical_plausibility || null,
+                visual_quality: currentVotes.visual_quality || null,
+                image_consistency: currentVotes.image_consistency || null,
+                selected_dimensions: typeof isVideoTask === "function" && isVideoTask()
+                    ? [...state.selectedDimensions]
+                    : [],
                 bad_case_left: [...badCaseSelections.left],
                 bad_case_right: [...badCaseSelections.right],
                 duration_seconds: action.duration_seconds
@@ -1898,25 +2174,41 @@
 
         function renderLightbox() {
             if (typeof stopHoldCompare === "function") stopHoldCompare();
+            if (typeof lightboxVideoPlayback !== "undefined" && lightboxVideoPlayback) {
+                lightboxVideoPlayback.destroy();
+                lightboxVideoPlayback = null;
+            }
             syncLightboxPrompt();
             releasePreviewPointers("lightbox");
             const generation = beginPreviewRender("lightbox");
             const panes = [];
-            panes.push({ side: "left", label: "候选图 A", src: state.currentTask.left_img });
+            const videoTask = typeof isVideoTask === "function" && isVideoTask();
+            panes.push({ side: "left", label: videoTask ? "候选视频 A" : "候选图 A", src: state.currentTask.left_img, model: state.currentTask.v_left, mediaType: videoTask ? "video" : "image" });
             if (state.config.show_ref && state.currentTask.ref_img) {
-                panes.push({ side: "reference", label: "参考图", src: state.currentTask.ref_img });
+                panes.push({ side: "reference", label: "参考图", src: state.currentTask.ref_img, mediaType: "image" });
             }
-            panes.push({ side: "right", label: "候选图 B", src: state.currentTask.right_img });
+            panes.push({ side: "right", label: videoTask ? "候选视频 B" : "候选图 B", src: state.currentTask.right_img, model: state.currentTask.v_right, mediaType: videoTask ? "video" : "image" });
             const grid = document.getElementById("lightbox-grid");
-            grid.className = `lightbox-grid preview-viewport ${state.taskType === "TI2I" ? "ti2i" : "t2i"}`;
-            grid.innerHTML = panes.map(item => renderLightboxPane(item.side, item.label, item.src)).join("")
+            grid.className = `lightbox-grid preview-viewport ${state.config.show_ref ? "ti2i" : "t2i"}`;
+            grid.innerHTML = panes.map(item => item.mediaType === "video"
+                ? renderLightboxMediaPane(item.side, item.label, item.src, item.model)
+                : renderLightboxPane(item.side, item.label, item.src)).join("")
                 + renderInlineCompareControls("lightbox", panes.map(item => ({ id: item.side, label: item.label })));
             document.getElementById("lightbox-preview-toolbar").innerHTML = renderPreviewToolbar("lightbox", true);
             createPreviewGroup("lightbox");
+            if (videoTask) {
+                lightboxVideoPlayback = new VideoPlaybackGroup({ sync: true });
+                ["left", "right"].forEach(key => {
+                    const video = grid.querySelector(`[data-video-id="lightbox-${key}"]`);
+                    if (video) lightboxVideoPlayback.add(key, video);
+                });
+                bindVideoControls("lightbox", lightboxVideoPlayback);
+            }
             activeLightboxPane = "";
             panes.forEach(item => {
-                const side = item.side;
-                if (document.getElementById(`lightbox-img-${side}`) && !activeLightboxPane) activeLightboxPane = side;
+                const paneExists = document.getElementById(`lightbox-img-${item.side}`)
+                    || (typeof grid.querySelector === "function" && grid.querySelector(`[data-preview-pane="${item.side}"]`));
+                if (paneExists && !activeLightboxPane) activeLightboxPane = item.side;
             });
             bindLightboxControls();
             bindPreviewGroup("lightbox", generation);
@@ -1931,6 +2223,26 @@
                         <span class="preview-loading">图片加载中…</span>
                         <span class="image-error-message">图片加载失败</span>
                         <span class="magnifier-layer"></span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderLightboxMediaPane(side, label, src, model) {
+            const poster = resultThumbnailUrl(model, state.currentTask.scene, state.currentTask.filename);
+            return `
+                <div class="pane">
+                    <div class="pane-head">${label}</div>
+                    <div class="pane-body video-shell loading" data-pane="${side}" data-preview-group-pane="lightbox" data-preview-pane="${side}" data-preview-label="${label}">
+                        <video id="lightbox-video-${side}" data-video-id="lightbox-${side}" src="${src || ""}" poster="${poster}" preload="metadata" playsinline muted></video>
+                        <span class="preview-loading">视频加载中…</span>
+                        <span class="image-error-message">视频加载失败</span>
+                        <span class="magnifier-layer"></span>
+                        <div class="video-controls">
+                            <button type="button" class="video-play-button" data-video-action="play" data-video-key="${side}" aria-label="播放">▶</button>
+                            <span class="video-time" data-video-time="${side}">00:00 / 00:00</span>
+                            <input class="video-seek" type="range" min="0" max="1000" value="0" step="1" data-video-seek="${side}" aria-label="视频进度">
+                        </div>
                     </div>
                 </div>
             `;
@@ -1970,6 +2282,9 @@
             activeLightboxPane = sourcePaneId || activeLightboxPane;
             previewController.groups.get("lightbox").activePaneId = activeLightboxPane;
             previewController.setSync("lightbox", true);
+            if (typeof lightboxVideoPlayback !== "undefined" && lightboxVideoPlayback) {
+                lightboxVideoPlayback.setSync(true);
+            }
             updatePreviewToggleControl("lightbox", "sync", true, "同步开", "同步关");
             setPreviewMagnifierState("lightbox", false);
             setPreviewMode("lightbox", "fit");
@@ -1993,6 +2308,9 @@
 
         function closeLightbox() {
             if (typeof stopHoldCompare === "function") stopHoldCompare();
+            if (typeof lightboxVideoPlayback !== "undefined" && lightboxVideoPlayback) {
+                lightboxVideoPlayback.pause("left");
+            }
             setPreviewMagnifierState("lightbox", false);
             hidePreviewMagnifiers();
             if (typeof setPreviewSpacePan === "function") setPreviewSpacePan(false);
@@ -2026,13 +2344,15 @@
         }
 
         function registerPreviewPane(groupId, paneId, container, img) {
-            if (!img || !img.naturalWidth) return;
+            const naturalWidth = img && (img.videoWidth || img.naturalWidth);
+            const naturalHeight = img && (img.videoHeight || img.naturalHeight);
+            if (!img || !naturalWidth) return;
             previewController.addPane(groupId, paneId, {
                 measure: () => {
                     const geometry = measurePreviewGeometry(container, img, 0);
                     return {
-                        naturalWidth: img.naturalWidth,
-                        naturalHeight: img.naturalHeight,
+                        naturalWidth: img.videoWidth || img.naturalWidth,
+                        naturalHeight: img.videoHeight || img.naturalHeight,
                         viewportWidth: geometry.content.width,
                         viewportHeight: geometry.content.height
                     };
@@ -2041,24 +2361,27 @@
                 apply: paneState => {
                     img.style.maxWidth = "none";
                     img.style.maxHeight = "none";
-                    img.style.width = `${img.naturalWidth * paneState.scale}px`;
-                    img.style.height = `${img.naturalHeight * paneState.scale}px`;
-                    img.style.transform = `translate(${(0.5 - paneState.normalizedCenter.x) * img.naturalWidth * paneState.scale}px, ${(0.5 - paneState.normalizedCenter.y) * img.naturalHeight * paneState.scale}px)`;
+                    img.style.width = `${naturalWidth * paneState.scale}px`;
+                    img.style.height = `${naturalHeight * paneState.scale}px`;
+                    img.style.transform = `translate(${(0.5 - paneState.normalizedCenter.x) * naturalWidth * paneState.scale}px, ${(0.5 - paneState.normalizedCenter.y) * naturalHeight * paneState.scale}px)`;
                     updatePreviewInfo(groupId, paneId);
                 }
             });
         }
 
         function applyTransform(side) {
-            const img = document.getElementById(`lightbox-img-${side}`);
+            const img = document.getElementById(`lightbox-img-${side}`)
+                || document.getElementById(`lightbox-video-${side}`);
             const container = img && img.closest(".pane-body");
-            if (!img || !container || !img.naturalWidth) return;
+            const naturalWidth = img && (img.videoWidth || img.naturalWidth);
+            const naturalHeight = img && (img.videoHeight || img.naturalHeight);
+            if (!img || !container || !naturalWidth) return;
             previewController.addPane("lightbox", side, {
                 measure: () => {
                     const geometry = measurePreviewGeometry(container, img, 18);
                     return {
-                        naturalWidth: img.naturalWidth,
-                        naturalHeight: img.naturalHeight,
+                        naturalWidth: img.videoWidth || img.naturalWidth,
+                        naturalHeight: img.videoHeight || img.naturalHeight,
                         viewportWidth: geometry.content.width,
                         viewportHeight: geometry.content.height
                     };
@@ -2066,8 +2389,8 @@
                 geometry: () => measurePreviewGeometry(container, img, 18),
                 apply: paneState => {
                     const geometry = measurePreviewGeometry(container, img, 18);
-                    const width = img.naturalWidth * paneState.scale;
-                    const height = img.naturalHeight * paneState.scale;
+                    const width = naturalWidth * paneState.scale;
+                    const height = naturalHeight * paneState.scale;
                     const x = Math.max(-width + 1, Math.min(geometry.content.width - 1, geometry.content.width / 2 - paneState.normalizedCenter.x * width));
                     const y = Math.max(-height + 1, Math.min(geometry.content.height - 1, geometry.content.height / 2 - paneState.normalizedCenter.y * height));
                     img.style.width = `${width}px`;
@@ -2121,6 +2444,7 @@
         }
 
         function bindPreviewImageState(groupId, paneId, container, img, generation) {
+            const videoElement = String(img?.tagName || "").toUpperCase() === "VIDEO";
             const loaded = () => {
                 if (!isPreviewGenerationCurrent(groupId, generation)) return;
                 container.classList.remove("loading");
@@ -2133,9 +2457,15 @@
                 if (pane) pane.failed = true;
                 hidePreviewMagnifiers(groupId);
             };
-            addPreviewImageListener(groupId, img, "load", loaded, { once: true });
+            if (videoElement) {
+                addPreviewImageListener(groupId, img, "loadeddata", loaded, { once: true });
+            } else {
+                addPreviewImageListener(groupId, img, "load", loaded, { once: true });
+            }
             addPreviewImageListener(groupId, img, "error", failed, { once: true });
-            if (img.complete) img.naturalWidth ? loaded() : failed();
+            if (videoElement) {
+                if (img.readyState >= 2) loaded();
+            } else if (img.complete) img.naturalWidth ? loaded() : failed();
         }
 
         function releasePreviewPointers(groupId, preserveBindings = false) {
@@ -2171,7 +2501,20 @@
         function togglePreviewMagnifier(groupId) {
             const group = previewController.groups.get(groupId);
             if (!group) return;
+            if (!canUseFrameTools(groupId)) {
+                alert("请先暂停视频，再使用放大镜功能");
+                return;
+            }
             setPreviewMagnifierState(groupId, !group.magnifier);
+        }
+
+        function getVideoPlaybackGroup(groupId) {
+            return groupId === "main" ? mainVideoPlayback : lightboxVideoPlayback;
+        }
+
+        function canUseFrameTools(groupId) {
+            const playback = getVideoPlaybackGroup(groupId);
+            return !playback || playback.canUseFrameTools();
         }
 
         function togglePreviewBackground(groupId) {
@@ -2195,6 +2538,7 @@
         function renderMagnifier(groupId, paneId, point) {
             const group = previewController.groups.get(groupId);
             if (!group || !group.magnifier) return false;
+            if (typeof canUseFrameTools === "function" && !canUseFrameTools(groupId)) return false;
             hidePreviewMagnifiers(groupId);
             const sourcePane = group.panes.get(paneId);
             if (!sourcePane || sourcePane.failed || !sourcePane.adapter.geometry) return false;
@@ -2213,9 +2557,14 @@
                 if (pane.failed || !pane.adapter.geometry) return;
                 if (targetId !== paneId && !group.sync) return;
                 const container = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${targetId}"]`);
-                const img = container && container.querySelector("img");
+                const img = container && (container.querySelector("img") || container.querySelector("video"));
                 const layer = container && container.querySelector(".magnifier-layer");
                 if (!img || !layer) return;
+                const playback = typeof getVideoPlaybackGroup === "function" ? getVideoPlaybackGroup(groupId) : null;
+                const visualSource = String(img.tagName || "").toUpperCase() === "VIDEO"
+                    ? playback?.captureFrame(targetId)
+                    : (img.currentSrc || img.src);
+                if (!visualSource) return;
                 const containerRect = container.getBoundingClientRect();
                 const geometry = pane.adapter.geometry();
                 layer.classList.remove("marker");
@@ -2230,7 +2579,7 @@
                 const layerTop = Math.max(0, Math.min(maxLayerTop, pointerY - layer.offsetHeight / 2));
                 layer.style.left = `${layerLeft}px`;
                 layer.style.top = `${layerTop}px`;
-                layer.style.backgroundImage = `url("${img.currentSrc || img.src}")`;
+                layer.style.backgroundImage = `url("${visualSource}")`;
                 layer.style.backgroundSize = `${backgroundWidth}px ${backgroundHeight}px`;
                 layer.style.backgroundPosition = `${pointerX - layerLeft - normalizedPoint.x * backgroundWidth}px ${pointerY - layerTop - normalizedPoint.y * backgroundHeight}px`;
             });
@@ -2243,22 +2592,32 @@
             stopHoldCompare();
             const group = previewController.groups.get(groupId);
             if (!group) return false;
+            if (typeof canUseFrameTools === "function" && !canUseFrameTools(groupId)) {
+                alert("请先暂停视频，再使用画面对照功能");
+                return false;
+            }
             const containers = [...document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`)];
             const sourceContainer = containers.find(container => container.dataset.previewPane === sourceId);
             const targetContainer = containers.find(container => container.dataset.previewPane === targetId);
             const sourcePane = group.panes && group.panes.get(sourceId);
             const targetPane = group.panes && group.panes.get(targetId);
             if (!sourceContainer || !targetContainer || sourcePane?.failed || targetPane?.failed) return false;
-            const sourceImage = sourceContainer.querySelector("img");
-            const targetImage = targetContainer.querySelector("img");
+            const sourceImage = sourceContainer.querySelector("img") || sourceContainer.querySelector("video");
+            const targetImage = targetContainer.querySelector("img") || targetContainer.querySelector("video");
             if (!sourceImage || !targetImage) return false;
+
+            const playback = typeof getVideoPlaybackGroup === "function" ? getVideoPlaybackGroup(groupId) : null;
+            const sourceUrl = String(sourceImage.tagName || "").toUpperCase() === "VIDEO"
+                ? playback?.captureFrame(sourceId)
+                : (sourceImage.currentSrc || sourceImage.src);
+            if (!sourceUrl) return false;
 
             const layer = document.createElement("div");
             layer.className = "hold-compare-layer";
             layer.dataset.sourcePane = sourceId;
             layer.dataset.targetPane = targetId;
             const overlayImage = document.createElement("img");
-            overlayImage.src = sourceImage.currentSrc || sourceImage.src;
+            overlayImage.src = sourceUrl;
             overlayImage.alt = sourceImage.alt || "";
             overlayImage.draggable = false;
             overlayImage.style.cssText = targetImage.style.cssText;
@@ -2368,6 +2727,10 @@
                 }
                 if (action === "sync") {
                     previewController.setSync(groupId, !group.sync);
+                    if (typeof getVideoPlaybackGroup === "function") {
+                        const playback = getVideoPlaybackGroup(groupId);
+                        if (playback) playback.setSync(group.sync);
+                    }
                     updatePreviewToggleControl(groupId, "sync", group.sync, "同步开", "同步关");
                 }
             });
@@ -2400,7 +2763,7 @@
                 let startX = 0;
                 let startY = 0;
                 let startCenter = { x: 0.5, y: 0.5 };
-                const img = container.querySelector("img");
+                const img = container.querySelector("img") || container.querySelector("video");
                 container.addEventListener("pointerenter", () => {
                     const currentGroup = previewController.groups.get(groupId);
                     if (!currentGroup) return;
@@ -2418,11 +2781,19 @@
                         applyTransform(side);
                     };
                     if (typeof addPreviewImageListener === "function") {
-                        addPreviewImageListener(groupId, img, "load", register, { once: true });
+                        if (String(img?.tagName || "").toUpperCase() === "VIDEO") {
+                            addPreviewImageListener(groupId, img, "loadedmetadata", register, { once: true });
+                        } else {
+                            addPreviewImageListener(groupId, img, "load", register, { once: true });
+                        }
                     } else {
-                        img.addEventListener("load", register, { once: true });
+                        img.addEventListener(
+                            String(img?.tagName || "").toUpperCase() === "VIDEO" ? "loadedmetadata" : "load",
+                            register,
+                            { once: true }
+                        );
                     }
-                    if (img.complete && img.naturalWidth) register();
+                    if ((img.complete && img.naturalWidth) || (img.readyState >= 1 && img.videoWidth)) register();
                 }
                 container.addEventListener("wheel", event => {
                     const pane = previewController.groups.get(groupId)?.panes.get(side);
@@ -2434,6 +2805,7 @@
                     event.preventDefault();
                 }, { passive: false });
                 container.addEventListener("pointerdown", event => {
+                    if (event.target?.closest?.(".video-controls")) return;
                     if (event.pointerType !== "touch" && event.button !== 0) return;
                     const pane = previewController.groups.get(groupId)?.panes.get(side);
                     if (!pane || pane.failed) return;

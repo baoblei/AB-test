@@ -41,6 +41,7 @@ from app_core.user_service import get_user_profile, login_user, register_user
 
 app = FastAPI(title="MLLM Multi-Dim Eval Professional")
 ensure_data_dirs()
+app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/images", StaticFiles(directory=RESULT_DIR), name="images")
 app.mount("/ref-images", StaticFiles(directory=REF_IMAGE_DIR), name="ref_images")
 
