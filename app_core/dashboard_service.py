@@ -39,11 +39,15 @@ def rows_for_dimension(rows: list[sqlite3.Row], dim: str) -> list[sqlite3.Row]:
 
 def dimension_stats(rows: list[sqlite3.Row], dim: str, v_a: str, v_b: str) -> dict:
     scoped_rows = rows_for_dimension(rows, dim)
+    tie_bad_count = sum(1 for row in scoped_rows if row[dim] == "tie_bad")
+    tie_good_count = sum(1 for row in scoped_rows if row[dim] == "tie_good")
     return {
         "total": len(scoped_rows),
         "v_a_wins": sum(1 for row in scoped_rows if row[dim] == v_a),
+        "tie_bad_count": tie_bad_count,
+        "tie_good_count": tie_good_count,
+        "tie_count": tie_bad_count + tie_good_count,
         "v_b_wins": sum(1 for row in scoped_rows if row[dim] == v_b),
-        "tie_count": sum(1 for row in scoped_rows if row[dim] == "tie"),
     }
 
 

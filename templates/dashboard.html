@@ -17,7 +17,8 @@
             --danger: #c62828;
             --green: #2e7d32;
             --blue: #1976d2;
-            --tie: #9aa7b4;
+            --tie-bad: #d97706;
+            --tie-good: #7c3aed;
             --bad: #c62828;
             --accent: #7c3aed;
             --shadow: 0 14px 36px rgba(18, 38, 63, 0.08);
@@ -175,7 +176,8 @@
             background: rgba(255,255,255,0.18);
         }
         .seg-a { background: var(--green); }
-        .seg-tie { background: var(--tie); }
+        .seg-tie-bad { background: var(--tie-bad); }
+        .seg-tie-good { background: var(--tie-good); }
         .seg-b { background: var(--blue); }
         .legend {
             margin-top: 6px;
@@ -230,7 +232,8 @@
         .pill-bad { background: rgba(198, 40, 40, 0.1); color: var(--bad); }
         .badge-a { background: rgba(46, 125, 50, 0.12); color: var(--green); }
         .badge-b { background: rgba(25, 118, 210, 0.12); color: var(--blue); }
-        .badge-tie { background: rgba(154, 167, 180, 0.14); color: #55616f; }
+        .badge-tie-bad { background: rgba(217, 119, 6, 0.12); color: var(--tie-bad); }
+        .badge-tie-good { background: rgba(124, 58, 237, 0.12); color: var(--tie-good); }
         .preview-img {
             width: 76px;
             height: 76px;
@@ -923,7 +926,8 @@
                             <option value="">全部</option>
                             <option value="a_win">A胜</option>
                             <option value="b_win">B胜</option>
-                            <option value="tie">平局</option>
+                            <option value="tie_bad">一样差</option>
+                            <option value="tie_good">一样好</option>
                         </select>
                     </div>
                     <div class="input-group" style="flex:1;">
@@ -2043,7 +2047,7 @@
                 header.append(createNode("th", "scene-name", "场景"), createNode("th", "", "样本"));
                 dims.forEach(dim => {
                     const cell = createNode("th");
-                    cell.append(createNode("span", "", dim.label), createNode("br"), createNode("small", "", "A / 平 / B"));
+                    cell.append(createNode("span", "", dim.label), createNode("br"), createNode("small", "", "A / 一样差 / 一样好 / B"));
                     header.append(cell);
                 });
                 header.append(
@@ -2074,10 +2078,11 @@
                 return box;
             }
             const aPct = (stat.v_a_wins / total * 100).toFixed(1);
-            const tiePct = (stat.tie_count / total * 100).toFixed(1);
+            const tieBadPct = (stat.tie_bad_count / total * 100).toFixed(1);
+            const tieGoodPct = (stat.tie_good_count / total * 100).toFixed(1);
             const bPct = (stat.v_b_wins / total * 100).toFixed(1);
             const track = createNode("div", "bar-track");
-            [["seg-a", aPct], ["seg-tie", tiePct], ["seg-b", bPct]].forEach(([className, width]) => {
+            [["seg-a", aPct], ["seg-tie-bad", tieBadPct], ["seg-tie-good", tieGoodPct], ["seg-b", bPct]].forEach(([className, width]) => {
                 const segment = createNode("div", className);
                 segment.style.width = `${width}%`;
                 track.append(segment);
@@ -2085,7 +2090,8 @@
             const legend = createNode("div", "legend");
             legend.append(
                 createNode("span", "", `A: ${aPct}% (${stat.v_a_wins})`),
-                createNode("span", "", `平: ${tiePct}% (${stat.tie_count})`),
+                createNode("span", "", `一样差: ${tieBadPct}% (${stat.tie_bad_count})`),
+                createNode("span", "", `一样好: ${tieGoodPct}% (${stat.tie_good_count})`),
                 createNode("span", "", `B: ${bPct}% (${stat.v_b_wins})`)
             );
             box.append(track, legend, renderSuppressionLine(stat));
@@ -2135,16 +2141,17 @@
                     cell.append(empty);
                 } else {
                     const aPct = (stat.v_a_wins / total * 100).toFixed(1);
-                    const tiePct = (stat.tie_count / total * 100).toFixed(1);
+                    const tieBadPct = (stat.tie_bad_count / total * 100).toFixed(1);
+                    const tieGoodPct = (stat.tie_good_count / total * 100).toFixed(1);
                     const bPct = (stat.v_b_wins / total * 100).toFixed(1);
                     const track = createNode("div", "bar-track");
-                    [["seg-a", aPct], ["seg-tie", tiePct], ["seg-b", bPct]].forEach(([className, width]) => {
+                    [["seg-a", aPct], ["seg-tie-bad", tieBadPct], ["seg-tie-good", tieGoodPct], ["seg-b", bPct]].forEach(([className, width]) => {
                         const segment = createNode("div", className);
                         segment.style.width = `${width}%`;
                         track.append(segment);
                     });
                     const legend = createNode("div", "legend");
-                    legend.append(createNode("span", "", `${aPct}% (${stat.v_a_wins}) / ${tiePct}% (${stat.tie_count}) / ${bPct}% (${stat.v_b_wins})`));
+                    legend.append(createNode("span", "", `A ${aPct}% (${stat.v_a_wins}) / 一样差 ${tieBadPct}% (${stat.tie_bad_count}) / 一样好 ${tieGoodPct}% (${stat.tie_good_count}) / B ${bPct}% (${stat.v_b_wins})`));
                     cell.append(track, legend, renderSuppressionLine(stat));
                 }
                 row.append(cell);
@@ -2319,7 +2326,8 @@
                 if (fileFilter && !row.filename.toLowerCase().includes(fileFilter)) return false;
                 if (resultFilter === "a_win" && row.overall !== v1) return false;
                 if (resultFilter === "b_win" && row.overall !== v2) return false;
-                if (resultFilter === "tie" && row.overall !== "tie") return false;
+                if (resultFilter === "tie_bad" && row.overall !== "tie_bad") return false;
+                if (resultFilter === "tie_good" && row.overall !== "tie_good") return false;
                 return true;
             });
             document.getElementById("detail-count").textContent = `共 ${rows.length} 条`;
@@ -2400,8 +2408,8 @@
 
         function renderResultRow(label, result, v1, v2) {
             if (!result) return null;
-            const cls = result === "tie" ? "badge-tie" : result === v1 ? "badge-a" : "badge-b";
-            const text = result === "tie" ? "平局" : result;
+            const cls = result === "tie_bad" ? "badge-tie-bad" : result === "tie_good" ? "badge-tie-good" : result === v1 ? "badge-a" : "badge-b";
+            const text = result === "tie_bad" ? "一样差" : result === "tie_good" ? "一样好" : result;
             const row = createNode("div");
             row.append(document.createTextNode(`${label}: `), createNode("span", `result-badge ${cls}`, text));
             return row;
@@ -2457,6 +2465,8 @@
                 const stat = {
                     total: rows.reduce((sum, row) => sum + (row[dim.key].total || 0), 0),
                     v_a_wins: rows.reduce((sum, row) => sum + row[dim.key].v_a_wins, 0),
+                    tie_bad_count: rows.reduce((sum, row) => sum + row[dim.key].tie_bad_count, 0),
+                    tie_good_count: rows.reduce((sum, row) => sum + row[dim.key].tie_good_count, 0),
                     tie_count: rows.reduce((sum, row) => sum + row[dim.key].tie_count, 0),
                     v_b_wins: rows.reduce((sum, row) => sum + row[dim.key].v_b_wins, 0)
                 };
@@ -2476,7 +2486,7 @@
                 const row = createNode("tr");
                 row.append(createCell(workerRow.worker), createCell(workerRow.total));
                 dims.forEach(dim => row.append(createCell(
-                    `A ${workerRow[dim.key].v_a_wins} / 平 ${workerRow[dim.key].tie_count} / B ${workerRow[dim.key].v_b_wins}`
+                    `A ${workerRow[dim.key].v_a_wins} / 一样差 ${workerRow[dim.key].tie_bad_count} / 一样好 ${workerRow[dim.key].tie_good_count} / B ${workerRow[dim.key].v_b_wins}`
                 )));
                 tbody.append(row);
             });

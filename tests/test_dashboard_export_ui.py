@@ -199,6 +199,44 @@ class DashboardExportUiTests(unittest.TestCase):
                 self.assertNotIn("innerHTML", source)
                 self.assertNotIn("onclick=", source)
 
+    def test_dashboard_summary_renders_four_segments_and_merged_suppression(self):
+        script = f"""
+            const createNode = (tag, className = "", text = "") => ({{
+                tag, className, textContent: text, children: [], style: {{}},
+                append(...children) {{ this.children.push(...children); }}
+            }});
+            {self.function_source("formatSuppressionRatio")}
+            {self.function_source("renderSuppressionLine")}
+            {self.function_source("renderSummaryBox")}
+            const box = renderSummaryBox({{ dims: {{ overall: {{
+                total: 8, v_a_wins: 2, tie_bad_count: 1, tie_good_count: 3,
+                tie_count: 4, v_b_wins: 2
+            }} }} }}, "overall", "整体");
+            const text = node => [node.textContent, ...node.children.map(child => text(child))].join(" ");
+            console.log(JSON.stringify({{
+                segments: box.children[1].children.map(node => [node.className, node.style.width]),
+                text: text(box)
+            }}));
+        """
+
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+
+        self.assertEqual(
+            result["segments"],
+            [
+                ["seg-a", "25.0%"],
+                ["seg-tie-bad", "12.5%"],
+                ["seg-tie-good", "37.5%"],
+                ["seg-b", "25.0%"],
+            ],
+        )
+        self.assertIn("A压制 1.00 (6/6)", result["text"])
+        self.assertIn("B压制 1.00 (6/6)", result["text"])
+        for name in ("renderSceneRow", "renderWorkerStats"):
+            source = self.function_source(name)
+            self.assertIn("tie_bad_count", source)
+            self.assertIn("tie_good_count", source)
+
     def test_ti2i_preview_keeps_model_labels_when_reference_image_is_missing(self):
         script = f"""
             const state = {{ taskType: "TI2I" }};

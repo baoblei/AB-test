@@ -151,6 +151,24 @@ console.log(JSON.stringify({{
         self.assertIn(", 200)", schedule)
         self.assertIn("resetDetailPage()", toggle_worker)
 
+    def test_detail_filter_and_badges_distinguish_tie_subtypes(self):
+        detail_filter = self.html.split('id="detail-result-filter"', 1)[1].split(
+            "</select>", 1
+        )[0]
+        self.assertIn('<option value="tie_bad">一样差</option>', detail_filter)
+        self.assertIn('<option value="tie_good">一样好</option>', detail_filter)
+        self.assertNotIn('<option value="tie">平局</option>', detail_filter)
+
+        table = self.function_source("renderDetailTable")
+        self.assertIn('resultFilter === "tie_bad" && row.overall !== "tie_bad"', table)
+        self.assertIn('resultFilter === "tie_good" && row.overall !== "tie_good"', table)
+
+        result_row = self.function_source("renderResultRow")
+        self.assertIn('result === "tie_bad"', result_row)
+        self.assertIn('result === "tie_good"', result_row)
+        self.assertIn("badge-tie-bad", result_row)
+        self.assertIn("badge-tie-good", result_row)
+
     def test_cleanup_releases_detail_rows_workers_and_image_nodes(self):
         source = self.function_source("cleanupDetailModal")
         result = self.run_node(
