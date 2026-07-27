@@ -31,6 +31,13 @@ def row_eval_mode(row) -> str:
     return row["eval_mode"] or "full"
 
 
+def optional_row_value(row, key: str, default=None):
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return default
+
+
 def rows_for_dimension(rows: list[sqlite3.Row], dim: str) -> list[sqlite3.Row]:
     return [row for row in rows if row[dim] is not None]
 
@@ -156,15 +163,17 @@ def detail_results(task_type: str, v1: str, v2: str, scene: str) -> list[dict]:
             "logic": row["logic"],
             "consistency": row["consistency"],
             "fidelity": row["fidelity"],
-            "text_consistency": row["text_consistency"],
-            "motion_reasonableness": row["motion_reasonableness"],
-            "dynamism": row["dynamism"],
-            "physical_plausibility": row["physical_plausibility"],
-            "visual_quality": row["visual_quality"],
-            "image_consistency": row["image_consistency"],
-            "selected_dimensions": safe_load_json_list(row["selected_dimensions"]),
+            "text_consistency": optional_row_value(row, "text_consistency"),
+            "motion_reasonableness": optional_row_value(row, "motion_reasonableness"),
+            "dynamism": optional_row_value(row, "dynamism"),
+            "physical_plausibility": optional_row_value(row, "physical_plausibility"),
+            "visual_quality": optional_row_value(row, "visual_quality"),
+            "image_consistency": optional_row_value(row, "image_consistency"),
+            "selected_dimensions": safe_load_json_list(
+                optional_row_value(row, "selected_dimensions", "[]")
+            ),
             "scores": {
-                dimension: row[dimension]
+                dimension: optional_row_value(row, dimension)
                 for dimension in config["dashboard_dims"]
             },
             "worker": row["worker"],
