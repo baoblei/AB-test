@@ -160,6 +160,9 @@
             grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 12px;
         }
+        .summary-grid.video-dimensions {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
         .summary-box {
             border-radius: 16px;
             background: rgba(255,255,255,0.12);
@@ -493,6 +496,49 @@
             -webkit-user-drag: none;
             transform-origin: center;
         }
+        .dashboard-preview-viewport video {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            max-width: none;
+            max-height: none;
+            transform-origin: center;
+            background: #0a0f15;
+        }
+        .dashboard-video-controls {
+            position: absolute;
+            z-index: 7;
+            left: 14px;
+            right: 14px;
+            bottom: 14px;
+            display: grid;
+            grid-template-columns: auto auto minmax(90px, 1fr);
+            align-items: center;
+            gap: 9px;
+            padding: 8px 10px;
+            border-radius: 12px;
+            background: rgba(5, 9, 15, 0.62);
+            backdrop-filter: blur(8px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.18s ease;
+        }
+        .dashboard-preview-viewport:hover .dashboard-video-controls,
+        .dashboard-preview-viewport:focus-within .dashboard-video-controls {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .dashboard-video-controls button {
+            width: 32px;
+            height: 32px;
+            border: 0;
+            border-radius: 50%;
+            color: white;
+            background: rgba(255,255,255,0.16);
+            cursor: pointer;
+        }
+        .dashboard-video-time { min-width: 76px; font: 0.72rem ui-monospace, monospace; }
+        .dashboard-video-seek { width: 100%; accent-color: var(--primary); }
         .dashboard-preview-viewport.preview-light { background: #f1f4f7; }
         .dashboard-preview-viewport.dragging { cursor: grabbing; }
         .dashboard-preview-loading, .dashboard-preview-error {
@@ -731,9 +777,11 @@
                         <div class="upload-row dataset-upload-primary">
                             <div class="input-group">
                                 <label>任务类型</label>
-                                <select id="dataset-task-type" onchange="syncDatasetUploadMode()">
+                                <select id="dataset-task-type" onchange="handleDatasetUploadTaskTypeChange()">
                                     <option value="T2I">T2I</option>
                                     <option value="TI2I">TI2I</option>
+                                    <option value="T2V">T2V</option>
+                                    <option value="TI2V">TI2V</option>
                                 </select>
                             </div>
                             <div class="input-group">
@@ -756,8 +804,8 @@
                     <div class="form-note">Prompt 格式：每行 `图片名\tprompt`，图片名不带扩展名。</div>
                 </div>
                 <div class="upload-section">
-                    <h3>上传新结果图</h3>
-                    <p>选择已存在场景后上传模型结果 zip。图片名会和对应 prompt 检查，不一致时阻止上传；前缀匹配时可确认后自动改名。</p>
+                    <h3 id="result-upload-title">上传新结果图</h3>
+                    <p id="result-upload-desc">选择已存在场景后上传模型结果 zip。图片名会和对应 prompt 检查，不一致时阻止上传；前缀匹配时可确认后自动改名。</p>
                     <form id="result-form" class="upload-form">
                         <div class="upload-row result-upload-primary">
                             <div class="input-group">
@@ -765,6 +813,8 @@
                                 <select id="result-task-type" onchange="handleResultTaskTypeChange()">
                                     <option value="T2I">T2I</option>
                                     <option value="TI2I">TI2I</option>
+                                    <option value="T2V">T2V</option>
+                                    <option value="TI2V">TI2V</option>
                                 </select>
                             </div>
                             <div class="input-group">
@@ -792,7 +842,7 @@
                                 <label>结果 zip</label>
                                 <input type="file" id="result-file" accept=".zip" required>
                             </div>
-                            <button class="btn btn-primary" type="submit">上传结果图</button>
+                            <button class="btn btn-primary" id="result-upload-button" type="submit">上传结果图</button>
                         </div>
                     </form>
                 </div>
@@ -813,6 +863,8 @@
                     <select id="dataset-download-task-type" onchange="handleDatasetDownloadTaskChange()">
                         <option value="T2I">T2I</option>
                         <option value="TI2I">TI2I</option>
+                        <option value="T2V">T2V</option>
+                        <option value="TI2V">TI2V</option>
                     </select>
                 </div>
                 <div class="input-group">
@@ -845,6 +897,8 @@
                     <select id="task-type-select" onchange="handleTaskTypeChange()">
                         <option value="T2I">T2I</option>
                         <option value="TI2I">TI2I</option>
+                        <option value="T2V">T2V</option>
+                        <option value="TI2V">TI2V</option>
                     </select>
                 </div>
                 <div class="input-group">
@@ -1094,6 +1148,8 @@
         </div>
     </div>
 
+    <script src="/static/video_media.js"></script>
+
     <script>
         class PreviewController {
             constructor() { this.groups = new Map(); }
@@ -1292,22 +1348,24 @@
         }
 
         function registerPreviewPane(groupId, paneId, viewport, image) {
-            if (!viewport || !image || !image.naturalWidth || !image.naturalHeight) return;
+            const naturalWidth = image && (image.videoWidth || image.naturalWidth);
+            const naturalHeight = image && (image.videoHeight || image.naturalHeight);
+            if (!viewport || !image || !naturalWidth || !naturalHeight) return;
             previewController.addPane(groupId, paneId, {
                 measure: () => ({
-                    naturalWidth: image.naturalWidth,
-                    naturalHeight: image.naturalHeight,
+                    naturalWidth: image.videoWidth || image.naturalWidth,
+                    naturalHeight: image.videoHeight || image.naturalHeight,
                     viewportWidth: viewport.clientWidth,
                     viewportHeight: viewport.clientHeight
                 }),
                 geometry: () => ({ viewport: viewport.getBoundingClientRect(), image: image.getBoundingClientRect() }),
                 apply: ({ scale, normalizedCenter }) => {
-                    const renderedWidth = image.naturalWidth * scale;
-                    const renderedHeight = image.naturalHeight * scale;
+                    const renderedWidth = naturalWidth * scale;
+                    const renderedHeight = naturalHeight * scale;
                     const offsetX = (0.5 - normalizedCenter.x) * renderedWidth;
                     const offsetY = (0.5 - normalizedCenter.y) * renderedHeight;
-                    image.style.width = `${image.naturalWidth * scale}px`;
-                    image.style.height = `${image.naturalHeight * scale}px`;
+                    image.style.width = `${naturalWidth * scale}px`;
+                    image.style.height = `${naturalHeight * scale}px`;
                     image.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
                     updateDashboardPreviewToolbar(groupId);
                 }
@@ -1325,6 +1383,11 @@
             const group = previewController.groups.get(groupId);
             const sourcePane = group?.panes.get(paneId);
             if (!group?.magnifier || !sourcePane || sourcePane.failed) return false;
+            if (
+                typeof dashboardVideoPlayback !== "undefined"
+                && dashboardVideoPlayback
+                && !dashboardVideoPlayback.canUseFrameTools()
+            ) return false;
             const sourceGeometry = sourcePane.adapter.geometry();
             const sourceImage = sourceGeometry.image;
             if (point.clientX < sourceImage.left || point.clientX > sourceImage.right || point.clientY < sourceImage.top || point.clientY > sourceImage.bottom) {
@@ -1339,9 +1402,13 @@
             group.panes.forEach((pane, targetId) => {
                 if (pane.failed || (targetId !== paneId && !group.sync)) return;
                 const viewport = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${targetId}"]`);
-                const image = viewport?.querySelector("img");
+                const image = viewport?.querySelector("img") || viewport?.querySelector("video");
                 const lens = viewport?.querySelector(".magnifier-layer");
                 if (!viewport || !image || !lens) return;
+                const visualSource = String(image.tagName || "").toUpperCase() === "VIDEO"
+                    ? dashboardVideoPlayback?.captureFrame(targetId)
+                    : (image.currentSrc || image.src);
+                if (!visualSource) return;
                 const geometry = pane.adapter.geometry();
                 const targetImage = geometry.image;
                 const pointX = targetImage.left + normalizedPoint.x * targetImage.width - geometry.viewport.left;
@@ -1350,7 +1417,7 @@
                 const lensTop = Math.max(0, Math.min(viewport.clientHeight - lens.offsetHeight, pointY - lens.offsetHeight / 2));
                 lens.style.left = `${lensLeft}px`;
                 lens.style.top = `${lensTop}px`;
-                lens.style.backgroundImage = `url("${image.currentSrc || image.src}")`;
+                lens.style.backgroundImage = `url("${visualSource}")`;
                 lens.style.backgroundSize = `${targetImage.width * 3}px ${targetImage.height * 3}px`;
                 lens.style.backgroundPosition = `${pointX - lensLeft - normalizedPoint.x * targetImage.width * 3}px ${pointY - lensTop - normalizedPoint.y * targetImage.height * 3}px`;
                 lens.classList.add("visible");
@@ -1402,6 +1469,7 @@
                     event.preventDefault();
                 };
                 const onPointerDown = event => {
+                    if (event.target?.closest?.(".dashboard-video-controls")) return;
                     if (event.button !== 0 && event.pointerType !== "touch") return;
                     const pane = previewController.groups.get(groupId)?.panes.get(paneId);
                     if (!pane || pane.failed) return;
@@ -1475,9 +1543,23 @@
                 if (action === "reset") resetPreviewGroup(groupId);
                 if (action === "sync") {
                     previewController.setSync(groupId, !group.sync);
+                    if (typeof dashboardVideoPlayback !== "undefined" && dashboardVideoPlayback) {
+                        dashboardVideoPlayback.setSync(group.sync);
+                    }
                     hidePreviewMagnifiers(groupId);
                 }
-                if (action === "magnifier") { group.magnifier = !group.magnifier; if (!group.magnifier) hidePreviewMagnifiers(groupId); }
+                if (action === "magnifier") {
+                    if (
+                        typeof dashboardVideoPlayback !== "undefined"
+                        && dashboardVideoPlayback
+                        && !dashboardVideoPlayback.canUseFrameTools()
+                    ) {
+                        alert("请先暂停视频，再使用放大镜功能");
+                    } else {
+                        group.magnifier = !group.magnifier;
+                        if (!group.magnifier) hidePreviewMagnifiers(groupId);
+                    }
+                }
                 if (action === "background") {
                     group.darkBackground = !group.darkBackground;
                     document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(viewport => viewport.classList.toggle("preview-light", !group.darkBackground));
@@ -1559,7 +1641,8 @@
             datasetDownloadRequestId: 0,
             datasetDownloadController: null,
             modelCatalogs: {},
-            modelCatalogErrors: {}
+            modelCatalogErrors: {},
+            taskConfigs: {}
         };
 
         async function api(url, options) {
@@ -1627,11 +1710,14 @@
             document.getElementById("dataset-download-task-type").value = state.taskType;
             invalidateDatasetDownload();
             state.config = await api(`/api/task_config?task_type=${state.taskType}`).then(r => r.json());
+            state.taskConfigs[state.taskType] = state.config;
             await loadModelCatalog(state.taskType);
             document.getElementById("overview-title").textContent = `${state.taskType} 看板总览`;
-            document.getElementById("overview-desc").textContent = state.taskType === "TI2I"
-                ? "TI2I 看板额外展示保真度维度和参考图预览。"
-                : "T2I 看板展示生成质量、文本错误和坏例分布。";
+            document.getElementById("overview-desc").textContent = state.config.media_type === "video"
+                ? "视频看板按实际已评维度展示，明细列表仅加载首帧，点击后才打开高清视频。"
+                : (state.taskType === "TI2I"
+                    ? "TI2I 看板额外展示保真度维度和参考图预览。"
+                    : "T2I 看板展示生成质量、文本错误和坏例分布。");
             replaceSelectOptions(
                 document.getElementById("ranking-dimension"),
                 state.config.dashboard_dims.map(dim => [dim.key, dim.label])
@@ -1650,6 +1736,7 @@
 
         async function handleDatasetDownloadTaskChange() {
             invalidateDatasetDownload();
+            await ensureTaskConfig(document.getElementById("dataset-download-task-type").value);
             await loadDatasets();
         }
 
@@ -1658,11 +1745,27 @@
             syncDatasetDownloadMode();
         }
 
+        async function ensureTaskConfig(taskType) {
+            if (!state.taskConfigs) state.taskConfigs = {};
+            if (!state.taskConfigs[taskType]) {
+                state.taskConfigs[taskType] = await api(
+                    `/api/task_config?task_type=${encodeURIComponent(taskType)}`
+                ).then(response => response.json());
+            }
+            return state.taskConfigs[taskType];
+        }
+
+        async function handleDatasetUploadTaskTypeChange() {
+            await ensureTaskConfig(document.getElementById("dataset-task-type").value);
+            syncDatasetUploadMode();
+        }
+
         function syncDatasetUploadMode() {
             const taskType = document.getElementById("dataset-task-type").value;
             const refGroup = document.getElementById("dataset-ref-group");
             const refInput = document.getElementById("dataset-ref-file");
-            const isTi2i = taskType === "TI2I";
+            const taskConfig = typeof state !== "undefined" ? state.taskConfigs?.[taskType] : null;
+            const isTi2i = taskConfig ? taskConfig.upload_has_ref : taskType === "TI2I";
             refGroup.style.display = isTi2i ? "flex" : "none";
             refInput.required = isTi2i;
             if (!isTi2i) refInput.value = "";
@@ -1802,11 +1905,13 @@
         function syncDatasetDownloadMode() {
             const taskType = document.getElementById("dataset-download-task-type").value;
             const includeRef = document.getElementById("dataset-include-ref");
-            if (taskType === "T2I") includeRef.checked = false;
-            includeRef.disabled = taskType !== "TI2I";
+            const taskConfig = typeof state !== "undefined" ? state.taskConfigs?.[taskType] : null;
+            const hasReference = taskConfig ? taskConfig.upload_has_ref : taskType === "TI2I";
+            if (!hasReference) includeRef.checked = false;
+            includeRef.disabled = !hasReference;
             includeRef.closest?.(".checkbox-chip")?.classList.toggle("selected", includeRef.checked);
             document.getElementById("dataset-download-button").textContent =
-                taskType === "TI2I" && includeRef.checked ? "下载 ZIP" : "下载 TXT";
+                hasReference && includeRef.checked ? "下载 ZIP" : "下载 TXT";
         }
 
         function extractDatasetDownloadFilename(contentDisposition, scene, includeRef) {
@@ -1898,7 +2003,17 @@
 
         async function handleResultTaskTypeChange(selectedScene = "") {
             const taskType = document.getElementById("result-task-type").value;
-            await Promise.all([loadModelCatalog(taskType), syncResultScenes(selectedScene)]);
+            const [taskConfig] = await Promise.all([
+                ensureTaskConfig(taskType),
+                loadModelCatalog(taskType),
+                syncResultScenes(selectedScene)
+            ]);
+            const video = taskConfig.media_type === "video";
+            document.getElementById("result-upload-title").textContent = video ? "上传新视频结果" : "上传新结果图";
+            document.getElementById("result-upload-desc").textContent = video
+                ? `上传结果 ZIP，内部仅允许 ${taskConfig.result_extensions.join("、")}；名称需和 prompt ID 一致。`
+                : "选择已存在场景后上传模型结果 zip。图片名会和对应 prompt 检查，不一致时阻止上传；前缀匹配时可确认后自动改名。";
+            document.getElementById("result-upload-button").textContent = video ? "上传视频结果" : "上传结果图";
             syncResultModelChoices();
             const error = state.modelCatalogErrors[taskType];
             if (error) {
@@ -2001,7 +2116,6 @@
         }
 
         function renderPairs(pairs) {
-            const dims = state.config.dashboard_dims;
             const container = document.getElementById("pairs-container");
             state.exportPairs = pairs;
             container.replaceChildren();
@@ -2010,6 +2124,8 @@
                 return;
             }
             pairs.forEach((pair, index) => {
+                const activeKeys = new Set(pair.active_dims || Object.keys(pair.dims || {}));
+                const dims = state.config.dashboard_dims.filter(dim => activeKeys.has(dim.key));
                 const card = createNode("div", "pair-card");
                 const head = createNode("div", "pair-head");
                 head.addEventListener("click", () => togglePair(pair.pair));
@@ -2021,6 +2137,7 @@
                 );
 
                 const summary = createNode("div", "summary-grid");
+                if (state.config.media_type === "video") summary.classList.add("video-dimensions");
                 dims.forEach(dim => summary.append(renderSummaryBox(pair, dim.key, dim.label)));
                 summary.append(renderBadcaseSummary(pair));
 
@@ -2067,7 +2184,10 @@
         }
 
         function renderSummaryBox(pair, dimKey, label) {
-            const stat = pair.dims[dimKey];
+            const stat = pair.dims[dimKey] || {
+                total: 0, v_a_wins: 0, tie_bad_count: 0,
+                tie_good_count: 0, tie_count: 0, v_b_wins: 0
+            };
             const total = stat.total || 0;
             const box = createNode("div", "summary-box");
             box.append(createNode("strong", "", label));
@@ -2132,7 +2252,10 @@
             const row = createNode("tr");
             row.append(createCell(scene.scene, "scene-name"), createCell(scene.total));
             dims.forEach(dim => {
-                const stat = scene.dims[dim.key];
+                const stat = scene.dims[dim.key] || {
+                    total: 0, v_a_wins: 0, tie_bad_count: 0,
+                    tie_good_count: 0, tie_count: 0, v_b_wins: 0
+                };
                 const total = stat.total || 0;
                 const cell = createCell();
                 if (!total) {
@@ -2353,7 +2476,7 @@
                 Object.assign(imageGroup.style, { display: "flex", gap: "6px" });
                 const preview = buildPreviewPayload(row, v1, v2);
                 const imageSources = [detailThumbnailUrl("result", v1, scene, row.filename)];
-                if (state.taskType === "TI2I" && row.ref_img) {
+                if (state.config.show_ref && row.ref_img) {
                     imageSources.push(detailThumbnailUrl("ref", "", scene, row.filename));
                 }
                 imageSources.push(detailThumbnailUrl("result", v2, scene, row.filename));
@@ -2374,13 +2497,19 @@
                 const promptCell = createCell(row.prompt || "-");
                 promptCell.style.maxWidth = "320px";
                 const resultCell = createCell();
-                [
-                    ["整体", row.overall],
-                    ["美学", row.aesthetic],
-                    ["合理性", row.logic],
-                    ["一致性", row.consistency],
-                    ...(state.taskType === "TI2I" ? [["保真度", row.fidelity]] : [])
-                ].forEach(([label, result]) => {
+                const displayedResults = state.config.media_type === "video"
+                    ? state.config.dashboard_dims.map(dimension => [
+                        dimension.label,
+                        row.scores?.[dimension.key] ?? row[dimension.key]
+                    ])
+                    : [
+                        ["整体", row.overall],
+                        ["美学", row.aesthetic],
+                        ["合理性", row.logic],
+                        ["一致性", row.consistency],
+                        ...(state.taskType === "TI2I" ? [["保真度", row.fidelity]] : [])
+                    ];
+                displayedResults.forEach(([label, result]) => {
                     const resultNode = renderResultRow(label, result, v1, v2);
                     if (resultNode) resultCell.append(resultNode);
                 });
@@ -2434,7 +2563,6 @@
         }
 
         function renderWorkerStats() {
-            const dims = state.config.dashboard_dims;
             const workerGroup = document.getElementById("worker-group");
             workerGroup.replaceChildren(...state.workerRows.map(row => {
                 const chip = createNode(
@@ -2453,12 +2581,18 @@
                 tableContainer.replaceChildren(createEmptyState("请选择评测员"));
                 return;
             }
+            const hasActiveMetadata = rows.some(row => Array.isArray(row.active_dims));
+            const activeKeys = new Set(rows.flatMap(row => row.active_dims || []));
+            const dims = hasActiveMetadata
+                ? state.config.dashboard_dims.filter(dim => activeKeys.has(dim.key))
+                : state.config.dashboard_dims;
             const total = rows.reduce((sum, row) => sum + row.total, 0);
             const summaryCard = createNode("div", "card");
             summaryCard.style.margin = "0 0 14px";
             const summaryTitle = createNode("div", "", `汇总 (${rows.length} 位评测员, ${total} 条样本)`);
             Object.assign(summaryTitle.style, { fontWeight: "800", marginBottom: "10px" });
             const summaryGrid = createNode("div", "summary-grid");
+            if (state.config.media_type === "video") summaryGrid.classList.add("video-dimensions");
             dims.forEach(dim => {
                 const stat = {
                     total: rows.reduce((sum, row) => sum + (row[dim.key].total || 0), 0),
@@ -2548,7 +2682,7 @@
                 const previewCell = createCell();
                 const src = imageUrl(row.model, row.scene, row.filename);
                 const image = createNode("img", "preview-img");
-                image.src = src;
+                image.src = detailThumbnailUrl("result", row.model, row.scene, row.filename);
                 image.alt = row.filename;
                 image.addEventListener("click", () => openPreview(buildBadCasePreviewPayload(row, src)));
                 previewCell.append(image);
@@ -2576,6 +2710,15 @@
 
         function closeImagePreview() {
             beginDashboardPreviewRender();
+            if (typeof dashboardVideoPlayback !== "undefined" && dashboardVideoPlayback) {
+                dashboardVideoPlayback.destroy();
+                dashboardVideoPlayback = null;
+            }
+            document.getElementById("image-preview").querySelectorAll?.("video").forEach(video => {
+                video.pause();
+                video.removeAttribute("src");
+                video.load();
+            });
             releasePreviewPointers("overlay");
             hidePreviewMagnifiers();
             stopHoldCompare();
@@ -2603,6 +2746,7 @@
         function buildPreviewPayload(row, v1, v2) {
             return {
                 mode: state.taskType,
+                mediaType: state.config?.media_type || (state.taskType.endsWith("V") ? "video" : "image"),
                 ref: row.ref_img,
                 a: imageUrl(v1, row.scene, row.filename),
                 b: imageUrl(v2, row.scene, row.filename),
@@ -2615,6 +2759,7 @@
             return {
                 badCase: true,
                 mode: row.task_type || state.taskType,
+                mediaType: (row.task_type || state.taskType).endsWith("V") ? "video" : "image",
                 ref: row.ref_img,
                 result: resultSrc,
                 resultLabel: row.model,
@@ -2630,19 +2775,19 @@
             if (payload.single) {
                 return {
                     kind: "single",
-                    panes: [{ id: "single", src: payload.src, label: payload.label }],
+                    panes: [{ id: "single", src: payload.src, label: payload.label, mediaType: payload.mediaType || "image" }],
                     prompt: payload.prompt || "",
                     showSync: false,
                     showCompare: false
                 };
             }
             if (payload.badCase) {
-                if (payload.mode === "TI2I" && payload.ref) {
+                if ((payload.mode === "TI2I" || payload.mode === "TI2V") && payload.ref) {
                     return {
                         kind: "t2i",
                         panes: [
-                            { id: "reference", src: payload.ref, label: "参考图" },
-                            { id: "result", src: payload.result, label: payload.resultLabel }
+                            { id: "reference", src: payload.ref, label: "参考图", mediaType: "image" },
+                            { id: "result", src: payload.result, label: payload.resultLabel, mediaType: payload.mediaType === "video" ? "video" : "image" }
                         ],
                         prompt: payload.prompt || "",
                         showSync: true,
@@ -2651,19 +2796,19 @@
                 }
                 return {
                     kind: "single",
-                    panes: [{ id: "single", src: payload.result, label: payload.resultLabel }],
+                    panes: [{ id: "single", src: payload.result, label: payload.resultLabel, mediaType: payload.mediaType === "video" ? "video" : "image" }],
                     prompt: payload.prompt || "",
                     showSync: false,
                     showCompare: false
                 };
             }
             const panes = [
-                { id: "left", src: payload.a, label: payload.labels[0] }
+                { id: "left", src: payload.a, label: payload.labels[0], mediaType: payload.mediaType === "video" ? "video" : "image" }
             ];
-            if (payload.mode === "TI2I" && payload.ref) {
-                panes.push({ id: "reference", src: payload.ref, label: "参考图" });
+            if ((payload.mode === "TI2I" || payload.mode === "TI2V") && payload.ref) {
+                panes.push({ id: "reference", src: payload.ref, label: "参考图", mediaType: "image" });
             }
-            panes.push({ id: "right", src: payload.b, label: payload.labels[1] });
+            panes.push({ id: "right", src: payload.b, label: payload.labels[1], mediaType: payload.mediaType === "video" ? "video" : "image" });
             return {
                 kind: panes.length === 3 ? "ti2i" : "t2i",
                 panes,
@@ -2728,19 +2873,31 @@
             stopHoldCompare();
             const group = previewController.groups.get(groupId);
             if (!group) return false;
+            if (
+                typeof dashboardVideoPlayback !== "undefined"
+                && dashboardVideoPlayback
+                && !dashboardVideoPlayback.canUseFrameTools()
+            ) {
+                alert("请先暂停视频，再使用画面对照功能");
+                return false;
+            }
             const sourceViewport = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${sourceId}"]`);
             const targetViewport = document.querySelector(`[data-preview-group-pane="${groupId}"][data-preview-pane="${targetId}"]`);
             const sourcePane = group.panes.get(sourceId);
             const targetPane = group.panes.get(targetId);
             if (!sourceViewport || !targetViewport || !sourcePane || !targetPane || sourcePane.failed || targetPane.failed) return false;
-            const sourceImage = sourceViewport.querySelector("img");
-            const targetImage = targetViewport.querySelector("img");
+            const sourceImage = sourceViewport.querySelector("img") || sourceViewport.querySelector("video");
+            const targetImage = targetViewport.querySelector("img") || targetViewport.querySelector("video");
             if (!sourceImage || !targetImage) return false;
+            const sourceUrl = String(sourceImage.tagName || "").toUpperCase() === "VIDEO"
+                ? dashboardVideoPlayback?.captureFrame(sourceId)
+                : (sourceImage.currentSrc || sourceImage.src);
+            if (!sourceUrl) return false;
             const layer = createNode("div", "hold-compare-layer");
             layer.dataset.sourcePane = sourceId;
             layer.dataset.targetPane = targetId;
             const overlayImage = createNode("img");
-            overlayImage.src = sourceImage.currentSrc || sourceImage.src;
+            overlayImage.src = sourceUrl;
             overlayImage.alt = sourceImage.alt || "";
             overlayImage.draggable = false;
             overlayImage.style.width = sourceImage.style.width;
@@ -2788,6 +2945,7 @@
 
         let dashboardPreviewGeneration = 0;
         let dashboardPreviewImageCleanups = [];
+        let dashboardVideoPlayback = null;
 
         function beginDashboardPreviewRender() {
             dashboardPreviewImageCleanups.forEach(cleanup => cleanup());
@@ -2811,15 +2969,42 @@
             viewport.dataset.previewGroupPane = "overlay";
             viewport.dataset.previewPane = pane.id;
             viewport.dataset.previewLabel = pane.label || "";
-            const image = createNode("img");
+            let image;
+            if (pane.mediaType === "video") {
+                image = createNode("video");
+                image.preload = "metadata";
+                image.playsInline = true;
+                image.muted = true;
+                image.controls = false;
+                image.dataset.dashboardVideoId = pane.id;
+            } else {
+                image = createNode("img");
+            }
             image.src = pane.src || "";
             image.alt = pane.label || "";
             image.draggable = false;
-            const loading = createNode("span", "dashboard-preview-loading", "图片加载中…");
-            const error = createNode("span", "dashboard-preview-error", "图片加载失败");
+            const loading = createNode("span", "dashboard-preview-loading", pane.mediaType === "video" ? "视频加载中…" : "图片加载中…");
+            const error = createNode("span", "dashboard-preview-error", pane.mediaType === "video" ? "视频加载失败" : "图片加载失败");
             const lens = createNode("span", "magnifier-layer");
             const label = createNode("strong", "dashboard-preview-label", pane.label || "");
             viewport.append(image, loading, error, lens, label);
+            if (pane.mediaType === "video") {
+                const controls = createNode("div", "dashboard-video-controls");
+                const play = createNode("button", "", "▶");
+                play.type = "button";
+                play.dataset.dashboardVideoPlay = pane.id;
+                play.setAttribute("aria-label", "播放");
+                const time = createNode("span", "dashboard-video-time", "00:00 / 00:00");
+                time.dataset.dashboardVideoTime = pane.id;
+                const seek = createNode("input", "dashboard-video-seek");
+                seek.type = "range";
+                seek.min = "0";
+                seek.max = "1000";
+                seek.value = "0";
+                seek.dataset.dashboardVideoSeek = pane.id;
+                controls.append(play, time, seek);
+                viewport.append(controls);
+            }
             const register = () => {
                 if (!isDashboardPreviewRenderCurrent(generation)) return;
                 viewport.classList.remove("loading");
@@ -2835,14 +3020,63 @@
                 markPreviewPaneFailed("overlay", pane.id);
                 hidePreviewMagnifiers("overlay");
             };
-            image.addEventListener("load", register, { once: true });
+            const loadEvent = pane.mediaType === "video" ? "loadeddata" : "load";
+            image.addEventListener(loadEvent, register, { once: true });
             image.addEventListener("error", fail, { once: true });
             dashboardPreviewImageCleanups.push(() => {
-                image.removeEventListener("load", register);
+                image.removeEventListener(loadEvent, register);
                 image.removeEventListener("error", fail);
             });
-            if (image.complete) image.naturalWidth ? register() : fail();
+            if (pane.mediaType === "video") {
+                if (image.readyState >= 2 && image.videoWidth) register();
+            } else if (image.complete) image.naturalWidth ? register() : fail();
             return viewport;
+        }
+
+        function formatDashboardVideoTime(seconds) {
+            const safe = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
+            const minutes = String(Math.floor(safe / 60)).padStart(2, "0");
+            const remainder = String(Math.floor(safe % 60)).padStart(2, "0");
+            return `${minutes}:${remainder}`;
+        }
+
+        function bindDashboardVideoControls(grid, playback) {
+            grid.querySelectorAll("[data-dashboard-video-play]").forEach(button => {
+                const paneId = button.dataset.dashboardVideoPlay;
+                const video = grid.querySelector(`[data-dashboard-video-id="${paneId}"]`);
+                if (!video) return;
+                button.addEventListener("click", event => {
+                    event.stopPropagation();
+                    if (video.paused) playback.play(paneId);
+                    else playback.pause(paneId);
+                });
+                const render = () => {
+                    button.textContent = video.paused ? "▶" : "❚❚";
+                    button.setAttribute("aria-label", video.paused ? "播放" : "暂停");
+                    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+                    const time = grid.querySelector(`[data-dashboard-video-time="${paneId}"]`);
+                    const seek = grid.querySelector(`[data-dashboard-video-seek="${paneId}"]`);
+                    if (time) time.textContent = `${formatDashboardVideoTime(video.currentTime)} / ${formatDashboardVideoTime(duration)}`;
+                    if (seek) seek.value = duration > 0 ? String(Math.round(video.currentTime / duration * 1000)) : "0";
+                };
+                ["play", "pause", "timeupdate", "durationchange", "loadedmetadata"].forEach(eventName => video.addEventListener(eventName, render));
+                video.addEventListener("play", () => {
+                    const group = previewController.groups.get("overlay");
+                    if (group) group.magnifier = false;
+                    hidePreviewMagnifiers("overlay");
+                    stopHoldCompare();
+                    updateDashboardPreviewToolbar("overlay");
+                });
+                render();
+            });
+            grid.querySelectorAll("[data-dashboard-video-seek]").forEach(input => {
+                input.addEventListener("input", event => {
+                    const paneId = event.currentTarget.dataset.dashboardVideoSeek;
+                    const video = grid.querySelector(`[data-dashboard-video-id="${paneId}"]`);
+                    const duration = video && Number.isFinite(video.duration) ? video.duration : 0;
+                    playback.seek(paneId, duration * Number(event.currentTarget.value) / 1000);
+                });
+            });
         }
 
         function openDashboardPreview(payload) {
@@ -2859,6 +3093,19 @@
             const grid = document.getElementById("image-preview");
             grid.className = `dashboard-preview-grid ${normalized.kind}`;
             grid.replaceChildren(...normalized.panes.map(renderDashboardPreviewPane));
+            if (
+                typeof VideoPlaybackGroup === "function"
+                && normalized.panes.some(pane => pane.mediaType === "video")
+            ) {
+                if (typeof dashboardVideoPlayback !== "undefined" && dashboardVideoPlayback) dashboardVideoPlayback.destroy();
+                dashboardVideoPlayback = new VideoPlaybackGroup({ sync: normalized.showSync });
+                normalized.panes.forEach(pane => {
+                    if (pane.mediaType !== "video" || typeof grid.querySelector !== "function") return;
+                    const video = grid.querySelector(`[data-dashboard-video-id="${pane.id}"]`);
+                    if (video) dashboardVideoPlayback.add(pane.id, video);
+                });
+                bindDashboardVideoControls(grid, dashboardVideoPlayback);
+            }
             if (normalized.showCompare) grid.append(renderInlineCompareControls("overlay", normalized.panes));
             document.getElementById("dashboard-preview-toolbar").innerHTML = renderDashboardPreviewToolbar({ groupId: "overlay", showSync: normalized.showSync });
             bindPreviewGroup("overlay");
@@ -3262,6 +3509,8 @@
         async function uploadResultZip(autoRename) {
             const taskType = document.getElementById("result-task-type").value;
             try {
+                const taskConfig = await ensureTaskConfig(taskType);
+                const video = taskConfig.media_type === "video";
                 if (!autoRename && !confirmNewModelHierarchy()) {
                     setUploadMessage("已取消上传");
                     return;
@@ -3281,14 +3530,22 @@
                 formData.append("scene", document.getElementById("result-scene").value);
                 formData.append("file", file);
                 formData.append("auto_rename", autoRename ? "true" : "false");
-                setUploadMessage(autoRename ? "正在自动格式化名称并上传..." : "检查结果图 zip 中...");
+                if (video) {
+                    setUploadMessage(autoRename ? "正在自动格式化名称并上传..." : "检查视频结果 zip 中...");
+                } else {
+                    setUploadMessage(autoRename ? "正在自动格式化名称并上传..." : "检查结果图 zip 中...");
+                }
                 const result = await api("/api/upload", { method: "POST", body: formData }).then(r => r.json());
                 if (result.status === "requires_rename_confirmation") {
                     if (confirm(result.message)) return uploadResultZip(true);
                     setUploadMessage("已取消上传");
                     return;
                 }
-                setUploadMessage(`结果图上传成功：${result.full_name}，${result.image_count || 0} 张`, "success");
+                if (video) {
+                    setUploadMessage(`视频结果上传成功：${result.full_name}，${result.media_count || 0} 段`, "success");
+                } else {
+                    setUploadMessage(`结果图上传成功：${result.full_name}，${result.image_count || 0} 张`, "success");
+                }
                 await loadModelCatalog(taskType);
                 syncResultModelChoices();
                 if (taskType === state.taskType) await loadDashboard();

@@ -32,9 +32,15 @@ def row_eval_mode(row) -> str:
 
 
 def rows_for_dimension(rows: list[sqlite3.Row], dim: str) -> list[sqlite3.Row]:
-    if dim == "overall":
-        return rows
-    return [row for row in rows if row_eval_mode(row) == "full"]
+    return [row for row in rows if row[dim] is not None]
+
+
+def active_dimensions(rows: list[sqlite3.Row], configured: list[str]) -> list[str]:
+    return [
+        dimension
+        for dimension in configured
+        if any(row[dimension] is not None for row in rows)
+    ]
 
 
 def dimension_stats(rows: list[sqlite3.Row], dim: str, v_a: str, v_b: str) -> dict:
@@ -51,41 +57,47 @@ def dimension_stats(rows: list[sqlite3.Row], dim: str, v_a: str, v_b: str) -> di
     }
 
 
-def aggregate_pair_rows(task_type: str) -> List[dict]:
+def aggregate_pair_rows(
+    task_type: str, rows: Optional[list[sqlite3.Row]] = None
+) -> List[dict]:
     task_type = normalize_task_type(task_type)
     config = get_task_config(task_type)
     dashboard_dims = config["dashboard_dims"]
-    rows = fetch_result_rows(task_type)
+    rows = fetch_result_rows(task_type) if rows is None else rows
     grouped: Dict[tuple, List[sqlite3.Row]] = {}
     for row in rows:
         grouped.setdefault((row["v_a"], row["v_b"]), []).append(row)
 
     result = []
     for (v_a, v_b), pair_rows in sorted(grouped.items()):
+        pair_dimensions = active_dimensions(pair_rows, dashboard_dims)
         pair_data = {
             "task_type": task_type,
             "pair": f"{v_a} vs {v_b}",
             "v_a": v_a,
             "v_b": v_b,
             "total": len(pair_rows),
+            "active_dims": pair_dimensions,
             "dims": {},
             "bad_case": build_bad_case_stats(pair_rows),
             "scenes": [],
         }
-        for dim in dashboard_dims:
+        for dim in pair_dimensions:
             pair_data["dims"][dim] = dimension_stats(pair_rows, dim, v_a, v_b)
 
         scene_grouped: Dict[str, List[sqlite3.Row]] = {}
         for row in pair_rows:
             scene_grouped.setdefault(row["scene"], []).append(row)
         for scene_name, scene_rows in sorted(scene_grouped.items()):
+            scene_dimensions = active_dimensions(scene_rows, dashboard_dims)
             scene_data = {
                 "scene": scene_name,
                 "total": len(scene_rows),
+                "active_dims": scene_dimensions,
                 "dims": {},
                 "bad_case": build_bad_case_stats(scene_rows),
             }
-            for dim in dashboard_dims:
+            for dim in scene_dimensions:
                 scene_data["dims"][dim] = dimension_stats(scene_rows, dim, v_a, v_b)
             pair_data["scenes"].append(scene_data)
         result.append(pair_data)
@@ -95,10 +107,12 @@ def aggregate_pair_rows(task_type: str) -> List[dict]:
 def dashboard_overview(task_type: str) -> dict:
     task_type = normalize_task_type(task_type)
     config = get_task_config(task_type)
+    rows = fetch_result_rows(task_type)
+    dimensions = active_dimensions(rows, config["dashboard_dims"])
     return {
         "task_type": task_type,
-        "dims": [{"key": dim, "label": DIM_LABELS[dim]} for dim in config["dashboard_dims"]],
-        "pairs": aggregate_pair_rows(task_type),
+        "dims": [{"key": dim, "label": DIM_LABELS[dim]} for dim in dimensions],
+        "pairs": aggregate_pair_rows(task_type, rows),
     }
 
 
@@ -113,8 +127,13 @@ def worker_stats(task_type: str, v1: str, v2: str, scene: Optional[str] = None) 
 
     result = []
     for worker, worker_rows in sorted(grouped.items()):
-        entry = {"worker": worker, "total": len(worker_rows)}
-        for dim in config["dashboard_dims"]:
+        dimensions = active_dimensions(worker_rows, config["dashboard_dims"])
+        entry = {
+            "worker": worker,
+            "total": len(worker_rows),
+            "active_dims": dimensions,
+        }
+        for dim in dimensions:
             entry[dim] = dimension_stats(worker_rows, dim, v_a, v_b)
         result.append(entry)
     return result
@@ -122,6 +141,7 @@ def worker_stats(task_type: str, v1: str, v2: str, scene: Optional[str] = None) 
 
 def detail_results(task_type: str, v1: str, v2: str, scene: str) -> list[dict]:
     task_type = normalize_task_type(task_type)
+    config = get_task_config(task_type)
     v_a, v_b = sorted([v1, v2])
     rows = fetch_result_rows(task_type, v_a, v_b, scene)
     rows = sorted(rows, key=lambda row: (row["worker"], row["filename"], row["timestamp"]), reverse=True)
@@ -136,6 +156,17 @@ def detail_results(task_type: str, v1: str, v2: str, scene: str) -> list[dict]:
             "logic": row["logic"],
             "consistency": row["consistency"],
             "fidelity": row["fidelity"],
+            "text_consistency": row["text_consistency"],
+            "motion_reasonableness": row["motion_reasonableness"],
+            "dynamism": row["dynamism"],
+            "physical_plausibility": row["physical_plausibility"],
+            "visual_quality": row["visual_quality"],
+            "image_consistency": row["image_consistency"],
+            "selected_dimensions": safe_load_json_list(row["selected_dimensions"]),
+            "scores": {
+                dimension: row[dimension]
+                for dimension in config["dashboard_dims"]
+            },
             "worker": row["worker"],
             "time": row["timestamp"],
             "duration": row["duration_seconds"],
