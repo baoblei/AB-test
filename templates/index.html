@@ -1477,20 +1477,20 @@
                         symbol: "└←"
                     },
                     {
-                        sourceId: panes[2].id,
-                        targetId: panes[1].id,
-                        label: `${panes[2].label} 覆盖${panes[1].label}`,
-                        slot: "right-upper",
-                        kind: "adjacent",
-                        symbol: "←"
-                    },
-                    {
                         sourceId: panes[1].id,
                         targetId: panes[2].id,
                         label: `${panes[1].label} 覆盖${panes[2].label}`,
-                        slot: "right-middle",
+                        slot: "right-upper",
                         kind: "adjacent",
                         symbol: "→"
+                    },
+                    {
+                        sourceId: panes[2].id,
+                        targetId: panes[1].id,
+                        label: `${panes[2].label} 覆盖${panes[1].label}`,
+                        slot: "right-middle",
+                        kind: "adjacent",
+                        symbol: "←"
                     },
                     {
                         sourceId: panes[0].id,
