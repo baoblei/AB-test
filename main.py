@@ -100,6 +100,7 @@ def get_task_types():
             "label": key,
             "show_ref": config["show_ref"],
             "dims": config["eval_dims"],
+            "media_type": config["media_type"],
         }
         for key, config in TASK_CONFIGS.items()
     ]
@@ -112,6 +113,9 @@ def api_task_config(task_type: str):
     return {
         "task_type": task_type,
         "show_ref": config["show_ref"],
+        "upload_has_ref": config["upload_has_ref"],
+        "media_type": config["media_type"],
+        "result_extensions": list(config["result_extensions"]),
         "eval_dims": dim_payload(config["eval_dims"]),
         "dashboard_dims": dim_payload(config["dashboard_dims"]),
         "bad_case_options": config["bad_case_options"],

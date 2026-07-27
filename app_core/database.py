@@ -104,6 +104,13 @@ def init_db():
             logic TEXT,
             consistency TEXT,
             fidelity TEXT,
+            text_consistency TEXT,
+            motion_reasonableness TEXT,
+            dynamism TEXT,
+            physical_plausibility TEXT,
+            visual_quality TEXT,
+            image_consistency TEXT,
+            selected_dimensions TEXT DEFAULT '[]',
             worker TEXT,
             timestamp DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', '+8 hours') || '+08:00'),
             duration_seconds INTEGER,
@@ -120,6 +127,16 @@ def init_db():
     ensure_column(cursor, "results_log", "eval_mode", "TEXT DEFAULT 'full'")
     ensure_column(cursor, "results_log", "task_type", "TEXT DEFAULT 'T2I'")
     ensure_column(cursor, "results_log", "fidelity", "TEXT")
+    for video_dimension in (
+        "text_consistency",
+        "motion_reasonableness",
+        "dynamism",
+        "physical_plausibility",
+        "visual_quality",
+        "image_consistency",
+    ):
+        ensure_column(cursor, "results_log", video_dimension, "TEXT")
+    ensure_column(cursor, "results_log", "selected_dimensions", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_tags_a", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_tags_b", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_categories_a", "TEXT DEFAULT '[]'")
@@ -175,6 +192,28 @@ def init_db():
     )
     ensure_column(cursor, "pair_tasks", "task_type", "TEXT DEFAULT 'T2I'")
     ensure_column(cursor, "pair_tasks", "eval_mode", "TEXT DEFAULT 'full'")
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS evaluation_scopes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            task_type TEXT NOT NULL,
+            v_a TEXT NOT NULL,
+            v_b TEXT NOT NULL,
+            scene TEXT NOT NULL,
+            selected_dimensions TEXT NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_scopes_unique
+        ON evaluation_scopes(user_id, task_type, v_a, v_b, scene)
+        """
+    )
 
     cursor.execute(
         """

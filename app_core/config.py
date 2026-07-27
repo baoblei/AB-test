@@ -12,6 +12,7 @@ SECRET_KEY = "ab_test_secret_key_2024_secure"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+VIDEO_EXTENSIONS = (".mp4", ".webm")
 
 TASK_CONFIGS: Dict[str, Dict[str, object]] = {
     "T2I": {
@@ -30,6 +31,8 @@ TASK_CONFIGS: Dict[str, Dict[str, object]] = {
         },
         "show_ref": False,
         "upload_has_ref": False,
+        "media_type": "image",
+        "result_extensions": IMAGE_EXTENSIONS,
     },
     "TI2I": {
         "result_root": os.path.join(RESULT_DIR, "TI2I"),
@@ -48,7 +51,63 @@ TASK_CONFIGS: Dict[str, Dict[str, object]] = {
         },
         "show_ref": True,
         "upload_has_ref": True,
+        "media_type": "image",
+        "result_extensions": IMAGE_EXTENSIONS,
     },
+}
+
+TASK_CONFIGS["T2V"] = {
+    "result_root": os.path.join(RESULT_DIR, "T2V"),
+    "prompt_root": os.path.join(PROMPT_DIR, "T2V"),
+    "ref_root": os.path.join(REF_IMAGE_DIR, "T2V"),
+    "eval_dims": [
+        "text_consistency",
+        "motion_reasonableness",
+        "dynamism",
+        "physical_plausibility",
+        "visual_quality",
+    ],
+    "dashboard_dims": [
+        "overall",
+        "text_consistency",
+        "motion_reasonableness",
+        "dynamism",
+        "physical_plausibility",
+        "visual_quality",
+    ],
+    "bad_case_options": TASK_CONFIGS["T2I"]["bad_case_options"],
+    "show_ref": False,
+    "upload_has_ref": False,
+    "media_type": "video",
+    "result_extensions": VIDEO_EXTENSIONS,
+}
+
+TASK_CONFIGS["TI2V"] = {
+    "result_root": os.path.join(RESULT_DIR, "TI2V"),
+    "prompt_root": os.path.join(PROMPT_DIR, "TI2V"),
+    "ref_root": os.path.join(REF_IMAGE_DIR, "TI2V"),
+    "eval_dims": [
+        "text_consistency",
+        "motion_reasonableness",
+        "dynamism",
+        "physical_plausibility",
+        "visual_quality",
+        "image_consistency",
+    ],
+    "dashboard_dims": [
+        "overall",
+        "text_consistency",
+        "motion_reasonableness",
+        "dynamism",
+        "physical_plausibility",
+        "visual_quality",
+        "image_consistency",
+    ],
+    "bad_case_options": TASK_CONFIGS["TI2I"]["bad_case_options"],
+    "show_ref": True,
+    "upload_has_ref": True,
+    "media_type": "video",
+    "result_extensions": VIDEO_EXTENSIONS,
 }
 
 DIM_LABELS = {
@@ -57,7 +116,22 @@ DIM_LABELS = {
     "logic": "合理性",
     "consistency": "一致性",
     "fidelity": "保真度",
+    "text_consistency": "文本一致性",
+    "motion_reasonableness": "运动合理性",
+    "dynamism": "动态度",
+    "physical_plausibility": "物理规律与常识",
+    "visual_quality": "画面细节与美感",
+    "image_consistency": "图像一致性",
 }
+
+VIDEO_SCORE_DIMENSIONS = (
+    "text_consistency",
+    "motion_reasonableness",
+    "dynamism",
+    "physical_plausibility",
+    "visual_quality",
+    "image_consistency",
+)
 
 BAD_CASE_LABEL_TO_CATEGORY = {
     label: category
@@ -81,6 +155,10 @@ def get_task_config(task_type: str) -> dict:
     if normalized not in TASK_CONFIGS:
         raise InvalidTaskTypeError("无效任务类型")
     return TASK_CONFIGS[normalized]
+
+
+def is_video_task(task_type: str) -> bool:
+    return get_task_config(task_type)["media_type"] == "video"
 
 
 def dim_payload(dims: list[str]) -> list[dict]:

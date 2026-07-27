@@ -33,6 +33,13 @@ class VoteSubmit(BaseModel):
     logic: Optional[str] = None
     consistency: Optional[str] = None
     fidelity: Optional[str] = None
+    text_consistency: Optional[str] = None
+    motion_reasonableness: Optional[str] = None
+    dynamism: Optional[str] = None
+    physical_plausibility: Optional[str] = None
+    visual_quality: Optional[str] = None
+    image_consistency: Optional[str] = None
+    selected_dimensions: List[str] = Field(default_factory=list)
     bad_case_left: Optional[List[str]] = None
     bad_case_right: Optional[List[str]] = None
     duration_seconds: Optional[int] = None
