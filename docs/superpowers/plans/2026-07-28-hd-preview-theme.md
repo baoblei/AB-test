@@ -47,8 +47,13 @@ Add this test beside the existing background-tool contract tests in `tests/test_
 
 ```python
 def test_lightbox_background_toggle_updates_root_theme_and_is_reversible(self):
+    start_marker = (
+        "function applyPreviewBackgroundTheme("
+        if "function applyPreviewBackgroundTheme(" in self.html
+        else "function togglePreviewBackground("
+    )
     source = self.html[
-        self.html.index("function applyPreviewBackgroundTheme("):
+        self.html.index(start_marker):
         self.html.index("function renderMagnifier(")
     ]
     script = f"""
@@ -109,7 +114,7 @@ Run:
 python3 -m unittest tests/test_evaluation_preview_ui.py -v
 ```
 
-Expected: FAIL in `test_lightbox_background_toggle_updates_root_theme_and_is_reversible` because `function applyPreviewBackgroundTheme(` and the root theme synchronization do not exist.
+Expected: FAIL in `test_lightbox_background_toggle_updates_root_theme_and_is_reversible` because the existing toggle changes pane state but does not add `preview-light-theme` to the lightbox root; the test itself runs without an extraction error.
 
 - [ ] **Step 3: Add failing complete-surface CSS contract test**
 
