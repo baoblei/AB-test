@@ -460,6 +460,7 @@
             object-fit: contain;
             background: #171310;
         }
+        .lightbox .video-shell video { background: var(--preview-media-bg); }
         .video-controls {
             position: absolute;
             z-index: 14;
@@ -520,6 +521,19 @@
             font-size: 0.84rem;
         }
         .preview-info { color: var(--muted); font-size: 0.76rem; text-align: right; }
+        .lightbox .preview-toolbar {
+            color: var(--preview-text);
+            background: var(--preview-panel-bg);
+            border-color: var(--preview-border);
+        }
+        .lightbox .preview-shortcut-help,
+        .lightbox .preview-info {
+            color: var(--preview-muted-text);
+            background: var(--preview-panel-bg);
+        }
+        .lightbox .image-loading,
+        .lightbox .preview-loading,
+        .lightbox .image-error-message { color: var(--preview-muted-text); }
         .preview-dark { background: #171310 !important; }
         .magnifier-layer {
             position: absolute;
@@ -736,6 +750,13 @@
             background: white;
         }
         .lightbox {
+            --preview-overlay-bg: rgba(15, 12, 10, 0.9);
+            --preview-surface-bg: rgba(31, 24, 19, 0.96);
+            --preview-panel-bg: rgba(255, 253, 248, 0.96);
+            --preview-media-bg: #171310;
+            --preview-text: #ffffff;
+            --preview-muted-text: rgba(255, 255, 255, 0.82);
+            --preview-border: rgba(255, 255, 255, 0.08);
             position: fixed;
             inset: 0;
             z-index: 90;
@@ -743,13 +764,22 @@
             align-items: center;
             justify-content: center;
             padding: 20px;
-            background: rgba(15, 12, 10, 0.9);
+            background: var(--preview-overlay-bg);
+        }
+        .lightbox.preview-light-theme {
+            --preview-overlay-bg: #edf1f5;
+            --preview-surface-bg: #ffffff;
+            --preview-panel-bg: #f8fafc;
+            --preview-media-bg: #f1f4f7;
+            --preview-text: #253245;
+            --preview-muted-text: #5d6b7e;
+            --preview-border: #d7dee7;
         }
         .lightbox.open { display: flex; }
         .lightbox-dialog {
             width: min(1700px, 100%);
             height: min(92vh, 1020px);
-            background: rgba(31, 24, 19, 0.96);
+            background: var(--preview-surface-bg);
             border-radius: 24px;
             overflow: hidden;
             display: flex;
@@ -760,8 +790,8 @@
             justify-content: space-between;
             align-items: flex-start;
             padding: 18px 20px;
-            color: white;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--preview-text);
+            border-bottom: 1px solid var(--preview-border);
         }
         .lightbox-prompt {
             margin-top: 8px;
@@ -769,16 +799,17 @@
             overflow-wrap: anywhere;
             max-height: 20dvh;
             overflow: auto;
-            color: rgba(255, 255, 255, 0.82);
+            color: var(--preview-muted-text);
             font-size: 0.84rem;
             line-height: 1.45;
         }
+        .lightbox-hint { font-size: 0.8rem; color: var(--preview-muted-text); }
         .lightbox-grid {
             position: relative;
             flex: 1;
             display: grid;
             gap: 1px;
-            background: rgba(255, 255, 255, 0.08);
+            background: var(--preview-border);
         }
         .lightbox-grid.t2i { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .lightbox-grid.ti2i { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -792,13 +823,13 @@
         #lightbox-preview-toolbar { grid-column: 2; grid-row: 2; width: auto; }
         #lightbox-grid { grid-column: 1; grid-row: 2; }
         .pane {
-            background: rgba(15, 12, 10, 0.96);
+            background: var(--preview-surface-bg);
             display: flex;
             flex-direction: column;
             min-height: 0;
         }
         .pane-head {
-            color: rgba(255,255,255,0.84);
+            color: var(--preview-text);
             padding: 14px 16px;
             font-weight: 800;
         }
@@ -809,6 +840,7 @@
             padding: 18px;
             cursor: grab;
             touch-action: none;
+            background: var(--preview-media-bg);
         }
         .pane-body.dragging { cursor: grabbing; }
         .pane-body img {
@@ -1020,7 +1052,7 @@
             <div class="lightbox-head">
                 <div>
                     <div style="font-weight:800;">高清预览</div>
-                    <div style="font-size:0.8rem; color:rgba(255,255,255,0.72);">滚轮缩放，按住拖动平移</div>
+                    <div class="lightbox-hint">滚轮缩放，按住拖动平移</div>
                     <div id="lightbox-prompt" class="lightbox-prompt hidden"></div>
                 </div>
                 <div style="display:flex; gap:8px;">
@@ -2517,11 +2549,23 @@
             return !playback || playback.canUseFrameTools();
         }
 
+        function applyPreviewBackgroundTheme(groupId) {
+            const group = previewController.groups.get(groupId);
+            if (!group) return;
+            document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(pane => pane.classList.toggle("preview-dark", group.darkBackground));
+            if (groupId === "lightbox") {
+                document.getElementById("lightbox")?.classList.toggle(
+                    "preview-light-theme",
+                    !group.darkBackground
+                );
+            }
+        }
+
         function togglePreviewBackground(groupId) {
             const group = previewController.groups.get(groupId);
             if (!group) return;
             group.darkBackground = !group.darkBackground;
-            document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(pane => pane.classList.toggle("preview-dark", group.darkBackground));
+            applyPreviewBackgroundTheme(groupId);
             const button = document.querySelector(`[data-preview-group="${groupId}"] [data-preview-action="background"]`);
             if (button) {
                 const label = group.darkBackground ? "深色背景" : "浅色背景";
@@ -2751,9 +2795,8 @@
         }
 
         function bindPreviewGroup(groupId, generation) {
+            if (typeof applyPreviewBackgroundTheme === "function") applyPreviewBackgroundTheme(groupId);
             document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(container => {
-                const group = previewController.groups.get(groupId);
-                container.classList.toggle("preview-dark", Boolean(group && group.darkBackground));
                 if (container.dataset.bound === "1") return;
                 container.dataset.bound = "1";
                 const side = container.dataset.previewPane;
