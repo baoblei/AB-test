@@ -150,6 +150,127 @@ return {
         open_source = self.function_source("openDashboardPreview")
         self.assertIn('applyDashboardPreviewBackgroundTheme("overlay")', open_source)
 
+    def test_dashboard_toolbar_and_error_colors_are_readable_in_both_themes(self):
+        toolbar = self.render_toolbar_markup(show_sync=True)
+        grid_content = (
+            '<section class="dashboard-preview-viewport failed">'
+            '<span class="dashboard-preview-error">Failed</span></section>'
+        )
+        dark = self.run_browser_geometry_probe(
+            self.production_dashboard_overlay_markup(
+                toolbar=toolbar, grid_content=grid_content
+            ),
+            '''
+const tool = document.querySelector('[data-preview-action="background"]');
+tool.classList.add('active');
+const style = getComputedStyle(tool);
+return {
+    toolbarActiveColor: style.color,
+    toolbarActiveBackground: style.backgroundColor,
+    errorColor: getComputedStyle(document.querySelector('.dashboard-preview-error')).color
+};''',
+        )
+        light = self.run_browser_geometry_probe(
+            self.production_dashboard_overlay_markup(
+                toolbar=toolbar,
+                grid_content=grid_content,
+                overlay_classes=("preview-light-theme",),
+            ),
+            '''
+const tool = document.querySelector('[data-preview-action="background"]');
+tool.classList.add('active');
+const style = getComputedStyle(tool);
+return {
+    toolbarActiveColor: style.color,
+    toolbarActiveBackground: style.backgroundColor,
+    errorColor: getComputedStyle(document.querySelector('.dashboard-preview-error')).color
+};''',
+        )
+        self.assertIn(".preview-tool:hover, .preview-tool.active", self.html)
+        self.assertEqual(dark, {
+            "toolbarActiveColor": "rgb(255, 255, 255)",
+            "toolbarActiveBackground": "rgba(111, 191, 255, 0.24)",
+            "errorColor": "rgb(255, 211, 211)",
+        })
+        self.assertEqual(light, {
+            "toolbarActiveColor": "rgb(37, 50, 69)",
+            "toolbarActiveBackground": "rgb(219, 234, 254)",
+            "errorColor": "rgb(159, 29, 29)",
+        })
+
+    def test_dashboard_theme_projection_is_reversible_and_reopen_defaults_to_dark(self):
+        script = f'''
+const classes = initial => {{
+    const values = new Set(initial);
+    return {{
+        contains: name => values.has(name),
+        toggle: (name, enabled) => enabled ? values.add(name) : values.delete(name),
+        remove: name => values.delete(name),
+        add: name => values.add(name)
+    }};
+}};
+const overlay = {{ style: {{}}, classList: classes([]), setAttribute(name, value) {{ this[name] = value; }} }};
+const viewport = {{ classList: classes([]) }};
+const grid = {{
+    className: "",
+    replaceChildren() {{}},
+    querySelectorAll: () => []
+}};
+const toolbar = {{ replaceChildren() {{}}, innerHTML: "" }};
+const prompt = {{ textContent: "", classList: classes([]) }};
+const stage = {{ classList: classes([]) }};
+const document = {{
+    querySelector: selector => selector === ".dashboard-preview-stage" ? stage : null,
+    querySelectorAll: () => [viewport],
+    getElementById: id => ({{
+        "image-overlay": overlay,
+        "image-preview": grid,
+        "dashboard-preview-toolbar": toolbar,
+        "dashboard-preview-prompt": prompt
+    }})[id]
+}};
+const previewController = {{ groups: new Map() }};
+const stopHoldCompare = () => null;
+const releasePreviewPointers = () => null;
+const hidePreviewMagnifiers = () => null;
+const beginDashboardPreviewRender = () => null;
+const normalizeDashboardPreview = () => ({{ kind: "single", panes: [], showSync: false, showCompare: false }});
+const createPreviewGroup = id => previewController.groups.set(id, {{ darkBackground: true, panes: new Map() }});
+const renderDashboardPreviewPane = pane => pane;
+const renderInlineCompareControls = () => null;
+const renderDashboardPreviewToolbar = () => "";
+const bindPreviewGroup = () => null;
+const updateDashboardPreviewToolbar = () => null;
+let dashboardVideoPlayback = null;
+{self.function_source("applyDashboardPreviewBackgroundTheme")}
+{self.function_source("closeImagePreview")}
+{self.function_source("openDashboardPreview")}
+openDashboardPreview({{}});
+const initial = {{ rootLight: overlay.classList.contains("preview-light-theme"), paneLight: viewport.classList.contains("preview-light") }};
+previewController.groups.get("overlay").darkBackground = false;
+applyDashboardPreviewBackgroundTheme("overlay");
+const light = {{ rootLight: overlay.classList.contains("preview-light-theme"), paneLight: viewport.classList.contains("preview-light") }};
+previewController.groups.get("overlay").darkBackground = true;
+applyDashboardPreviewBackgroundTheme("overlay");
+const dark = {{ rootLight: overlay.classList.contains("preview-light-theme"), paneLight: viewport.classList.contains("preview-light") }};
+closeImagePreview();
+const closed = {{ rootLight: overlay.classList.contains("preview-light-theme"), display: overlay.style.display }};
+openDashboardPreview({{}});
+console.log(JSON.stringify({{
+    initial, light, dark,
+    closed,
+    reopened: {{ rootLight: overlay.classList.contains("preview-light-theme"), paneLight: viewport.classList.contains("preview-light"), display: overlay.style.display }}
+}}));
+'''
+        result = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+        self.assertEqual(result, {
+            "initial": {"rootLight": False, "paneLight": False},
+            "light": {"rootLight": True, "paneLight": True},
+            "dark": {"rootLight": False, "paneLight": False},
+            "closed": {"rootLight": False, "display": "none"},
+            "reopened": {"rootLight": False, "paneLight": False, "display": "flex"},
+        })
+
     def run_browser_geometry_probe(self, body, scenario, width=700, height=1000):
         chrome = next((candidate for candidate in (
             shutil.which("google-chrome"),

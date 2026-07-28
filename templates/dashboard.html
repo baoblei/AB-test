@@ -378,6 +378,10 @@
             --preview-text: #ffffff;
             --preview-muted-text: #dceaf4;
             --preview-border: rgba(255, 255, 255, 0.18);
+            --preview-tool-active-text: #ffffff;
+            --preview-tool-active-bg: rgba(111, 191, 255, 0.24);
+            --preview-tool-active-border: rgba(153, 213, 255, 0.38);
+            --preview-error-text: #ffd3d3;
             position: fixed;
             inset: 0;
             display: none;
@@ -393,6 +397,10 @@
             --preview-text: #253245;
             --preview-muted-text: #5d6b7e;
             --preview-border: #d7dee7;
+            --preview-tool-active-text: #253245;
+            --preview-tool-active-bg: #dbeafe;
+            --preview-tool-active-border: #bfdbfe;
+            --preview-error-text: #9f1d1d;
         }
         .dashboard-preview-stage {
             position: relative;
@@ -464,7 +472,7 @@
             background: transparent;
             cursor: pointer;
         }
-        .preview-tool:hover, .preview-tool.active { color: #ffffff; background: rgba(111, 191, 255, 0.24); border-color: rgba(153, 213, 255, 0.38); }
+        .preview-tool:hover, .preview-tool.active { color: var(--preview-tool-active-text); background: var(--preview-tool-active-bg); border-color: var(--preview-tool-active-border); }
         .preview-info, .preview-shortcut-help {
             position: absolute;
             right: calc(100% + 8px);
@@ -571,7 +579,7 @@
             font-size: 0.8rem;
             pointer-events: none;
         }
-        .dashboard-preview-error { display: none; color: #ffd3d3; }
+        .dashboard-preview-error { display: none; color: var(--preview-error-text); }
         .dashboard-preview-viewport:not(.loading) .dashboard-preview-loading { display: none; }
         .dashboard-preview-viewport.failed .dashboard-preview-error { display: block; }
         .dashboard-preview-label {
