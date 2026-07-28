@@ -68,7 +68,12 @@ console.log(renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: {str(
         return subprocess.check_output(["node", "-e", script], text=True)
 
     def production_dashboard_overlay_markup(
-        self, toolbar="", grid_class="single", grid_content="", stage_classes=()
+        self,
+        toolbar="",
+        grid_class="single",
+        grid_content="",
+        stage_classes=(),
+        overlay_classes=(),
     ):
         overlay_start = self.html.index('<div id="image-overlay"')
         overlay_end = self.html.index("\n\n    <script>", overlay_start)
@@ -80,8 +85,11 @@ console.log(renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: {str(
         self.assertIn(
             '<div class="dashboard-preview-grid single" id="image-preview"></div>', body
         )
+        overlay_class = f' class="{" ".join(overlay_classes)}"' if overlay_classes else ""
         body = body.replace(
-            '<div id="image-overlay"', '<div id="image-overlay" style="display:flex"', 1
+            '<div id="image-overlay"',
+            f'<div id="image-overlay"{overlay_class} style="display:flex"',
+            1,
         )
         body = body.replace(
             'class="dashboard-preview-stage"',
@@ -99,6 +107,48 @@ console.log(renderDashboardPreviewToolbar({{ groupId: "overlay", showSync: {str(
             1,
         )
         return body
+
+    def test_dashboard_light_theme_covers_overlay_stage_grid_viewport_and_toolbar(self):
+        toolbar = self.render_toolbar_markup(show_sync=True)
+        body = self.production_dashboard_overlay_markup(
+            toolbar=toolbar,
+            grid_content='<section class="dashboard-preview-viewport"><video></video><strong class="dashboard-preview-label">A</strong></section>',
+            overlay_classes=("preview-light-theme",),
+        )
+        result = self.run_browser_geometry_probe(body, """
+const color = selector => getComputedStyle(document.querySelector(selector)).backgroundColor;
+return {
+    overlay: color("#image-overlay"),
+    stage: color(".dashboard-preview-stage"),
+    grid: color(".dashboard-preview-grid"),
+    viewport: color(".dashboard-preview-viewport"),
+    video: color(".dashboard-preview-viewport video"),
+    toolbar: color(".dashboard-preview-toolbar")
+};
+""")
+        self.assertEqual(result, {
+            "overlay": "rgb(237, 241, 245)",
+            "stage": "rgb(255, 255, 255)",
+            "grid": "rgb(255, 255, 255)",
+            "viewport": "rgb(241, 244, 247)",
+            "video": "rgb(241, 244, 247)",
+            "toolbar": "rgb(248, 250, 252)",
+        })
+
+    def test_close_removes_dashboard_light_theme(self):
+        source = self.function_source("closeImagePreview")
+        self.assertIn('overlay.classList.remove("preview-light-theme")', source)
+
+    def test_dashboard_background_projection_updates_root_and_panes(self):
+        self.assertIn("function applyDashboardPreviewBackgroundTheme(groupId)", self.html)
+        source = self.function_source("applyDashboardPreviewBackgroundTheme")
+        self.assertIn('getElementById("image-overlay")', source)
+        self.assertIn('"preview-light-theme"', source)
+        self.assertIn('"preview-light"', source)
+        toolbar_source = self.function_source("bindDashboardPreviewToolbar")
+        self.assertIn("applyDashboardPreviewBackgroundTheme(groupId)", toolbar_source)
+        open_source = self.function_source("openDashboardPreview")
+        self.assertIn('applyDashboardPreviewBackgroundTheme("overlay")', open_source)
 
     def run_browser_geometry_probe(self, body, scenario, width=700, height=1000):
         chrome = next((candidate for candidate in (
@@ -426,6 +476,10 @@ const previewController = { groups: new Map() };
 const overlay = {
     style: { display: "flex" },
     attributes: { "aria-hidden": "false" },
+    classList: {
+        toggle() {},
+        remove() {}
+    },
     setAttribute: (name, value) => { overlay.attributes[name] = value; },
     addEventListener: (name, handler) => { handlers[name] = handler; }
 };
@@ -499,7 +553,14 @@ let toolbarOptions;
 let normalizedPayload;
 const grid = {{ replaceChildren: (...children) => {{ grid.children = children; }} }};
 const toolbar = {{ innerHTML: "" }};
-const overlay = {{ style: {{}}, setAttribute: (name, value) => {{ overlay[name] = value; }} }};
+const overlay = {{
+    style: {{}},
+    classList: {{
+        toggle() {{}},
+        remove() {{}}
+    }},
+    setAttribute: (name, value) => {{ overlay[name] = value; }}
+}};
 const promptNode = {{ textContent: "", classList: {{ toggle() {{}} }} }};
 const document = {{ getElementById: id => id === "image-preview" ? grid : id === "dashboard-preview-toolbar" ? toolbar : id === "dashboard-preview-prompt" ? promptNode : overlay }};
 const normalizeDashboardPreview = payload => {{
@@ -516,6 +577,7 @@ const createPreviewGroup = (groupId, options) => {{ groupOptions = {{ groupId, .
 const renderDashboardPreviewToolbar = options => {{ toolbarOptions = options; return "toolbar"; }};
 const bindPreviewGroup = () => null;
 const updateDashboardPreviewToolbar = () => null;
+const applyDashboardPreviewBackgroundTheme = () => null;
 {source}
 openDashboardPreview({{ single: true, src: "/clicked.png", label: "Clicked" }});
 console.log(JSON.stringify({{ normalizedPayload, created, groupOptions, toolbarOptions, className: grid.className, toolbar: toolbar.innerHTML, display: overlay.style.display, ariaHidden: overlay["aria-hidden"] }}));
@@ -598,7 +660,14 @@ const promptNode = {{
 const stage = {{ classList: {{ remove() {{}} }} }};
 const grid = {{ replaceChildren() {{}}, append() {{}} }};
 const toolbar = {{ innerHTML: "" }};
-const overlay = {{ style: {{}}, setAttribute() {{}} }};
+const overlay = {{
+    style: {{}},
+    classList: {{
+        toggle() {{}},
+        remove() {{}}
+    }},
+    setAttribute() {{}}
+}};
 const document = {{
     querySelector: selector => selector === ".dashboard-preview-stage" ? stage : null,
     getElementById: id => ({{
@@ -618,6 +687,7 @@ const renderInlineCompareControls = () => null;
 const renderDashboardPreviewToolbar = () => "toolbar";
 const bindPreviewGroup = () => null;
 const updateDashboardPreviewToolbar = () => null;
+const applyDashboardPreviewBackgroundTheme = () => null;
 {self.function_source("openDashboardPreview")}
 const normal = normalizeDashboardPreview(normalPayload);
 const bad = normalizeDashboardPreview(badPayload);
@@ -716,7 +786,14 @@ const classes = initial => {{
 const stage = {{ classList: classes(["preview-help-open"]) }};
 const grid = {{ replaceChildren: (...children) => {{ grid.children = children; }} }};
 const toolbar = {{ innerHTML: '<div class="dashboard-preview-toolbar help-open"></div>' }};
-const overlay = {{ style: {{}}, setAttribute(name, value) {{ this[name] = value; }} }};
+const overlay = {{
+    style: {{}},
+    classList: {{
+        toggle() {{}},
+        remove() {{}}
+    }},
+    setAttribute(name, value) {{ this[name] = value; }}
+}};
 const promptNode = {{ textContent: "", classList: {{ toggle() {{}} }} }};
 const document = {{
     querySelector: selector => selector === ".dashboard-preview-stage" ? stage : null,
@@ -733,6 +810,7 @@ const renderInlineCompareControls = () => null;
 const renderDashboardPreviewToolbar = () => '<div class="dashboard-preview-toolbar"></div>';
 const bindPreviewGroup = () => null;
 const updateDashboardPreviewToolbar = () => null;
+const applyDashboardPreviewBackgroundTheme = () => null;
 {source}
 openDashboardPreview({{ single: true, src: "/second.png", label: "Second" }});
 console.log(JSON.stringify({{
@@ -958,6 +1036,10 @@ const promptNode = { textContent: "prompt", classList: classes([]) };
 const overlay = {
     style: { display: "flex" },
     attributes: { "aria-hidden": "false" },
+    classList: {
+        toggle() {},
+        remove() {}
+    },
     setAttribute(name, value) { this.attributes[name] = value; }
 };
 const document = {
@@ -1872,6 +1954,10 @@ const handlers = [];
 const counts = {{ begin: 0, release: 0, hide: 0, hold: 0, toolbar: 0, grid: 0 }};
 const overlay = {{
     style: {{ display: "flex" }},
+    classList: {{
+        toggle() {{}},
+        remove() {{}}
+    }},
     setAttribute: (name, value) => {{ overlay[name] = value; }},
     addEventListener: (type, listener) => handlers.push({{ type, listener }})
 }};

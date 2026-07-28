@@ -371,12 +371,28 @@
             color: var(--muted);
         }
         #image-overlay {
+            --preview-overlay-bg: rgba(5, 9, 15, 0.96);
+            --preview-surface-bg: #111820;
+            --preview-panel-bg: rgba(17, 24, 32, 0.9);
+            --preview-media-bg: #0b1016;
+            --preview-text: #ffffff;
+            --preview-muted-text: #dceaf4;
+            --preview-border: rgba(255, 255, 255, 0.18);
             position: fixed;
             inset: 0;
             display: none;
             padding: 12px;
-            background: rgba(5, 9, 15, 0.96);
+            background: var(--preview-overlay-bg);
             z-index: 80;
+        }
+        #image-overlay.preview-light-theme {
+            --preview-overlay-bg: #edf1f5;
+            --preview-surface-bg: #ffffff;
+            --preview-panel-bg: #f8fafc;
+            --preview-media-bg: #f1f4f7;
+            --preview-text: #253245;
+            --preview-muted-text: #5d6b7e;
+            --preview-border: #d7dee7;
         }
         .dashboard-preview-stage {
             position: relative;
@@ -386,8 +402,8 @@
             height: calc(100dvh - 24px);
             overflow: hidden;
             border-radius: 20px;
-            background: #111820;
-            color: white;
+            background: var(--preview-surface-bg);
+            color: var(--preview-text);
         }
         .dashboard-preview-head {
             position: relative;
@@ -407,7 +423,7 @@
             overflow-wrap: anywhere;
             max-height: 20dvh;
             overflow: auto;
-            color: rgba(255, 255, 255, 0.78);
+            color: var(--preview-muted-text);
             font-size: 0.84rem;
             line-height: 1.45;
         }
@@ -415,6 +431,7 @@
             position: relative;
             flex: 1 1 auto;
             min-height: 0;
+            background: var(--preview-surface-bg);
         }
         .dashboard-preview-toolbar {
             position: absolute;
@@ -430,9 +447,10 @@
             overflow-x: hidden;
             overflow-y: auto;
             padding: 6px 4px;
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            border: 1px solid var(--preview-border);
             border-radius: 14px;
-            background: rgba(17, 24, 32, 0.9);
+            color: var(--preview-text);
+            background: var(--preview-panel-bg);
             box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
         }
         .dashboard-preview-toolbar.help-open { width: 220px; align-items: flex-end; }
@@ -442,19 +460,19 @@
             padding: 4px;
             border: 1px solid transparent;
             border-radius: 9px;
-            color: white;
+            color: var(--preview-text);
             background: transparent;
             cursor: pointer;
         }
-        .preview-tool:hover, .preview-tool.active { background: rgba(111, 191, 255, 0.24); border-color: rgba(153, 213, 255, 0.38); }
+        .preview-tool:hover, .preview-tool.active { color: #ffffff; background: rgba(111, 191, 255, 0.24); border-color: rgba(153, 213, 255, 0.38); }
         .preview-info, .preview-shortcut-help {
             position: absolute;
             right: calc(100% + 8px);
             width: 220px;
             padding: 8px;
             border-radius: 8px;
-            color: #dceaf4;
-            background: rgba(5, 9, 15, 0.86);
+            color: var(--preview-muted-text);
+            background: var(--preview-panel-bg);
             font-size: 0.74rem;
             line-height: 1.45;
         }
@@ -472,6 +490,7 @@
             height: 100%;
             gap: 10px;
             padding: 62px 70px 18px 18px;
+            background: var(--preview-surface-bg);
         }
         .dashboard-preview-stage.preview-help-open .dashboard-preview-grid { width: calc(100% - 248px); padding-right: 248px; }
         .dashboard-preview-grid.single { grid-template-columns: minmax(0, 1fr); }
@@ -483,7 +502,7 @@
             min-height: 0;
             overflow: hidden;
             border-radius: 14px;
-            background: #0b1016;
+            background: var(--preview-media-bg);
             touch-action: none;
         }
         .dashboard-preview-viewport img {
@@ -503,7 +522,7 @@
             max-width: none;
             max-height: none;
             transform-origin: center;
-            background: #0a0f15;
+            background: var(--preview-media-bg);
         }
         .dashboard-video-controls {
             position: absolute;
@@ -539,7 +558,7 @@
         }
         .dashboard-video-time { min-width: 76px; font: 0.72rem ui-monospace, monospace; }
         .dashboard-video-seek { width: 100%; accent-color: var(--primary); }
-        .dashboard-preview-viewport.preview-light { background: #f1f4f7; }
+        .dashboard-preview-viewport.preview-light { background: var(--preview-media-bg); }
         .dashboard-preview-viewport.dragging { cursor: grabbing; }
         .dashboard-preview-loading, .dashboard-preview-error {
             position: absolute;
@@ -547,8 +566,8 @@
             transform: translate(-50%, -50%);
             padding: 8px 10px;
             border-radius: 8px;
-            color: #dceaf4;
-            background: rgba(5, 9, 15, 0.72);
+            color: var(--preview-text);
+            background: var(--preview-panel-bg);
             font-size: 0.8rem;
             pointer-events: none;
         }
@@ -564,8 +583,8 @@
             overflow: hidden;
             padding: 5px 8px;
             border-radius: 7px;
-            color: white;
-            background: rgba(5, 9, 15, 0.7);
+            color: var(--preview-text);
+            background: var(--preview-panel-bg);
             text-overflow: ellipsis;
             white-space: nowrap;
         }
@@ -1527,6 +1546,18 @@
             previewPointerCleanups.set(groupId, cleanups);
         }
 
+        function applyDashboardPreviewBackgroundTheme(groupId) {
+            const group = previewController.groups.get(groupId);
+            if (!group) return;
+            const light = !group.darkBackground;
+            document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(viewport => {
+                viewport.classList.toggle("preview-light", light);
+            });
+            if (groupId === "overlay") {
+                document.getElementById("image-overlay")?.classList.toggle("preview-light-theme", light);
+            }
+        }
+
         function bindDashboardPreviewToolbar() {
             if (dashboardPreviewToolbarBound) return;
             dashboardPreviewToolbarBound = true;
@@ -1562,7 +1593,7 @@
                 }
                 if (action === "background") {
                     group.darkBackground = !group.darkBackground;
-                    document.querySelectorAll(`[data-preview-group-pane="${groupId}"]`).forEach(viewport => viewport.classList.toggle("preview-light", !group.darkBackground));
+                    applyDashboardPreviewBackgroundTheme(groupId);
                 }
                 if (action === "help") {
                     const open = !toolbar.classList.contains("help-open");
@@ -2730,6 +2761,7 @@
             promptNode.textContent = "";
             promptNode.classList.add("hidden");
             const overlay = document.getElementById("image-overlay");
+            overlay.classList.remove("preview-light-theme");
             overlay.style.display = "none";
             overlay.setAttribute("aria-hidden", "true");
         }
@@ -3090,6 +3122,7 @@
             promptNode.textContent = normalized.prompt || "";
             promptNode.classList.toggle("hidden", !normalized.prompt);
             createPreviewGroup("overlay", { sync: normalized.showSync });
+            applyDashboardPreviewBackgroundTheme("overlay");
             const grid = document.getElementById("image-preview");
             grid.className = `dashboard-preview-grid ${normalized.kind}`;
             grid.replaceChildren(...normalized.panes.map(renderDashboardPreviewPane));
