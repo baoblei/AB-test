@@ -18,6 +18,7 @@
                 pause: () => this._mirrorPause(id),
                 seeking: () => this._mirrorTime(id),
                 timeupdate: () => this._correctDrift(id),
+                ended: () => this._loopFrom(id),
             };
             Object.entries(handlers).forEach(([type, handler]) => {
                 media.addEventListener(type, handler);
@@ -161,6 +162,12 @@
                     }
                 });
             });
+        }
+
+        _loopFrom(id) {
+            if (this.propagating || !this.entries.has(id)) return;
+            this.seek(id, 0);
+            void this.play(id);
         }
 
         _clearSource(media) {

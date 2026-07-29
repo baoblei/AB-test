@@ -51,9 +51,39 @@ function fakeVideo(name) {
     };
     group.pause("left");
     const frameToolsAfterPause = group.canUseFrameTools();
+    left.currentTime = 4;
+    right.currentTime = 2.5;
+    left.dispatch("ended");
+    await new Promise(resolve => setImmediate(resolve));
+    const independentLoop = {
+        plays: [left.playCalls, right.playCalls],
+        times: [left.currentTime, right.currentTime]
+    };
+
+    group.setSync(true);
+    left.currentTime = 4;
+    right.currentTime = 3.5;
+    right.dispatch("ended");
+    await new Promise(resolve => setImmediate(resolve));
+    const syncedLoop = {
+        plays: [left.playCalls, right.playCalls],
+        times: [left.currentTime, right.currentTime]
+    };
+
+    group.remove("left", true);
+    const playsBeforeRemovedEnded = left.playCalls;
+    left.currentTime = 4;
+    left.dispatch("ended");
+    await new Promise(resolve => setImmediate(resolve));
+    const removedLoop = {
+        playsBefore: playsBeforeRemovedEnded,
+        playsAfter: left.playCalls,
+        listeners: left.listenerCount()
+    };
     group.destroy();
     console.log(JSON.stringify({
         synced, independent, frameToolsAfterPause,
+        independentLoop, syncedLoop, removedLoop,
         cleanup: {
             sources: [left.src, right.src],
             loads: [left.loadCalls, right.loadCalls],
@@ -74,6 +104,19 @@ function fakeVideo(name) {
         self.assertEqual(result["independent"]["times"], [2.5, 1.75])
         self.assertFalse(result["independent"]["frameToolsWhilePlaying"])
         self.assertTrue(result["frameToolsAfterPause"])
+        self.assertEqual(result["independentLoop"], {
+            "plays": [3, 1],
+            "times": [0, 2.5],
+        })
+        self.assertEqual(result["syncedLoop"], {
+            "plays": [4, 2],
+            "times": [0, 0],
+        })
+        self.assertEqual(result["removedLoop"], {
+            "playsBefore": 4,
+            "playsAfter": 4,
+            "listeners": 0,
+        })
         self.assertEqual(result["cleanup"]["sources"], ["", ""])
         self.assertEqual(result["cleanup"]["loads"], [1, 1])
         self.assertEqual(result["cleanup"]["listeners"], [0, 0])
