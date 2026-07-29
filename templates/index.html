@@ -78,6 +78,23 @@
         .setup-card h2 { margin: 0 0 8px; font-size: 1.8rem; }
         .setup-card p { margin: 0 0 18px; color: var(--muted); }
         .stack { display: grid; gap: 12px; }
+        .setup-actions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .setup-dashboard-link {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 9px 14px;
+            border: 1px solid rgba(72, 55, 37, 0.1);
+            border-radius: 999px;
+            color: var(--muted);
+            background: rgba(118, 103, 88, 0.08);
+            font-weight: 700;
+            text-decoration: none;
+        }
         .label { font-size: 0.84rem; color: var(--muted); font-weight: 700; }
         .label-row {
             display: flex;
@@ -988,7 +1005,10 @@
                     <div class="video-dimension-options" id="video-dimension-options"></div>
                 </div>
                 <div class="resolution-warning" id="resolution-warning"></div>
-                <button class="submit-btn" onclick="startTest()">进入评测</button>
+                <div class="setup-actions">
+                    <button class="submit-btn" onclick="startTest()">进入评测</button>
+                    <a class="setup-dashboard-link" href="/dashboard" target="_blank" rel="noopener">进入看板</a>
+                </div>
             </div>
         </div>
     </div>
@@ -1371,7 +1391,7 @@
             renderVideoDimensionSelector();
             clearResolutionHints();
             document.getElementById("task-hint").textContent = isVideoTask()
-                ? "视频底部可播放、暂停和拖动进度；侧边栏同步按钮控制 A/B 联动，暂停后可使用画面对照工具。"
+                ? "视频底部可播放、暂停和拖动进度，播放结束后自动循环；侧边栏同步按钮控制 A/B 联动，暂停后可使用画面对照工具。"
                 : (state.taskType === "TI2I"
                     ? "参考图 + A/B 编辑结果会同步展示，点击图片可打开高清三图预览。"
                     : "点击图片可打开高清对比预览。");

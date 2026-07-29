@@ -139,6 +139,20 @@ class VideoEvaluationTemplateTests(unittest.TestCase):
         self.assertIn('state.config.media_type === "video"', self.html)
         self.assertIn("state.selectedDimensions", self.html)
 
+    def test_setup_card_exposes_dashboard_entry_and_video_loop_copy(self):
+        self.assertIn('class="setup-actions"', self.html)
+        self.assertIn(
+            '<button class="submit-btn" onclick="startTest()">进入评测</button>',
+            self.html,
+        )
+        self.assertIn(
+            '<a class="setup-dashboard-link" href="/dashboard" target="_blank" rel="noopener">进入看板</a>',
+            self.html,
+        )
+        self.assertIn(".setup-dashboard-link", self.html)
+        source = self.function_source("handleTaskTypeChange", "handleVersionInput")
+        self.assertIn("播放结束后自动循环", source)
+
     def test_session_uses_selected_dimensions_only_for_video(self):
         source = self.function_source("prepareEvalSession", "renderEvalTable")
         self.assertIn('params.set("dimensions", JSON.stringify(state.selectedDimensions))', source)
