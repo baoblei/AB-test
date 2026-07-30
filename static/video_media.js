@@ -9,6 +9,8 @@
             this.driftThreshold = Number(options.driftThreshold || 0.15);
             this.entries = new Map();
             this.propagating = false;
+            this._looping = new Map();
+            this._syncLoopKey = {};
         }
 
         add(id, media) {
@@ -36,6 +38,8 @@
             entry.media.pause();
             if (clearSource) this._clearSource(entry.media);
             this.entries.delete(id);
+            this._looping.delete(id);
+            if (!this.entries.size) this._looping.delete(this._syncLoopKey);
         }
 
         setSync(enabled) {
@@ -116,6 +120,7 @@
                 });
             });
             this.entries.clear();
+            this._looping.clear();
         }
 
         _targets(id) {
@@ -165,9 +170,32 @@
         }
 
         _loopFrom(id) {
-            if (this.propagating || !this.entries.has(id)) return;
+            const entry = this.entries.get(id);
+            if (!entry) return;
+            const syncLoop = this.sync;
+            const key = syncLoop ? this._syncLoopKey : id;
+            if (this._looping.has(key)) return;
+            if (this.propagating && !this._looping.size) return;
+
+            const token = {};
+            this._looping.set(key, token);
             this.seek(id, 0);
-            void this.play(id);
+            const replay = syncLoop ? this.play(id) : this._playEntry(entry);
+            void Promise.resolve(replay).then(
+                () => this._finishLoop(key, token),
+                () => this._finishLoop(key, token),
+            );
+        }
+
+        _playEntry(entry) {
+            const result = entry.media.play();
+            return result && typeof result.catch === "function"
+                ? result.catch(() => undefined)
+                : result;
+        }
+
+        _finishLoop(key, token) {
+            if (this._looping.get(key) === token) this._looping.delete(key);
         }
 
         _clearSource(media) {
