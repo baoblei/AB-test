@@ -5,6 +5,119 @@ from pathlib import Path
 
 
 class VideoPlaybackGroupTests(unittest.TestCase):
+    def test_sync_loop_releases_each_entry_when_its_replay_settles(self):
+        script = r'''
+const { VideoPlaybackGroup } = require("./static/video_media.js");
+function deferred() {
+    let resolve, reject;
+    return { promise: new Promise((res, rej) => { resolve = res; reject = rej; }), resolve, reject };
+}
+function fakeVideo(name, plannedPlays = []) {
+    const listeners = new Map();
+    return {
+        name, paused: true, currentTime: 0, duration: 4, playCalls: 0,
+        addEventListener(type, callback) {
+            if (!listeners.has(type)) listeners.set(type, new Set());
+            listeners.get(type).add(callback);
+        },
+        removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+        dispatch(type) { for (const callback of [...(listeners.get(type) || [])]) callback(); },
+        play() {
+            this.playCalls += 1;
+            this.paused = false;
+            this.dispatch("play");
+            return plannedPlays.shift() || Promise.resolve();
+        },
+        pause() { this.paused = true; this.dispatch("pause"); },
+        removeAttribute() {}, load() {},
+        listenerCount() { return [...listeners.values()].reduce((sum, value) => sum + value.size, 0); }
+    };
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+async function exercise(firstOutcome) {
+    const firstLeftReplay = deferred();
+    const pendingRightReplay = deferred();
+    const left = fakeVideo(`${firstOutcome}-left`, [firstLeftReplay.promise, Promise.resolve()]);
+    const right = fakeVideo(`${firstOutcome}-right`, [pendingRightReplay.promise]);
+    const group = new VideoPlaybackGroup({ sync: true });
+    group.add("left", left);
+    group.add("right", right);
+
+    left.currentTime = 4;
+    right.currentTime = 4;
+    left.dispatch("ended");
+    if (firstOutcome === "resolve") firstLeftReplay.resolve();
+    else firstLeftReplay.reject(new Error("autoplay denied"));
+    await settle();
+
+    left.currentTime = 4;
+    right.currentTime = 3;
+    left.dispatch("ended");
+    await settle();
+    const whileRightPending = {
+        plays: [left.playCalls, right.playCalls],
+        times: [left.currentTime, right.currentTime],
+        propagating: group.propagating,
+        coveredEntries: [...group._looping].map(token => [...token.targets].map(entry => entry.id))
+    };
+
+    pendingRightReplay.resolve();
+    await settle();
+    return {
+        whileRightPending,
+        afterAllSettled: { propagating: group.propagating, tokens: group._looping.size }
+    };
+}
+(async () => {
+    const unhandled = [];
+    process.on("unhandledRejection", reason => unhandled.push(String(reason)));
+    const resolved = await exercise("resolve");
+    const rejected = await exercise("reject");
+
+    const neverSettles = deferred();
+    const removed = fakeVideo("removed", [neverSettles.promise]);
+    const removedGroup = new VideoPlaybackGroup({ sync: false });
+    removedGroup.add("removed", removed);
+    removed.currentTime = 4;
+    removed.dispatch("ended");
+    const token = [...removedGroup._looping][0];
+    const removedEntry = [...token.targets][0];
+    removedGroup.remove("removed");
+    const removal = {
+        tokens: removedGroup._looping.size,
+        tokenTargets: token.targets.size,
+        covered: removedGroup._loopCovers(removedEntry),
+        listeners: removed.listenerCount()
+    };
+
+    console.log(JSON.stringify({ resolved, rejected, removal, unhandled }));
+})().catch(error => { console.error(error); process.exit(1); });
+'''
+        completed = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        expected_recovery = {
+            "whileRightPending": {
+                "plays": [2, 1],
+                "times": [0, 3],
+                "propagating": True,
+                "coveredEntries": [["right"]],
+            },
+            "afterAllSettled": {"propagating": False, "tokens": 0},
+        }
+        self.assertEqual(json.loads(completed.stdout), {
+            "resolved": expected_recovery,
+            "rejected": expected_recovery,
+            "removal": {
+                "tokens": 0,
+                "tokenTargets": 0,
+                "covered": False,
+                "listeners": 0,
+            },
+            "unhandled": [],
+        })
+
     def test_sync_loop_is_not_lost_while_group_play_is_pending(self):
         script = r'''
 const { VideoPlaybackGroup } = require("./static/video_media.js");

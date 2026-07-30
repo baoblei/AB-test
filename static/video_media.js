@@ -38,6 +38,7 @@
             entry.media.pause();
             if (clearSource) this._clearSource(entry.media);
             this.entries.delete(id);
+            [...this._looping].forEach(token => this._finishLoopTarget(token, entry));
         }
 
         setSync(enabled) {
@@ -58,14 +59,18 @@
             await this._playEntries(targets);
         }
 
-        async _playEntries(targets) {
+        async _playEntries(targets, onSettled) {
             this._beginPropagation();
             try {
                 await Promise.all(targets.map(entry => {
                     const result = entry.media.play();
-                    return result && typeof result.catch === "function"
+                    const pending = result && typeof result.catch === "function"
                         ? result.catch(() => undefined)
                         : result;
+                    return Promise.resolve(pending).then(value => {
+                        if (onSettled) onSettled(entry);
+                        return value;
+                    });
                 }));
             } finally {
                 this._endPropagation();
@@ -195,7 +200,10 @@
                 });
             });
             const currentTargets = targets.filter(target => this.entries.get(target.id) === target);
-            const replay = this._playEntries(currentTargets);
+            const replay = this._playEntries(
+                currentTargets,
+                target => this._finishLoopTarget(token, target),
+            );
             void Promise.resolve(replay).then(
                 () => this._finishLoop(token),
                 () => this._finishLoop(token),
@@ -211,6 +219,11 @@
 
         _finishLoop(token) {
             this._looping.delete(token);
+        }
+
+        _finishLoopTarget(token, target) {
+            token.targets.delete(target);
+            if (!token.targets.size) this._finishLoop(token);
         }
 
         _clearSource(media) {
