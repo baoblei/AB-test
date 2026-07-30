@@ -1764,6 +1764,7 @@
                     if (video) mainVideoPlayback.add(key, video);
                 });
                 bindVideoControls("main", mainVideoPlayback);
+                void mainVideoPlayback.play("left");
             }
             grid.querySelectorAll('[data-preview-group-pane="main"]').forEach(container => {
                 const key = container.dataset.previewPane;

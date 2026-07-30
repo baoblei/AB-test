@@ -660,6 +660,13 @@ class VideoEvaluationTemplateTests(unittest.TestCase):
         self.assertIn("resultThumbnailUrl", media)
         self.assertIn('class="video-controls"', media)
 
+    def test_each_video_sample_starts_main_playback_after_controls_are_bound(self):
+        source = self.function_source("renderCompareGrid", "renderImageCard")
+        bind = 'bindVideoControls("main", mainVideoPlayback);'
+        autoplay = 'void mainVideoPlayback.play("left");'
+        self.assertIn(autoplay, source)
+        self.assertLess(source.index(bind), source.index(autoplay))
+
     def test_video_payload_contains_selected_dimensions_and_all_scores(self):
         source = self.function_source("submitVote", "skipTask")
         self.assertIn("selected_dimensions", source)
