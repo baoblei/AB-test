@@ -5,6 +5,72 @@ from pathlib import Path
 
 
 class VideoPlaybackGroupTests(unittest.TestCase):
+    def test_sync_loop_resets_covered_member_without_replaying_it(self):
+        script = r'''
+const { VideoPlaybackGroup } = require("./static/video_media.js");
+function deferred() {
+    let resolve;
+    const promise = new Promise(res => { resolve = res; });
+    return { promise, resolve };
+}
+function fakeVideo(plannedPlays = []) {
+    const listeners = new Map();
+    return {
+        paused: true, currentTime: 0, duration: 4, playCalls: 0,
+        addEventListener(type, callback) {
+            if (!listeners.has(type)) listeners.set(type, new Set());
+            listeners.get(type).add(callback);
+        },
+        removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+        dispatch(type) { for (const callback of [...(listeners.get(type) || [])]) callback(); },
+        play() {
+            this.playCalls += 1;
+            this.paused = false;
+            this.dispatch("play");
+            return plannedPlays.shift() || Promise.resolve();
+        },
+        pause() { this.paused = true; this.dispatch("pause"); },
+        removeAttribute() {}, load() {}
+    };
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+    const firstLeftReplay = deferred();
+    const pendingRightReplay = deferred();
+    const left = fakeVideo([firstLeftReplay.promise, Promise.resolve()]);
+    const right = fakeVideo([pendingRightReplay.promise]);
+    const group = new VideoPlaybackGroup({ sync: true });
+    group.add("left", left);
+    group.add("right", right);
+
+    left.currentTime = 4;
+    right.currentTime = 4;
+    left.dispatch("ended");
+    firstLeftReplay.resolve();
+    await settle();
+
+    group.seek("left", 3);
+    left.dispatch("ended");
+    await settle();
+    const whileRightPending = {
+        plays: [left.playCalls, right.playCalls],
+        times: [left.currentTime, right.currentTime]
+    };
+
+    pendingRightReplay.resolve();
+    await settle();
+    console.log(JSON.stringify(whileRightPending));
+})().catch(error => { console.error(error); process.exit(1); });
+'''
+        completed = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), {
+            "plays": [2, 1],
+            "times": [0, 0],
+        })
+
     def test_sync_loop_releases_each_entry_when_its_replay_settles(self):
         script = r'''
 const { VideoPlaybackGroup } = require("./static/video_media.js");
@@ -100,7 +166,7 @@ async function exercise(firstOutcome) {
         expected_recovery = {
             "whileRightPending": {
                 "plays": [2, 1],
-                "times": [0, 3],
+                "times": [0, 0],
                 "propagating": True,
                 "coveredEntries": [["right"]],
             },

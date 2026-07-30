@@ -189,19 +189,20 @@
             const entry = this.entries.get(id);
             if (!entry) return;
             const requested = this.sync ? [...this.entries.values()] : [entry];
-            const targets = requested.filter(target => !this._loopCovers(target));
+            this._runPropagated(() => {
+                requested.forEach(target => {
+                    if (this.entries.get(target.id) === target) target.media.currentTime = 0;
+                });
+            });
+            const targets = requested.filter(target => (
+                this.entries.get(target.id) === target && !this._loopCovers(target)
+            ));
             if (!targets.length) return;
 
             const token = { targets: new Set(targets) };
             this._looping.add(token);
-            this._runPropagated(() => {
-                targets.forEach(target => {
-                    if (this.entries.get(target.id) === target) target.media.currentTime = 0;
-                });
-            });
-            const currentTargets = targets.filter(target => this.entries.get(target.id) === target);
             const replay = this._playEntries(
-                currentTargets,
+                targets,
                 target => this._finishLoopTarget(token, target),
             );
             void Promise.resolve(replay).then(
