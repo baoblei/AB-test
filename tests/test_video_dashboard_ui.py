@@ -45,6 +45,11 @@ class VideoDashboardUiTests(unittest.TestCase):
     def test_dashboard_loads_shared_video_controller(self):
         self.assertIn('<script src="/static/video_media.js"></script>', self.html)
 
+    def test_dashboard_video_seek_is_committed_once_per_interaction(self):
+        source = self.function_source("bindDashboardVideoControls", "openDashboardPreview")
+        self.assertIn('input.addEventListener("change"', source)
+        self.assertNotIn('input.addEventListener("input"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

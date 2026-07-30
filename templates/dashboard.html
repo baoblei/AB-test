@@ -3110,7 +3110,7 @@
                 render();
             });
             grid.querySelectorAll("[data-dashboard-video-seek]").forEach(input => {
-                input.addEventListener("input", event => {
+                input.addEventListener("change", event => {
                     const paneId = event.currentTarget.dataset.dashboardVideoSeek;
                     const video = grid.querySelector(`[data-dashboard-video-id="${paneId}"]`);
                     const duration = video && Number.isFinite(video.duration) ? video.duration : 0;

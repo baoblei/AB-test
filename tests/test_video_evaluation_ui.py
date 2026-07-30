@@ -5,6 +5,114 @@ from pathlib import Path
 
 
 class VideoPlaybackGroupTests(unittest.TestCase):
+    def test_seek_does_not_reenter_and_drift_waits_for_ready_follower(self):
+        script = r'''
+const { VideoPlaybackGroup } = require("./static/video_media.js");
+function asyncSeekingVideo() {
+    const listeners = new Map();
+    let time = 0;
+    return {
+        duration: 10, paused: false, readyState: 4, seeking: false,
+        assignments: 0, seekingEvents: 0,
+        addEventListener(type, callback) {
+            if (!listeners.has(type)) listeners.set(type, new Set());
+            listeners.get(type).add(callback);
+        },
+        removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+        dispatch(type) { for (const callback of [...(listeners.get(type) || [])]) callback(); },
+        get currentTime() { return time; },
+        set currentTime(value) {
+            time = value;
+            this.assignments += 1;
+            if (this.seeking) return;
+            this.seeking = true;
+            setImmediate(() => {
+                this.seekingEvents += 1;
+                this.dispatch("seeking");
+                setImmediate(() => { this.seeking = false; });
+            });
+        },
+        play() { this.paused = false; return Promise.resolve(); },
+        pause() { this.paused = true; },
+        removeAttribute() {}, load() {}
+    };
+}
+function driftVideo() {
+    const listeners = new Map();
+    let time = 0;
+    return {
+        duration: 10, paused: false, readyState: 4, seeking: false, assignments: 0,
+        addEventListener(type, callback) {
+            if (!listeners.has(type)) listeners.set(type, new Set());
+            listeners.get(type).add(callback);
+        },
+        removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+        dispatch(type) { for (const callback of [...(listeners.get(type) || [])]) callback(); },
+        setClock(value) { time = value; },
+        get currentTime() { return time; },
+        set currentTime(value) { time = value; this.assignments += 1; },
+        play() { this.paused = false; return Promise.resolve(); },
+        pause() { this.paused = true; },
+        removeAttribute() {}, load() {}
+    };
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+    const seekLeft = asyncSeekingVideo();
+    const seekRight = asyncSeekingVideo();
+    const seekGroup = new VideoPlaybackGroup({ sync: true });
+    seekGroup.add("left", seekLeft);
+    seekGroup.add("right", seekRight);
+    seekGroup.seek("left", 6);
+    await settle();
+    await settle();
+
+    const leader = driftVideo();
+    const follower = driftVideo();
+    const driftGroup = new VideoPlaybackGroup({ sync: true, driftThreshold: 0.15 });
+    driftGroup.add("left", leader);
+    driftGroup.add("right", follower);
+
+    leader.setClock(4);
+    follower.setClock(2);
+    follower.seeking = true;
+    leader.dispatch("timeupdate");
+
+    follower.seeking = false;
+    follower.readyState = 2;
+    follower.setClock(2);
+    leader.dispatch("timeupdate");
+
+    follower.readyState = 4;
+    leader.setClock(4);
+    follower.setClock(5);
+    follower.dispatch("timeupdate");
+
+    leader.setClock(4);
+    follower.setClock(2);
+    leader.dispatch("timeupdate");
+
+    console.log(JSON.stringify({
+        seek: {
+            assignments: [seekLeft.assignments, seekRight.assignments],
+            events: [seekLeft.seekingEvents, seekRight.seekingEvents]
+        },
+        drift: {
+            assignments: [leader.assignments, follower.assignments],
+            times: [leader.currentTime, follower.currentTime]
+        }
+    }));
+})().catch(error => { console.error(error); process.exit(1); });
+'''
+        completed = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), {
+            "seek": {"assignments": [1, 1], "events": [1, 1]},
+            "drift": {"assignments": [0, 1], "times": [4, 4]},
+        })
+
     def test_sync_loop_resets_covered_member_without_replaying_it(self):
         script = r'''
 const { VideoPlaybackGroup } = require("./static/video_media.js");
@@ -685,6 +793,11 @@ class VideoEvaluationTemplateTests(unittest.TestCase):
         self.assertIn("opacity: 0", self.html)
         self.assertIn(".video-shell:hover .video-controls", self.html)
         self.assertIn(".video-shell:focus-within .video-controls", self.html)
+
+    def test_video_seek_is_committed_once_per_interaction(self):
+        source = self.function_source("bindVideoControls", "renderBadcasePanels")
+        self.assertIn('input.addEventListener("change"', source)
+        self.assertNotIn('input.addEventListener("input"', source)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,6 @@
             const handlers = {
                 play: () => this._mirrorPlay(id),
                 pause: () => this._mirrorPause(id),
-                seeking: () => this._mirrorTime(id),
                 timeupdate: () => this._correctDrift(id),
                 ended: () => this._loopFrom(id),
             };
@@ -165,20 +164,20 @@
             this.pause(id);
         }
 
-        _mirrorTime(id) {
-            if (this.propagating || !this.sync) return;
-            const source = this.entries.get(id);
-            if (source) this.seek(id, source.media.currentTime);
-        }
-
         _correctDrift(id) {
             if (this.propagating || !this.sync) return;
             const source = this.entries.get(id);
-            if (!source) return;
+            const leader = this.entries.values().next().value;
+            if (!source || source !== leader || source.media.seeking) return;
+            const sourceReadyState = Number(source.media.readyState);
+            if (Number.isFinite(sourceReadyState) && sourceReadyState < 3) return;
             const time = Number(source.media.currentTime) || 0;
             this._runPropagated(() => {
                 this.entries.forEach((entry, entryId) => {
-                    if (entryId !== id && Math.abs((Number(entry.media.currentTime) || 0) - time) > this.driftThreshold) {
+                    if (entryId === id || entry.media.seeking) return;
+                    const readyState = Number(entry.media.readyState);
+                    if (Number.isFinite(readyState) && readyState < 3) return;
+                    if (Math.abs((Number(entry.media.currentTime) || 0) - time) > this.driftThreshold) {
                         entry.media.currentTime = time;
                     }
                 });

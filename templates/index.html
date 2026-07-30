@@ -1897,7 +1897,7 @@
                 render();
             });
             root.querySelectorAll("[data-video-seek]").forEach(input => {
-                input.addEventListener("input", event => {
+                input.addEventListener("change", event => {
                     const key = event.currentTarget.dataset.videoSeek;
                     const video = root.querySelector(`[data-video-id="${groupId}-${key}"]`);
                     const duration = video && Number.isFinite(video.duration) ? video.duration : 0;
