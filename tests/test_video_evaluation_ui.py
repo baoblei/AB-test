@@ -5,6 +5,185 @@ from pathlib import Path
 
 
 class VideoPlaybackGroupTests(unittest.TestCase):
+    def test_sync_loop_is_not_lost_while_group_play_is_pending(self):
+        script = r'''
+const { VideoPlaybackGroup } = require("./static/video_media.js");
+function deferred() {
+    let resolve;
+    const promise = new Promise(res => { resolve = res; });
+    return { promise, resolve };
+}
+function fakeVideo(plannedPlays = []) {
+    const listeners = new Map();
+    return {
+        paused: true, currentTime: 0, duration: 4, playCalls: 0,
+        addEventListener(type, callback) {
+            if (!listeners.has(type)) listeners.set(type, new Set());
+            listeners.get(type).add(callback);
+        },
+        removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+        dispatch(type) { for (const callback of [...(listeners.get(type) || [])]) callback(); },
+        play() {
+            this.playCalls += 1;
+            this.paused = false;
+            this.dispatch("play");
+            return plannedPlays.shift() || Promise.resolve();
+        },
+        pause() { this.paused = true; this.dispatch("pause"); },
+        removeAttribute() {}, load() {}
+    };
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+    const pendingOrdinaryPlay = deferred();
+    const left = fakeVideo();
+    const right = fakeVideo([pendingOrdinaryPlay.promise]);
+    const group = new VideoPlaybackGroup({ sync: true });
+    group.add("left", left);
+    group.add("right", right);
+
+    const ordinaryPlay = group.play("left");
+    left.currentTime = 4;
+    right.currentTime = 4;
+    left.dispatch("ended");
+    await settle();
+    const propagatingWhileOrdinaryPlayIsPending = group.propagating;
+    left.dispatch("play");
+    pendingOrdinaryPlay.resolve();
+    await ordinaryPlay;
+    await settle();
+
+    console.log(JSON.stringify({
+        plays: [left.playCalls, right.playCalls],
+        times: [left.currentTime, right.currentTime],
+        propagatingWhileOrdinaryPlayIsPending
+    }));
+})().catch(error => { console.error(error); process.exit(1); });
+'''
+        completed = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), {
+            "plays": [2, 2],
+            "times": [0, 0],
+            "propagatingWhileOrdinaryPlayIsPending": True,
+        })
+
+    def test_loop_replay_coalesces_by_entry_across_membership_and_mode_changes(self):
+        script = r'''
+const { VideoPlaybackGroup } = require("./static/video_media.js");
+function deferred() {
+    let resolve;
+    const promise = new Promise(res => { resolve = res; });
+    return { promise, resolve };
+}
+function fakeVideo(plannedPlays = []) {
+    const listeners = new Map();
+    return {
+        paused: true, currentTime: 0, duration: 4, playCalls: 0,
+        addEventListener(type, callback) {
+            if (!listeners.has(type)) listeners.set(type, new Set());
+            listeners.get(type).add(callback);
+        },
+        removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+        dispatch(type) { for (const callback of [...(listeners.get(type) || [])]) callback(); },
+        play() {
+            this.playCalls += 1;
+            this.paused = false;
+            this.dispatch("play");
+            return plannedPlays.shift() || Promise.resolve();
+        },
+        pause() { this.paused = true; this.dispatch("pause"); },
+        removeAttribute() {}, load() {}
+    };
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+    const oldLeftPlay = deferred();
+    const oldRightPlay = deferred();
+    const oldLeft = fakeVideo([oldLeftPlay.promise]);
+    const oldRight = fakeVideo([oldRightPlay.promise]);
+    const replacement = fakeVideo();
+    const membership = new VideoPlaybackGroup({ sync: true });
+    membership.add("left", oldLeft);
+    membership.add("right", oldRight);
+    oldLeft.currentTime = 4;
+    oldLeft.dispatch("ended");
+    membership.remove("right");
+    membership.add("right", replacement);
+    replacement.currentTime = 4;
+    replacement.dispatch("ended");
+    await settle();
+    const reusedId = {
+        plays: [oldLeft.playCalls, oldRight.playCalls, replacement.playCalls],
+        replacementTime: replacement.currentTime
+    };
+    oldLeftPlay.resolve();
+    oldRightPlay.resolve();
+    await settle();
+
+    const independentPlay = deferred();
+    const independentLeft = fakeVideo([independentPlay.promise]);
+    const independentRight = fakeVideo();
+    const toSync = new VideoPlaybackGroup({ sync: false });
+    toSync.add("left", independentLeft);
+    toSync.add("right", independentRight);
+    independentLeft.currentTime = 4;
+    independentLeft.dispatch("ended");
+    toSync.setSync(true);
+    independentRight.currentTime = 4;
+    independentRight.dispatch("ended");
+    await settle();
+    const independentToSync = {
+        plays: [independentLeft.playCalls, independentRight.playCalls],
+        times: [independentLeft.currentTime, independentRight.currentTime]
+    };
+    independentPlay.resolve();
+    await settle();
+
+    const syncLeftPlay = deferred();
+    const syncRightPlay = deferred();
+    const syncLeft = fakeVideo([syncLeftPlay.promise]);
+    const syncRight = fakeVideo([syncRightPlay.promise]);
+    const toIndependent = new VideoPlaybackGroup({ sync: true });
+    toIndependent.add("left", syncLeft);
+    toIndependent.add("right", syncRight);
+    syncLeft.currentTime = 4;
+    syncLeft.dispatch("ended");
+    toIndependent.setSync(false);
+    syncLeft.dispatch("ended");
+    await settle();
+    const syncToIndependent = {
+        plays: [syncLeft.playCalls, syncRight.playCalls],
+        times: [syncLeft.currentTime, syncRight.currentTime]
+    };
+    syncLeftPlay.resolve();
+    syncRightPlay.resolve();
+    await settle();
+
+    console.log(JSON.stringify({ reusedId, independentToSync, syncToIndependent }));
+})().catch(error => { console.error(error); process.exit(1); });
+'''
+        completed = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), {
+            "reusedId": {
+                "plays": [1, 1, 1],
+                "replacementTime": 0,
+            },
+            "independentToSync": {
+                "plays": [1, 1],
+                "times": [0, 0],
+            },
+            "syncToIndependent": {
+                "plays": [1, 1],
+                "times": [0, 0],
+            },
+        })
+
     def test_loop_replay_coalesces_by_target_and_cleans_up_pending_work(self):
         script = r'''
 const { VideoPlaybackGroup } = require("./static/video_media.js");

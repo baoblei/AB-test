@@ -9,8 +9,8 @@
             this.driftThreshold = Number(options.driftThreshold || 0.15);
             this.entries = new Map();
             this.propagating = false;
-            this._looping = new Map();
-            this._syncLoopKey = {};
+            this._propagationDepth = 0;
+            this._looping = new Set();
         }
 
         add(id, media) {
@@ -25,7 +25,7 @@
             Object.entries(handlers).forEach(([type, handler]) => {
                 media.addEventListener(type, handler);
             });
-            this.entries.set(id, { media, handlers });
+            this.entries.set(id, { id, media, handlers });
             return media;
         }
 
@@ -38,8 +38,6 @@
             entry.media.pause();
             if (clearSource) this._clearSource(entry.media);
             this.entries.delete(id);
-            this._looping.delete(id);
-            if (!this.entries.size) this._looping.delete(this._syncLoopKey);
         }
 
         setSync(enabled) {
@@ -57,7 +55,11 @@
         async play(id) {
             const targets = this._targets(id);
             if (!targets.length) return;
-            this.propagating = true;
+            await this._playEntries(targets);
+        }
+
+        async _playEntries(targets) {
+            this._beginPropagation();
             try {
                 await Promise.all(targets.map(entry => {
                     const result = entry.media.play();
@@ -66,7 +68,7 @@
                         : result;
                 }));
             } finally {
-                this.propagating = false;
+                this._endPropagation();
             }
         }
 
@@ -130,13 +132,22 @@
         }
 
         _runPropagated(callback) {
-            const previous = this.propagating;
-            this.propagating = true;
+            this._beginPropagation();
             try {
                 callback();
             } finally {
-                this.propagating = previous;
+                this._endPropagation();
             }
+        }
+
+        _beginPropagation() {
+            this._propagationDepth += 1;
+            this.propagating = true;
+        }
+
+        _endPropagation() {
+            this._propagationDepth = Math.max(0, this._propagationDepth - 1);
+            this.propagating = this._propagationDepth > 0;
         }
 
         _mirrorPlay(id) {
@@ -172,30 +183,34 @@
         _loopFrom(id) {
             const entry = this.entries.get(id);
             if (!entry) return;
-            const syncLoop = this.sync;
-            const key = syncLoop ? this._syncLoopKey : id;
-            if (this._looping.has(key)) return;
-            if (this.propagating && !this._looping.size) return;
+            const requested = this.sync ? [...this.entries.values()] : [entry];
+            const targets = requested.filter(target => !this._loopCovers(target));
+            if (!targets.length) return;
 
-            const token = {};
-            this._looping.set(key, token);
-            this.seek(id, 0);
-            const replay = syncLoop ? this.play(id) : this._playEntry(entry);
+            const token = { targets: new Set(targets) };
+            this._looping.add(token);
+            this._runPropagated(() => {
+                targets.forEach(target => {
+                    if (this.entries.get(target.id) === target) target.media.currentTime = 0;
+                });
+            });
+            const currentTargets = targets.filter(target => this.entries.get(target.id) === target);
+            const replay = this._playEntries(currentTargets);
             void Promise.resolve(replay).then(
-                () => this._finishLoop(key, token),
-                () => this._finishLoop(key, token),
+                () => this._finishLoop(token),
+                () => this._finishLoop(token),
             );
         }
 
-        _playEntry(entry) {
-            const result = entry.media.play();
-            return result && typeof result.catch === "function"
-                ? result.catch(() => undefined)
-                : result;
+        _loopCovers(entry) {
+            for (const token of this._looping) {
+                if (token.targets.has(entry)) return true;
+            }
+            return false;
         }
 
-        _finishLoop(key, token) {
-            if (this._looping.get(key) === token) this._looping.delete(key);
+        _finishLoop(token) {
+            this._looping.delete(token);
         }
 
         _clearSource(media) {
