@@ -841,7 +841,14 @@
         }
         .lightbox-dialog.preview-stage .lightbox-head { grid-column: 1 / -1; grid-row: 1; }
         #lightbox-preview-toolbar { grid-column: 2; grid-row: 2; width: auto; }
-        #lightbox-grid { grid-column: 1; grid-row: 2; }
+        #lightbox-grid {
+            grid-column: 1;
+            grid-row: 2;
+            width: 100%;
+            height: auto;
+            min-height: 0;
+            align-self: stretch;
+        }
         .pane {
             background: var(--preview-surface-bg);
             display: flex;

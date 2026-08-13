@@ -1190,6 +1190,32 @@ return {
             result["viewportHeight"] - result["bottom"], 12, delta=1
         )
 
+    def test_lightbox_preview_grid_fills_remaining_stage_height_on_large_screens(self):
+        body = '''
+<div id="lightbox" class="lightbox open">
+  <div class="lightbox-dialog preview-stage">
+    <div class="lightbox-head">
+      <div><h2>高清预览</h2><div class="lightbox-prompt">Prompt</div></div>
+    </div>
+    <div id="lightbox-preview-toolbar"></div>
+    <div id="lightbox-grid" class="lightbox-grid preview-viewport t2i">
+      <div class="pane"><div class="pane-head">候选图 A</div><div class="pane-body"></div></div>
+      <div class="pane"><div class="pane-head">候选图 B</div><div class="pane-body"></div></div>
+    </div>
+  </div>
+</div>'''
+        result = self.run_browser_style_probe(body, '''
+const dialog = document.querySelector(".lightbox-dialog").getBoundingClientRect();
+const grid = document.getElementById("lightbox-grid").getBoundingClientRect();
+return {
+  dialogBottom: dialog.bottom,
+  gridBottom: grid.bottom,
+  gridHeight: grid.height
+};''', window_size=(1800, 1200))
+
+        self.assertAlmostEqual(result["dialogBottom"], result["gridBottom"], delta=1)
+        self.assertGreater(result["gridHeight"], 900)
+
     def test_magnifier_maps_transformed_image_coordinates_and_syncs_full_lenses(self):
         source = self.html[
             self.html.index("function renderMagnifier") : self.html.index(
