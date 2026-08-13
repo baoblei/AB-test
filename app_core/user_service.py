@@ -91,7 +91,8 @@ def get_my_history(user_id: int) -> list[dict]:
         """
         SELECT task_type, v_a, v_b, scene, filename,
                overall, aesthetic, logic, consistency, fidelity,
-               text_consistency, motion_reasonableness, dynamism,
+               text_consistency, structure_reasonableness,
+               motion_reasonableness, dynamism,
                physical_plausibility, visual_quality, image_consistency,
                selected_dimensions, timestamp, duration_seconds, skipped
         FROM results_log WHERE user_id=? ORDER BY timestamp DESC LIMIT 100
@@ -113,15 +114,16 @@ def get_my_history(user_id: int) -> list[dict]:
             "consistency": row[8],
             "fidelity": row[9],
             "text_consistency": row[10],
-            "motion_reasonableness": row[11],
-            "dynamism": row[12],
-            "physical_plausibility": row[13],
-            "visual_quality": row[14],
-            "image_consistency": row[15],
-            "selected_dimensions": safe_load_json_list(row[16]),
-            "timestamp": row[17],
-            "duration_seconds": row[18],
-            "skipped": row[19],
+            "structure_reasonableness": row[11],
+            "motion_reasonableness": row[12],
+            "dynamism": row[13],
+            "physical_plausibility": row[14],
+            "visual_quality": row[15],
+            "image_consistency": row[16],
+            "selected_dimensions": safe_load_json_list(row[17]),
+            "timestamp": row[18],
+            "duration_seconds": row[19],
+            "skipped": row[20],
         }
         for row in rows
     ]

@@ -4,8 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app_core.config import TASK_CONFIGS
+from app_core.config import DIM_LABELS, TASK_CONFIGS
 from app_core.database import init_db
+from app_core.schemas import VoteSubmit
 
 try:
     from app_core.dimensions import canonical_selected_dimensions, dimension_transition
@@ -16,24 +17,31 @@ except ImportError:
 
 class VideoConfigTests(unittest.TestCase):
     def test_video_task_capabilities_and_dimension_order(self):
+        expected_t2v_dashboard = [
+            "overall",
+            "text_consistency",
+            "structure_reasonableness",
+            "motion_reasonableness",
+            "dynamism",
+            "physical_plausibility",
+            "visual_quality",
+        ]
+        expected_t2v_eval = expected_t2v_dashboard[1:]
+        expected_ti2v_dashboard = expected_t2v_dashboard + ["image_consistency"]
+        expected_ti2v_eval = expected_t2v_eval + ["image_consistency"]
+
         self.assertIn("T2V", TASK_CONFIGS)
         self.assertIn("TI2V", TASK_CONFIGS)
         self.assertEqual(TASK_CONFIGS["T2V"]["media_type"], "video")
         self.assertEqual(TASK_CONFIGS["TI2V"]["result_extensions"], (".mp4", ".webm"))
         self.assertFalse(TASK_CONFIGS["T2V"]["upload_has_ref"])
         self.assertTrue(TASK_CONFIGS["TI2V"]["upload_has_ref"])
-        self.assertEqual(
-            TASK_CONFIGS["T2V"]["dashboard_dims"],
-            [
-                "overall",
-                "text_consistency",
-                "motion_reasonableness",
-                "dynamism",
-                "physical_plausibility",
-                "visual_quality",
-            ],
-        )
-        self.assertEqual(TASK_CONFIGS["TI2V"]["dashboard_dims"][-1], "image_consistency")
+        self.assertEqual(TASK_CONFIGS["T2V"]["eval_dims"], expected_t2v_eval)
+        self.assertEqual(TASK_CONFIGS["T2V"]["dashboard_dims"], expected_t2v_dashboard)
+        self.assertEqual(TASK_CONFIGS["TI2V"]["eval_dims"], expected_ti2v_eval)
+        self.assertEqual(TASK_CONFIGS["TI2V"]["dashboard_dims"], expected_ti2v_dashboard)
+        self.assertEqual(DIM_LABELS["structure_reasonableness"], "结构合理性")
+        self.assertIn("structure_reasonableness", VoteSubmit.model_fields)
         self.assertEqual(TASK_CONFIGS["T2I"]["media_type"], "image")
 
     def test_dimension_selection_is_validated_and_canonicalized(self):
@@ -85,6 +93,7 @@ class VideoSchemaTests(unittest.TestCase):
         self.assertTrue(
             {
                 "text_consistency",
+                "structure_reasonableness",
                 "motion_reasonableness",
                 "dynamism",
                 "physical_plausibility",

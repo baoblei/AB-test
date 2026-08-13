@@ -62,6 +62,7 @@ TASK_CONFIGS["T2V"] = {
     "ref_root": os.path.join(REF_IMAGE_DIR, "T2V"),
     "eval_dims": [
         "text_consistency",
+        "structure_reasonableness",
         "motion_reasonableness",
         "dynamism",
         "physical_plausibility",
@@ -70,6 +71,7 @@ TASK_CONFIGS["T2V"] = {
     "dashboard_dims": [
         "overall",
         "text_consistency",
+        "structure_reasonableness",
         "motion_reasonableness",
         "dynamism",
         "physical_plausibility",
@@ -88,6 +90,7 @@ TASK_CONFIGS["TI2V"] = {
     "ref_root": os.path.join(REF_IMAGE_DIR, "TI2V"),
     "eval_dims": [
         "text_consistency",
+        "structure_reasonableness",
         "motion_reasonableness",
         "dynamism",
         "physical_plausibility",
@@ -97,6 +100,7 @@ TASK_CONFIGS["TI2V"] = {
     "dashboard_dims": [
         "overall",
         "text_consistency",
+        "structure_reasonableness",
         "motion_reasonableness",
         "dynamism",
         "physical_plausibility",
@@ -117,6 +121,7 @@ DIM_LABELS = {
     "consistency": "一致性",
     "fidelity": "保真度",
     "text_consistency": "文本一致性",
+    "structure_reasonableness": "结构合理性",
     "motion_reasonableness": "运动合理性",
     "dynamism": "动态度",
     "physical_plausibility": "物理规律与常识",
@@ -126,6 +131,7 @@ DIM_LABELS = {
 
 VIDEO_SCORE_DIMENSIONS = (
     "text_consistency",
+    "structure_reasonableness",
     "motion_reasonableness",
     "dynamism",
     "physical_plausibility",

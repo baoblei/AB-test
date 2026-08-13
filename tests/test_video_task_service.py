@@ -76,6 +76,7 @@ class VideoTaskServiceTests(unittest.TestCase):
             "worker": "ignored",
             "overall": "left",
             "text_consistency": "right",
+            "structure_reasonableness": "right",
             "motion_reasonableness": "tie_good",
             "dynamism": "left",
             "physical_plausibility": "right",
@@ -151,6 +152,30 @@ class VideoTaskServiceTests(unittest.TestCase):
         self.assertEqual(row[4:7], (None, None, None))
         self.assertEqual(json.loads(row[7]), ["dynamism"])
         self.assertEqual(row[8], "admin")
+
+    def test_structure_reasonableness_is_persisted_when_selected(self):
+        self.start(["structure_reasonableness"])
+        task_id = self.task_id()
+
+        submit_vote(
+            self.vote(
+                task_id,
+                ["structure_reasonableness"],
+                structure_reasonableness="right",
+            ),
+            1,
+            "admin",
+        )
+
+        conn = connect()
+        row = conn.execute(
+            "SELECT structure_reasonableness, selected_dimensions "
+            "FROM results_log WHERE task_id=?",
+            (task_id,),
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row[0], "test_B_default")
+        self.assertEqual(json.loads(row[1]), ["structure_reasonableness"])
 
     def test_vote_rejects_missing_selected_score_and_stale_scope(self):
         self.start(["overall"])

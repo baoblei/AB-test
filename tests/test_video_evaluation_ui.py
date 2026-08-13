@@ -780,13 +780,14 @@ class VideoEvaluationTemplateTests(unittest.TestCase):
         self.assertIn("selected_dimensions", source)
         for dimension in (
             "text_consistency",
+            "structure_reasonableness",
             "motion_reasonableness",
             "dynamism",
             "physical_plausibility",
             "visual_quality",
             "image_consistency",
         ):
-            self.assertIn(f"{dimension}:", source)
+            self.assertIn(f"{dimension}: currentVotes.{dimension} || null", source)
 
     def test_video_controls_are_translucent_and_hide_outside_interaction(self):
         self.assertIn(".video-controls", self.html)

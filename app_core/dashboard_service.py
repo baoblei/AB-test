@@ -164,6 +164,9 @@ def detail_results(task_type: str, v1: str, v2: str, scene: str) -> list[dict]:
             "consistency": row["consistency"],
             "fidelity": row["fidelity"],
             "text_consistency": optional_row_value(row, "text_consistency"),
+            "structure_reasonableness": optional_row_value(
+                row, "structure_reasonableness"
+            ),
             "motion_reasonableness": optional_row_value(row, "motion_reasonableness"),
             "dynamism": optional_row_value(row, "dynamism"),
             "physical_plausibility": optional_row_value(row, "physical_plausibility"),

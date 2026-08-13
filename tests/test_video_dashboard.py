@@ -24,6 +24,7 @@ def video_row(**overrides):
         "consistency": None,
         "fidelity": None,
         "text_consistency": None,
+        "structure_reasonableness": None,
         "motion_reasonableness": None,
         "dynamism": None,
         "physical_plausibility": None,
@@ -76,15 +77,28 @@ class VideoDashboardAggregationTests(unittest.TestCase):
         self.assertNotIn("visual_quality", result[0])
 
     def test_detail_rows_include_selected_dimensions_and_video_scores(self):
-        rows = [self.rows[-1]]
+        rows = [
+            video_row(
+                filename="three.mp4",
+                overall="tie_good",
+                structure_reasonableness="B",
+                dynamism="tie_bad",
+                selected_dimensions='["overall", "structure_reasonableness", "dynamism"]',
+            )
+        ]
         with patch("app_core.dashboard_service.fetch_result_rows", return_value=rows), patch(
             "app_core.dashboard_service.get_preview_prompt_text", return_value="prompt"
         ), patch("app_core.dashboard_service.get_ref_image_url", return_value=None):
             result = detail_results("T2V", "A", "B", "motion")
 
         detail = result[0]
-        self.assertEqual(detail["selected_dimensions"], ["overall", "dynamism"])
+        self.assertEqual(
+            detail["selected_dimensions"],
+            ["overall", "structure_reasonableness", "dynamism"],
+        )
         self.assertEqual(detail["scores"]["overall"], "tie_good")
+        self.assertEqual(detail["structure_reasonableness"], "B")
+        self.assertEqual(detail["scores"]["structure_reasonableness"], "B")
         self.assertEqual(detail["scores"]["dynamism"], "tie_bad")
         self.assertIn("visual_quality", detail["scores"])
 

@@ -34,6 +34,7 @@ class VoteSubmit(BaseModel):
     consistency: Optional[str] = None
     fidelity: Optional[str] = None
     text_consistency: Optional[str] = None
+    structure_reasonableness: Optional[str] = None
     motion_reasonableness: Optional[str] = None
     dynamism: Optional[str] = None
     physical_plausibility: Optional[str] = None

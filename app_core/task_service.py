@@ -801,13 +801,14 @@ def submit_vote(vote: Any, user_id: int, worker: str) -> dict:
             INSERT INTO results_log (
                 task_id, eval_mode, task_type, v_a, v_b, scene, filename,
                 overall, aesthetic, logic, consistency, fidelity,
-                text_consistency, motion_reasonableness, dynamism,
+                text_consistency, structure_reasonableness,
+                motion_reasonableness, dynamism,
                 physical_plausibility, visual_quality, image_consistency,
                 selected_dimensions,
                 worker, timestamp, duration_seconds, user_id,
                 bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 vote.task_id,
@@ -823,6 +824,7 @@ def submit_vote(vote: Any, user_id: int, worker: str) -> dict:
                 score_values["consistency"],
                 score_values["fidelity"],
                 score_values["text_consistency"],
+                score_values["structure_reasonableness"],
                 score_values["motion_reasonableness"],
                 score_values["dynamism"],
                 score_values["physical_plausibility"],
@@ -885,13 +887,14 @@ def skip_task(
             INSERT INTO results_log (
                 task_id, eval_mode, task_type, v_a, v_b, scene, filename,
                 overall, aesthetic, logic, consistency, fidelity,
-                text_consistency, motion_reasonableness, dynamism,
+                text_consistency, structure_reasonableness,
+                motion_reasonableness, dynamism,
                 physical_plausibility, visual_quality, image_consistency,
                 selected_dimensions, worker, timestamp, skipped, user_id,
                 bad_case_tags_a, bad_case_tags_b, bad_case_categories_a, bad_case_categories_b
             )
             VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, 1, ?, '[]', '[]', '[]', '[]'
             )
             """,
@@ -903,6 +906,7 @@ def skip_task(
                 task[1],
                 task[2],
                 task[3],
+                None,
                 None,
                 None,
                 None,

@@ -1,6 +1,6 @@
 import sqlite3
 
-from .config import DB_PATH
+from .config import DB_PATH, VIDEO_SCORE_DIMENSIONS
 from .time_utils import is_canonical_beijing_iso, legacy_utc_to_beijing_iso, now_beijing_iso
 
 
@@ -105,6 +105,7 @@ def init_db():
             consistency TEXT,
             fidelity TEXT,
             text_consistency TEXT,
+            structure_reasonableness TEXT,
             motion_reasonableness TEXT,
             dynamism TEXT,
             physical_plausibility TEXT,
@@ -127,14 +128,7 @@ def init_db():
     ensure_column(cursor, "results_log", "eval_mode", "TEXT DEFAULT 'full'")
     ensure_column(cursor, "results_log", "task_type", "TEXT DEFAULT 'T2I'")
     ensure_column(cursor, "results_log", "fidelity", "TEXT")
-    for video_dimension in (
-        "text_consistency",
-        "motion_reasonableness",
-        "dynamism",
-        "physical_plausibility",
-        "visual_quality",
-        "image_consistency",
-    ):
+    for video_dimension in VIDEO_SCORE_DIMENSIONS:
         ensure_column(cursor, "results_log", video_dimension, "TEXT")
     ensure_column(cursor, "results_log", "selected_dimensions", "TEXT DEFAULT '[]'")
     ensure_column(cursor, "results_log", "bad_case_tags_a", "TEXT DEFAULT '[]'")

@@ -32,6 +32,7 @@ def make_video_row(row_id, **overrides):
         "consistency": None,
         "fidelity": None,
         "text_consistency": None,
+        "structure_reasonableness": None,
         "motion_reasonableness": None,
         "dynamism": None,
         "physical_plausibility": None,
@@ -76,11 +77,11 @@ class VideoExportTests(unittest.TestCase):
             task_type="T2V",
             v1="A",
             v2="B",
-            dimensions=["overall", "dynamism"],
+            dimensions=["overall", "structure_reasonableness", "dynamism"],
             eval_modes=["selected"],
         )
         rows = [
-            make_video_row(1, dynamism="A"),
+            make_video_row(1, structure_reasonableness="B", dynamism="A"),
             make_video_row(2, overall="B", selected_dimensions='["overall"]'),
         ]
 
@@ -90,6 +91,7 @@ class VideoExportTests(unittest.TestCase):
 
         self.assertIn("视频信息", groups)
         self.assertIn("整体", headers)
+        self.assertIn("结构合理性", headers)
         self.assertIn("动态度", headers)
         self.assertIn("A 视频路径", headers)
         self.assertIn("A 首帧路径", headers)
@@ -102,6 +104,8 @@ class VideoExportTests(unittest.TestCase):
         }
         self.assertEqual(values["clip-1.mp4"], (None, "A"))
         self.assertEqual(values["clip-2.mp4"], ("B", None))
+        structure_column = headers.index("结构合理性") + 1
+        self.assertEqual(sheet.cell(3, structure_column).value, "B")
 
     def test_video_archive_keeps_original_media_posters_and_ti2v_reference(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -173,6 +177,7 @@ class VideoExportTests(unittest.TestCase):
             [
                 "overall",
                 "text_consistency",
+                "structure_reasonableness",
                 "motion_reasonableness",
                 "dynamism",
                 "physical_plausibility",
@@ -204,6 +209,7 @@ class VideoExportTests(unittest.TestCase):
                     1,
                     overall="A",
                     text_consistency="B",
+                    structure_reasonableness="B",
                     motion_reasonableness="tie_good",
                     dynamism="A",
                     physical_plausibility="B",
@@ -222,8 +228,10 @@ class VideoExportTests(unittest.TestCase):
                 history = get_my_history(1)
 
         self.assertEqual(history[0]["selected_dimensions"], ["overall", "text_consistency", "dynamism"])
+        self.assertEqual(history[0]["structure_reasonableness"], "B")
         for key in (
             "text_consistency",
+            "structure_reasonableness",
             "motion_reasonableness",
             "dynamism",
             "physical_plausibility",
