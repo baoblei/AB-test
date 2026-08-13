@@ -135,6 +135,18 @@ console.log(JSON.stringify({{
   timeAsc: ids({{ key: 'time', direction: 'asc' }}),
   conflictDesc: ids({{ key: 'conflict', direction: 'desc' }}),
   conflictAsc: ids({{ key: 'conflict', direction: 'asc' }}),
+  invalidTimeDesc: sortDetailRows([
+    {{ filename: 'a', worker: 'a', time: 'legacy-unknown', id: 5 }},
+    {{ filename: 'b', worker: 'a', time: '2026-08-13T09:00:00+08:00', id: 6 }},
+    {{ filename: 'c', worker: 'a', time: '2026-08-13T11:00:00+08:00', id: 7 }},
+    {{ filename: 'd', worker: 'a', time: null, id: 8 }},
+  ], {{ key: 'time', direction: 'desc' }}).map(row => row.id),
+  invalidTimeAsc: sortDetailRows([
+    {{ filename: 'a', worker: 'a', time: 'legacy-unknown', id: 5 }},
+    {{ filename: 'b', worker: 'a', time: '2026-08-13T09:00:00+08:00', id: 6 }},
+    {{ filename: 'c', worker: 'a', time: '2026-08-13T11:00:00+08:00', id: 7 }},
+    {{ filename: 'd', worker: 'a', time: null, id: 8 }},
+  ], {{ key: 'time', direction: 'asc' }}).map(row => row.id),
 }}));
 """
         )
@@ -145,6 +157,8 @@ console.log(JSON.stringify({{
         self.assertEqual(result["timeAsc"], [2, 3, 1, 4])
         self.assertEqual(result["conflictDesc"], [1, 2, 4, 3])
         self.assertEqual(result["conflictAsc"], [4, 3, 1, 2])
+        self.assertEqual(result["invalidTimeDesc"], [7, 6, 5, 8])
+        self.assertEqual(result["invalidTimeAsc"], [6, 7, 5, 8])
 
     def test_detail_sort_headers_and_conflict_column_are_rendered(self):
         for key in ("filename", "conflict", "worker", "time"):

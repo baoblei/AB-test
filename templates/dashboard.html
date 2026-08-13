@@ -1724,6 +1724,7 @@
             detailRenderTimer: null,
             detailRequestId: 0,
             excludeConflicts: false,
+            taskTypeRequestId: 0,
             dashboardRequestId: 0,
             rankingRequestId: 0,
             workerRequestId: 0,
@@ -1809,21 +1810,29 @@
         }
 
         async function handleTaskTypeChange() {
-            state.taskType = document.getElementById("task-type-select").value;
-            document.getElementById("dataset-download-task-type").value = state.taskType;
+            const requestId = ++state.taskTypeRequestId;
+            const taskType = document.getElementById("task-type-select").value;
+            state.taskType = taskType;
+            state.dashboardRequestId += 1;
+            state.rankingRequestId += 1;
+            state.workerRequestId += 1;
+            document.getElementById("dataset-download-task-type").value = taskType;
             invalidateDatasetDownload();
-            state.config = await api(`/api/task_config?task_type=${state.taskType}`).then(r => r.json());
-            state.taskConfigs[state.taskType] = state.config;
-            await loadModelCatalog(state.taskType);
-            document.getElementById("overview-title").textContent = `${state.taskType} 看板总览`;
-            document.getElementById("overview-desc").textContent = state.config.media_type === "video"
+            const config = await api(`/api/task_config?task_type=${encodeURIComponent(taskType)}`).then(r => r.json());
+            if (requestId !== state.taskTypeRequestId || state.taskType !== taskType) return;
+            await loadModelCatalog(taskType);
+            if (requestId !== state.taskTypeRequestId || state.taskType !== taskType) return;
+            state.config = config;
+            state.taskConfigs[taskType] = config;
+            document.getElementById("overview-title").textContent = `${taskType} 看板总览`;
+            document.getElementById("overview-desc").textContent = config.media_type === "video"
                 ? "视频看板按实际已评维度展示，明细列表仅加载首帧，点击后才打开高清视频。"
-                : (state.taskType === "TI2I"
+                : (taskType === "TI2I"
                     ? "TI2I 看板额外展示保真度维度和参考图预览。"
                     : "T2I 看板展示生成质量、文本错误和坏例分布。");
             replaceSelectOptions(
                 document.getElementById("ranking-dimension"),
-                state.config.dashboard_dims.map(dim => [dim.key, dim.label])
+                config.dashboard_dims.map(dim => [dim.key, dim.label])
             );
             const dashboardPromise = loadDashboard();
             await loadDatasets();
@@ -2553,13 +2562,15 @@
             const sign = direction === "desc" ? -1 : 1;
             const compareText = (a, b) => String(a ?? "").localeCompare(String(b ?? ""), "zh-CN");
             const compareTime = (a, b, timeDirection) => {
-                const aMissing = !a;
-                const bMissing = !b;
+                const aTime = a ? Date.parse(a) : NaN;
+                const bTime = b ? Date.parse(b) : NaN;
+                const aMissing = !Number.isFinite(aTime);
+                const bMissing = !Number.isFinite(bTime);
                 if (aMissing || bMissing) {
                     if (aMissing && bMissing) return 0;
                     return aMissing ? 1 : -1;
                 }
-                const difference = Date.parse(a) - Date.parse(b);
+                const difference = aTime - bTime;
                 return timeDirection === "desc" ? -difference : difference;
             };
 
@@ -2804,7 +2815,7 @@
             state.workerRows = rows;
             const available = new Set(rows.map(row => row.worker));
             const preserved = new Set([...previous].filter(worker => available.has(worker)));
-            state.selectedWorkers = preserveSelection && preserved.size ? preserved : available;
+            state.selectedWorkers = preserveSelection ? preserved : available;
             renderWorkerStats();
         }
 

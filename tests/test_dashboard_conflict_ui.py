@@ -97,9 +97,96 @@ console.log(JSON.stringify([
             "const previous = new Set(state.selectedWorkers)",
             "const available = new Set(rows.map(row => row.worker))",
             "[...previous].filter(worker => available.has(worker))",
-            "preserveSelection && preserved.size",
+            "preserveSelection ? preserved : available",
         ):
             self.assertIn(marker, source)
+
+        result = self.run_node(
+            f"""
+const context = {{ v1: 'A', v2: 'B', scene: 'scene-1' }};
+const state = {{
+  taskType: 'T2I', excludeConflicts: true, workerRequestId: 0,
+  currentWorker: context, selectedWorkers: new Set(), workerRows: []
+}};
+const document = {{
+  getElementById: id => id === 'worker-modal'
+    ? {{ style: {{ display: 'flex' }} }}
+    : null
+}};
+const api = async () => ({{
+  json: async () => [{{ worker: 'alice' }}, {{ worker: 'bob' }}]
+}});
+const renderWorkerStats = () => {{}};
+{source}
+(async () => {{
+  await loadWorkerStats({{ preserveSelection: true }});
+  console.log(JSON.stringify({{
+    selected: [...state.selectedWorkers],
+    rowCount: state.workerRows.length,
+  }}));
+}})();
+"""
+        )
+        self.assertEqual(result, {"selected": [], "rowCount": 2})
+
+    def test_late_task_config_response_cannot_overwrite_new_task_type(self):
+        source = self.function_source("handleTaskTypeChange")
+        result = self.run_node(
+            f"""
+const elements = {{
+  'task-type-select': {{ value: 'T2V' }},
+  'dataset-download-task-type': {{ value: '' }},
+  'overview-title': {{ textContent: '' }},
+  'overview-desc': {{ textContent: '' }},
+  'ranking-dimension': {{ value: '', options: [] }},
+}};
+const document = {{ getElementById: id => elements[id] }};
+const state = {{
+  taskType: 'T2I', config: null, taskConfigs: {{}},
+  taskTypeRequestId: 0, dashboardRequestId: 0,
+  rankingRequestId: 0, workerRequestId: 0,
+}};
+const pending = [];
+const api = url => new Promise(resolve => pending.push({{ url, resolve }}));
+const invalidateDatasetDownload = () => {{}};
+const loadModelCatalog = async () => {{}};
+const replaceSelectOptions = (element, options) => {{ element.options = options; }};
+let dashboardLoads = 0;
+const loadDashboard = async () => {{ dashboardLoads += 1; }};
+const loadDatasets = async () => {{}};
+{source}
+(async () => {{
+  const first = handleTaskTypeChange();
+  elements['task-type-select'].value = 'TI2V';
+  const second = handleTaskTypeChange();
+  pending[1].resolve({{ json: async () => ({{
+    task_type: 'TI2V', marker: 'new', media_type: 'video',
+    dashboard_dims: [{{ key: 'image_consistency', label: '图像一致性' }}]
+  }}) }});
+  await second;
+  pending[0].resolve({{ json: async () => ({{
+    task_type: 'T2V', marker: 'old', media_type: 'video',
+    dashboard_dims: [{{ key: 'overall', label: '整体' }}]
+  }}) }});
+  await first;
+  console.log(JSON.stringify({{
+    taskType: state.taskType,
+    marker: state.config?.marker,
+    cached: Object.keys(state.taskConfigs),
+    dashboardLoads,
+  }}));
+}})();
+"""
+        )
+        self.assertEqual(
+            result,
+            {
+                "taskType": "TI2V",
+                "marker": "new",
+                "cached": ["TI2V"],
+                "dashboardLoads": 1,
+            },
+        )
 
     def test_late_ranking_response_cannot_overwrite_newer_results(self):
         source = self.function_source("loadRanking")

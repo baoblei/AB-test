@@ -228,7 +228,7 @@ class DashboardDatasetDownloadUiTests(unittest.TestCase):
 
     def test_main_task_change_synchronizes_download_task_and_reloads(self):
         source = self.function_source("handleTaskTypeChange")
-        self.assertIn('document.getElementById("dataset-download-task-type").value = state.taskType', source)
+        self.assertIn('document.getElementById("dataset-download-task-type").value = taskType', source)
         self.assertIn("await loadDatasets()", source)
 
     def test_stale_download_response_cannot_create_download_or_mutate_new_selection(self):
