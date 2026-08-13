@@ -780,7 +780,7 @@
             display: none;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 12px;
             background: var(--preview-overlay-bg);
         }
         .lightbox.preview-light-theme {
@@ -794,8 +794,11 @@
         }
         .lightbox.open { display: flex; }
         .lightbox-dialog {
-            width: min(1700px, 100%);
-            height: min(92vh, 1020px);
+            width: 100%;
+            height: calc(100vh - 24px);
+            height: calc(100dvh - 24px);
+            max-width: none;
+            max-height: none;
             background: var(--preview-surface-bg);
             border-radius: 24px;
             overflow: hidden;

@@ -59,7 +59,7 @@ class EvaluationPreviewUiTests(unittest.TestCase):
         body_end = self.html.index("}", body_start)
         return self.html[body_start:body_end]
 
-    def run_browser_style_probe(self, body, scenario):
+    def run_browser_style_probe(self, body, scenario, window_size=None):
         chrome = next((candidate for candidate in (
             shutil.which("google-chrome"),
             shutil.which("chromium"),
@@ -78,16 +78,21 @@ document.getElementById("style-result").textContent = JSON.stringify((() => {{ {
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "probe.html"
             path.write_text(page, encoding="utf-8")
-            result = subprocess.run([
+            command = [
                 chrome,
                 "--headless=new",
                 "--no-first-run",
                 "--disable-background-networking",
                 "--disable-gpu",
                 "--no-sandbox",
-                "--dump-dom",
-                path.as_uri(),
-            ], check=True, capture_output=True, text=True, timeout=20)
+            ]
+            if window_size is not None:
+                width, height = window_size
+                command.append(f"--window-size={width},{height}")
+            command.extend(["--dump-dom", path.as_uri()])
+            result = subprocess.run(
+                command, check=True, capture_output=True, text=True, timeout=20
+            )
         parser = StyleResultParser()
         parser.feed(result.stdout)
         parser.close()
@@ -1156,6 +1161,34 @@ return {
             "video": "rgb(241, 244, 247)",
             "toolbar": "rgb(248, 250, 252)",
         })
+
+    def test_lightbox_preview_stage_fills_viewport_with_twelve_pixel_safe_margin(self):
+        body = '''
+<div id="lightbox" class="lightbox open">
+  <div class="lightbox-dialog preview-stage">
+    <div class="lightbox-head">Prompt</div>
+    <div id="lightbox-grid" class="lightbox-grid preview-viewport t2i"></div>
+    <div id="lightbox-preview-toolbar"></div>
+  </div>
+</div>'''
+        result = self.run_browser_style_probe(body, '''
+const rect = document.querySelector(".lightbox-dialog").getBoundingClientRect();
+return {
+  viewportWidth: window.innerWidth,
+  viewportHeight: window.innerHeight,
+  left: rect.left,
+  top: rect.top,
+  right: rect.right,
+  bottom: rect.bottom
+};''', window_size=(1440, 900))
+        self.assertAlmostEqual(result["left"], 12, delta=1)
+        self.assertAlmostEqual(result["top"], 12, delta=1)
+        self.assertAlmostEqual(
+            result["viewportWidth"] - result["right"], 12, delta=1
+        )
+        self.assertAlmostEqual(
+            result["viewportHeight"] - result["bottom"], 12, delta=1
+        )
 
     def test_magnifier_maps_transformed_image_coordinates_and_syncs_full_lenses(self):
         source = self.html[
