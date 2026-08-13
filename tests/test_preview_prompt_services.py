@@ -9,7 +9,10 @@ from app_core.storage import MISSING_PROMPT_TEXT, get_prompt_text
 
 def make_row():
     return {
+        "task_type": "T2I",
         "eval_mode": "full",
+        "v_a": "A",
+        "v_b": "B",
         "scene": "portrait",
         "filename": "missing.png",
         "overall": "A",
@@ -18,6 +21,7 @@ def make_row():
         "consistency": "A",
         "fidelity": None,
         "worker": "alice",
+        "user_id": 1,
         "timestamp": "2026-07-15T12:00:00+08:00",
         "duration_seconds": 3,
         "bad_case_tags_a": '["模糊失焦"]',

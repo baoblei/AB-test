@@ -270,13 +270,27 @@ def get_my_stats(user: dict = Depends(require_login)):
 
 
 @app.get("/api/dashboard_overview")
-def dashboard_overview(task_type: str):
-    return dashboard_overview_service(task_type)
+def dashboard_overview(task_type: str, exclude_conflicts: bool = False):
+    return dashboard_overview_service(
+        task_type, exclude_conflicts=exclude_conflicts
+    )
 
 
 @app.get("/api/worker_stats")
-def worker_stats(task_type: str, v1: str, v2: str, scene: Optional[str] = None):
-    return worker_stats_service(task_type, v1, v2, scene)
+def worker_stats(
+    task_type: str,
+    v1: str,
+    v2: str,
+    scene: Optional[str] = None,
+    exclude_conflicts: bool = False,
+):
+    return worker_stats_service(
+        task_type,
+        v1,
+        v2,
+        scene,
+        exclude_conflicts=exclude_conflicts,
+    )
 
 
 @app.get("/api/detail_results")
@@ -340,8 +354,18 @@ def export_file(payload: ExportRequest, user: dict = Depends(require_data_manage
 
 
 @app.get("/api/ranking")
-def ranking(task_type: str = "T2I", scene: Optional[str] = None, dimension: str = "overall"):
-    return ranking_service(task_type, scene, dimension)
+def ranking(
+    task_type: str = "T2I",
+    scene: Optional[str] = None,
+    dimension: str = "overall",
+    exclude_conflicts: bool = False,
+):
+    return ranking_service(
+        task_type,
+        scene,
+        dimension,
+        exclude_conflicts=exclude_conflicts,
+    )
 
 
 @app.get("/api/admin/users")

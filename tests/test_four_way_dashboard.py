@@ -5,12 +5,20 @@ from app_core.dashboard_service import dimension_stats
 
 class FourWayDashboardTests(unittest.TestCase):
     def test_dimension_stats_separates_ties_and_keeps_combined_count(self):
+        values = ["A", "tie_bad", "tie_good", "B", "tie_good"]
         rows = [
-            {"eval_mode": "full", "overall": "A"},
-            {"eval_mode": "full", "overall": "tie_bad"},
-            {"eval_mode": "full", "overall": "tie_good"},
-            {"eval_mode": "full", "overall": "B"},
-            {"eval_mode": "full", "overall": "tie_good"},
+            {
+                "eval_mode": "full",
+                "task_type": "T2I",
+                "v_a": "A",
+                "v_b": "B",
+                "scene": "scene",
+                "filename": f"{index}.png",
+                "worker": f"worker-{index}",
+                "user_id": index,
+                "overall": value,
+            }
+            for index, value in enumerate(values)
         ]
 
         self.assertEqual(
@@ -22,6 +30,8 @@ class FourWayDashboardTests(unittest.TestCase):
                 "tie_good_count": 2,
                 "tie_count": 3,
                 "v_b_wins": 1,
+                "sample_count": 5,
+                "conflict_sample_count": 0,
             },
         )
 
