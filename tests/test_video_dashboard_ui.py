@@ -25,6 +25,7 @@ class VideoDashboardUiTests(unittest.TestCase):
         source = self.function_source("renderDetailTable", "renderResultRow")
         self.assertIn('createNode("img", "preview-img")', source)
         self.assertIn("detailThumbnailUrl", source)
+        self.assertIn("row.has_conflict", source)
         self.assertNotIn('createNode("video"', source)
 
     def test_hd_preview_creates_video_only_for_video_panes(self):

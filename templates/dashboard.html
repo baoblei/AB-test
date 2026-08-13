@@ -198,6 +198,16 @@
             font-weight: 800;
         }
         .pair-head .suppression-line { color: rgba(255,255,255,0.88); }
+        .conflict-reliability {
+            margin-top: 7px;
+            color: var(--muted);
+            font-size: 0.76rem;
+        }
+        .conflict-reliability.has-conflict {
+            color: #dc2626;
+            font-weight: 700;
+        }
+        .pair-head .conflict-reliability:not(.has-conflict) { color: rgba(255,255,255,0.82); }
         .pair-actions { display: flex; align-items: center; gap: 8px; }
         .pair-body {
             display: none;
@@ -304,6 +314,22 @@
             border-color: var(--primary);
         }
         .checkbox-chip input { position: absolute; width: auto; opacity: 0; pointer-events: none; }
+        .filter-checkbox {
+            display: inline-flex;
+            align-items: center;
+            align-self: center;
+            gap: 8px;
+            padding: 9px 11px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: white;
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.84rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .filter-checkbox input { width: auto; margin: 0; }
         .btn-export { background: #f6b73c; color: #26364c; }
         .status-success { color: var(--success) !important; }
         .status-error { color: var(--danger) !important; }
@@ -356,6 +382,20 @@
             vertical-align: top;
             font-size: 0.86rem;
         }
+        .detail-sort-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            font: inherit;
+            font-weight: 700;
+        }
+        .detail-sort-button span { min-width: 0.8em; font-size: 0.7rem; }
+        .detail-conflict-present { color: #dc2626; font-weight: 700; }
         .detail-pagination {
             display: flex;
             justify-content: flex-end;
@@ -952,6 +992,10 @@
                     <label>场景</label>
                     <input id="search-scene" placeholder="搜索..." oninput="applyFilters()">
                 </div>
+                <label class="filter-checkbox" for="exclude-conflicts">
+                    <input id="exclude-conflicts" type="checkbox" onchange="handleConflictFilterChange()">
+                    <span>统计时去除冲突项</span>
+                </label>
                 <button class="btn btn-outline" onclick="loadDashboard()">刷新</button>
                 <button class="btn btn-primary" onclick="showRanking()">排行榜</button>
                 <button class="btn btn-outline" onclick="resetFilters()">重置</button>
@@ -969,7 +1013,7 @@
                 <div style="display:flex; gap:10px; flex-wrap:wrap;">
                     <select id="ranking-dimension" onchange="loadRanking()"></select>
                     <select id="ranking-scene" onchange="loadRanking()"><option value="">全部场景</option></select>
-                    <button class="btn btn-outline" onclick="document.getElementById('ranking-card').style.display='none'">关闭</button>
+                    <button class="btn btn-outline" onclick="hideRanking()">关闭</button>
                 </div>
             </div>
             <table class="data-table">
@@ -1020,13 +1064,22 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>文件名</th>
+                            <th aria-sort="none">
+                                <button type="button" class="detail-sort-button" data-detail-sort-key="filename" onclick="setDetailSort('filename')">文件名 <span aria-hidden="true"></span></button>
+                            </th>
+                            <th aria-sort="none">
+                                <button type="button" class="detail-sort-button" data-detail-sort-key="conflict" onclick="setDetailSort('conflict')">冲突提示 <span aria-hidden="true"></span></button>
+                            </th>
                             <th>预览</th>
                             <th>Prompt</th>
                             <th>判定</th>
                             <th>坏例</th>
-                            <th>评测员</th>
-                            <th>时间</th>
+                            <th aria-sort="none">
+                                <button type="button" class="detail-sort-button" data-detail-sort-key="worker" onclick="setDetailSort('worker')">评测员 <span aria-hidden="true"></span></button>
+                            </th>
+                            <th aria-sort="none">
+                                <button type="button" class="detail-sort-button" data-detail-sort-key="time" onclick="setDetailSort('time')">评测时间 <span aria-hidden="true"></span></button>
+                            </th>
                         </tr>
                     </thead>
                     <tbody id="detail-body"></tbody>
@@ -1650,6 +1703,12 @@
             });
         }
         const DETAIL_PAGE_SIZE = 50;
+        const DETAIL_SORT_DEFAULTS = Object.freeze({
+            filename: "asc",
+            conflict: "desc",
+            worker: "asc",
+            time: "desc"
+        });
 
         let state = {
             taskType: "T2I",
@@ -1661,8 +1720,13 @@
             selectedDetailWorkers: new Set(),
             currentDetail: null,
             detailPage: 1,
+            detailSort: { key: null, direction: null },
             detailRenderTimer: null,
             detailRequestId: 0,
+            excludeConflicts: false,
+            dashboardRequestId: 0,
+            rankingRequestId: 0,
+            workerRequestId: 0,
             workerRows: [],
             selectedWorkers: new Set(),
             currentWorker: null,
@@ -2119,7 +2183,14 @@
         }
 
         async function loadDashboard() {
-            const data = await api(`/api/dashboard_overview?task_type=${state.taskType}`).then(r => r.json());
+            if (!Number.isFinite(state.dashboardRequestId)) state.dashboardRequestId = 0;
+            const requestId = ++state.dashboardRequestId;
+            const params = new URLSearchParams({
+                task_type: state.taskType,
+                exclude_conflicts: String(Boolean(state.excludeConflicts))
+            });
+            const data = await api(`/api/dashboard_overview?${params}`).then(response => response.json());
+            if (requestId !== state.dashboardRequestId) return;
             state.overview = data;
             state.pairs = data.pairs.map(pair => ({
                 ...pair,
@@ -2127,11 +2198,14 @@
                 v_b_meta: catalogEntryFor(pair.v_b)
             }));
             syncOverviewModelFilters();
+            const rankingSceneSelect = document.getElementById("ranking-scene");
+            const selectedRankingScene = rankingSceneSelect.value;
             const scenes = [...new Set(data.pairs.flatMap(pair => pair.scenes.map(scene => scene.scene)))];
             replaceSelectOptions(
-                document.getElementById("ranking-scene"),
+                rankingSceneSelect,
                 [["", "全部场景"], ...scenes.map(scene => [scene, scene])]
             );
+            if (scenes.includes(selectedRankingScene)) rankingSceneSelect.value = selectedRankingScene;
             applyFilters();
             document.getElementById("status-tag").textContent = `最后更新: ${formatBeijingNow()}`;
         }
@@ -2230,10 +2304,14 @@
             const total = stat.total || 0;
             const box = createNode("div", "summary-box");
             box.append(createNode("strong", "", label));
+            const reliability = typeof renderConflictReliability === "function"
+                ? renderConflictReliability(stat)
+                : null;
             if (!total) {
                 const legend = createNode("div", "legend");
                 legend.append(createNode("span", "", "暂无多维度样本"));
                 box.append(legend);
+                if (reliability) box.append(reliability);
                 return box;
             }
             const aPct = (stat.v_a_wins / total * 100).toFixed(1);
@@ -2254,7 +2332,27 @@
                 createNode("span", "", `B: ${bPct}% (${stat.v_b_wins})`)
             );
             box.append(track, legend, renderSuppressionLine(stat));
+            if (reliability) box.append(reliability);
             return box;
+        }
+
+        function formatConflictReliability(stat) {
+            if (stat?.sample_count === undefined || stat?.conflict_sample_count === undefined) {
+                return null;
+            }
+            const total = Math.max(0, Number(stat.sample_count) || 0);
+            const conflicts = Math.max(0, Number(stat.conflict_sample_count) || 0);
+            const ratio = total ? (conflicts / total) * 100 : 0;
+            return `冲突样例 ${conflicts}/${total}（${ratio.toFixed(1)}%）`;
+        }
+
+        function renderConflictReliability(stat) {
+            const text = formatConflictReliability(stat);
+            if (text === null) return null;
+            const node = createNode("div", "conflict-reliability");
+            if (Number(stat.conflict_sample_count) > 0) node.classList.add("has-conflict");
+            node.textContent = text;
+            return node;
         }
 
         function formatSuppressionRatio(numerator, denominator) {
@@ -2297,6 +2395,9 @@
                 };
                 const total = stat.total || 0;
                 const cell = createCell();
+                const reliability = typeof renderConflictReliability === "function"
+                    ? renderConflictReliability(stat)
+                    : null;
                 if (!total) {
                     const empty = createNode("span", "", "暂无多维度样本");
                     empty.style.color = "var(--muted)";
@@ -2316,6 +2417,7 @@
                     legend.append(createNode("span", "", `A ${aPct}% (${stat.v_a_wins}) / 一样差 ${tieBadPct}% (${stat.tie_bad_count}) / 一样好 ${tieGoodPct}% (${stat.tie_good_count}) / B ${bPct}% (${stat.v_b_wins})`));
                     cell.append(track, legend, renderSuppressionLine(stat));
                 }
+                if (reliability) cell.append(reliability);
                 row.append(cell);
             });
 
@@ -2384,10 +2486,26 @@
             loadRanking();
         }
 
+        function hideRanking() {
+            state.rankingRequestId += 1;
+            document.getElementById("ranking-card").style.display = "none";
+        }
+
         async function loadRanking() {
-            const dim = document.getElementById("ranking-dimension").value;
+            if (!Number.isFinite(state.rankingRequestId)) state.rankingRequestId = 0;
+            const requestId = ++state.rankingRequestId;
+            const params = new URLSearchParams({
+                task_type: state.taskType,
+                dimension: document.getElementById("ranking-dimension").value,
+                exclude_conflicts: String(Boolean(state.excludeConflicts))
+            });
             const scene = document.getElementById("ranking-scene").value;
-            const rows = await api(`/api/ranking?task_type=${state.taskType}&dimension=${dim}${scene ? `&scene=${encodeURIComponent(scene)}` : ""}`).then(r => r.json());
+            if (scene) params.set("scene", scene);
+            const rows = await api(`/api/ranking?${params}`).then(response => response.json());
+            if (
+                requestId !== state.rankingRequestId ||
+                document.getElementById("ranking-card").style.display !== "block"
+            ) return;
             const body = document.getElementById("ranking-body");
             body.replaceChildren(...rows.map((row, index) => {
                 const tableRow = createNode("tr");
@@ -2427,6 +2545,62 @@
                 page: currentPage,
                 totalPages
             };
+        }
+
+        function sortDetailRows(rows, sortState) {
+            if (!sortState || !sortState.key) return rows.slice();
+            const { key, direction } = sortState;
+            const sign = direction === "desc" ? -1 : 1;
+            const compareText = (a, b) => String(a ?? "").localeCompare(String(b ?? ""), "zh-CN");
+            const compareTime = (a, b, timeDirection) => {
+                const aMissing = !a;
+                const bMissing = !b;
+                if (aMissing || bMissing) {
+                    if (aMissing && bMissing) return 0;
+                    return aMissing ? 1 : -1;
+                }
+                const difference = Date.parse(a) - Date.parse(b);
+                return timeDirection === "desc" ? -difference : difference;
+            };
+
+            return rows.map((row, index) => ({ row, index })).sort((left, right) => {
+                const a = left.row;
+                const b = right.row;
+                let compared = 0;
+                if (key === "time") {
+                    compared = compareTime(a.time, b.time, direction);
+                } else if (key === "conflict") {
+                    compared = (Number(Boolean(a.has_conflict)) - Number(Boolean(b.has_conflict))) * sign;
+                } else {
+                    compared = compareText(a[key], b[key]) * sign;
+                }
+                if (!compared && key !== "filename") compared = compareText(a.filename, b.filename);
+                if (!compared && key !== "worker") compared = compareText(a.worker, b.worker);
+                if (!compared && key !== "time") compared = compareTime(a.time, b.time, "desc");
+                return compared || (left.index - right.index);
+            }).map(item => item.row);
+        }
+
+        function setDetailSort(key) {
+            if (!Object.prototype.hasOwnProperty.call(DETAIL_SORT_DEFAULTS, key)) return;
+            const current = state.detailSort;
+            state.detailSort = current.key === key
+                ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+                : { key, direction: DETAIL_SORT_DEFAULTS[key] };
+            state.detailPage = 1;
+            renderDetailTable();
+        }
+
+        function updateDetailSortHeaders() {
+            document.querySelectorAll("[data-detail-sort-key]").forEach(button => {
+                const active = button.dataset.detailSortKey === state.detailSort.key;
+                const direction = active ? state.detailSort.direction : null;
+                button.closest("th").setAttribute(
+                    "aria-sort",
+                    direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"
+                );
+                button.querySelector("span").textContent = direction === "asc" ? "▲" : direction === "desc" ? "▼" : "";
+            });
         }
 
         function changeDetailPage(delta) {
@@ -2483,32 +2657,45 @@
             const { v1, v2, scene } = state.currentDetail;
             const fileFilter = document.getElementById("detail-filename-filter").value.toLowerCase();
             const resultFilter = document.getElementById("detail-result-filter").value;
-            const rows = state.detailRows.filter(row => {
+            const filteredRows = state.detailRows.filter(row => {
                 if (!state.selectedDetailWorkers.has(row.worker)) return false;
-                if (fileFilter && !row.filename.toLowerCase().includes(fileFilter)) return false;
+                if (fileFilter && !String(row.filename || "").toLowerCase().includes(fileFilter)) return false;
                 if (resultFilter === "a_win" && row.overall !== v1) return false;
                 if (resultFilter === "b_win" && row.overall !== v2) return false;
                 if (resultFilter === "tie_bad" && row.overall !== "tie_bad") return false;
                 if (resultFilter === "tie_good" && row.overall !== "tie_good") return false;
                 return true;
             });
-            document.getElementById("detail-count").textContent = `共 ${rows.length} 条`;
-            const pagination = paginateDetailRows(rows, state.detailPage, DETAIL_PAGE_SIZE);
+            const sortedRows = sortDetailRows(filteredRows, state.detailSort);
+            document.getElementById("detail-count").textContent = `共 ${filteredRows.length} 条`;
+            const pagination = paginateDetailRows(sortedRows, state.detailPage, DETAIL_PAGE_SIZE);
             state.detailPage = pagination.page;
+            updateDetailSortHeaders();
             document.getElementById("detail-page-status").textContent = `第 ${pagination.page} / ${pagination.totalPages} 页`;
             document.getElementById("detail-page-prev").disabled = pagination.page <= 1;
             document.getElementById("detail-page-next").disabled = pagination.page >= pagination.totalPages;
-            document.getElementById("detail-pagination").style.display = rows.length ? "flex" : "none";
+            document.getElementById("detail-pagination").style.display = filteredRows.length ? "flex" : "none";
             const body = document.getElementById("detail-body");
-            if (!rows.length) {
+            if (!filteredRows.length) {
                 const emptyRow = createNode("tr");
-                emptyRow.append(createEmptyState("无匹配数据", "td", 7));
+                emptyRow.append(createEmptyState("无匹配数据", "td", 8));
                 body.replaceChildren(emptyRow);
                 return;
             }
             body.replaceChildren(...pagination.items.map(row => {
                 const tableRow = createNode("tr");
-                tableRow.append(createCell(row.filename));
+                const conflictCell = createNode("td");
+                if (row.has_conflict) {
+                    conflictCell.className = "detail-conflict-present";
+                    conflictCell.textContent = "存在冲突";
+                    conflictCell.title = (row.conflict_dimensions || [])
+                        .map(dimension => state.config.dashboard_dims
+                            .find(item => item.key === dimension)?.label || dimension)
+                        .join("、");
+                } else {
+                    conflictCell.textContent = "无";
+                }
+                tableRow.append(createCell(row.filename), conflictCell);
 
                 const imageCell = createCell();
                 const imageGroup = createNode("div");
@@ -2592,13 +2779,55 @@
             return container;
         }
 
+        async function loadWorkerStats(options) {
+            options = options || {};
+            const { preserveSelection = false } = options;
+            const context = state.currentWorker;
+            if (!context) return;
+            if (!Number.isFinite(state.workerRequestId)) state.workerRequestId = 0;
+            const requestId = ++state.workerRequestId;
+            const params = new URLSearchParams({
+                task_type: state.taskType,
+                v1: context.v1,
+                v2: context.v2,
+                exclude_conflicts: String(Boolean(state.excludeConflicts))
+            });
+            if (context.scene) params.set("scene", context.scene);
+            const rows = await api(`/api/worker_stats?${params}`).then(response => response.json());
+            if (
+                requestId !== state.workerRequestId ||
+                state.currentWorker !== context ||
+                document.getElementById("worker-modal").style.display !== "flex"
+            ) return;
+
+            const previous = new Set(state.selectedWorkers);
+            state.workerRows = rows;
+            const available = new Set(rows.map(row => row.worker));
+            const preserved = new Set([...previous].filter(worker => available.has(worker)));
+            state.selectedWorkers = preserveSelection && preserved.size ? preserved : available;
+            renderWorkerStats();
+        }
+
         async function openWorkerModal(v1, v2, scene) {
             state.currentWorker = { v1, v2, scene };
             document.getElementById("worker-title").textContent = scene ? `评测员统计: ${v1} vs ${v2} [${scene}]` : `评测员统计: ${v1} vs ${v2} [全部场景]`;
             document.getElementById("worker-modal").style.display = "flex";
-            state.workerRows = await api(`/api/worker_stats?task_type=${state.taskType}&v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}${scene ? `&scene=${encodeURIComponent(scene)}` : ""}`).then(r => r.json());
-            state.selectedWorkers = new Set(state.workerRows.map(row => row.worker));
-            renderWorkerStats();
+            await loadWorkerStats({ preserveSelection: false });
+        }
+
+        async function handleConflictFilterChange() {
+            state.excludeConflicts = Boolean(document.getElementById("exclude-conflicts")?.checked);
+            const refreshes = [loadDashboard()];
+            if (document.getElementById("ranking-card").style.display === "block") {
+                refreshes.push(loadRanking());
+            }
+            if (
+                document.getElementById("worker-modal").style.display === "flex" &&
+                state.currentWorker
+            ) {
+                refreshes.push(loadWorkerStats({ preserveSelection: true }));
+            }
+            await Promise.all(refreshes);
         }
 
         function renderWorkerStats() {
@@ -3518,6 +3747,8 @@
             state.selectedDetailWorkers = new Set();
             state.currentDetail = null;
             state.detailPage = 1;
+            state.detailSort = { key: null, direction: null };
+            updateDetailSortHeaders();
             document.getElementById("detail-body").replaceChildren();
             document.getElementById("detail-worker-group").replaceChildren();
             document.getElementById("detail-count").textContent = "";
@@ -3529,6 +3760,12 @@
 
         function closeModal(id) {
             if (id === "detail-modal") cleanupDetailModal();
+            if (id === "worker-modal") {
+                state.workerRequestId += 1;
+                state.workerRows = [];
+                state.selectedWorkers = new Set();
+                state.currentWorker = null;
+            }
             document.getElementById(id).style.display = "none";
         }
 

@@ -100,7 +100,8 @@ console.log(JSON.stringify({{
     def test_detail_renderer_uses_only_the_current_page(self):
         source = self.function_source("renderDetailTable")
         for marker in (
-            "paginateDetailRows(rows, state.detailPage, DETAIL_PAGE_SIZE)",
+            "sortDetailRows(filteredRows, state.detailSort)",
+            "paginateDetailRows(sortedRows, state.detailPage, DETAIL_PAGE_SIZE)",
             "state.detailPage = pagination.page",
             "pagination.items.map(row =>",
             'document.getElementById("detail-page-status")',
@@ -109,6 +110,90 @@ console.log(JSON.stringify({{
         ):
             self.assertIn(marker, source)
         self.assertNotIn("...rows.map(row =>", source)
+        self.assertLess(
+            source.index("sortDetailRows(filteredRows, state.detailSort)"),
+            source.index("paginateDetailRows(sortedRows, state.detailPage, DETAIL_PAGE_SIZE)"),
+        )
+
+    def test_detail_sort_orders_the_complete_result_set_deterministically(self):
+        source = self.function_source("sortDetailRows")
+        result = self.run_node(
+            f"""
+{source}
+const rows = [
+  {{ filename: 'b.png', worker: 'zoe', time: null, has_conflict: false, id: 4 }},
+  {{ filename: 'a.png', worker: 'bob', time: '2026-08-13T09:00:00+08:00', has_conflict: true, id: 2 }},
+  {{ filename: 'a.png', worker: 'amy', time: '2026-08-13T11:00:00+08:00', has_conflict: true, id: 1 }},
+  {{ filename: 'c.png', worker: 'amy', time: '2026-08-13T10:00:00+08:00', has_conflict: false, id: 3 }},
+];
+const ids = sortState => sortDetailRows(rows, sortState).map(row => row.id);
+console.log(JSON.stringify({{
+  original: ids({{ key: null, direction: null }}),
+  filename: ids({{ key: 'filename', direction: 'asc' }}),
+  worker: ids({{ key: 'worker', direction: 'asc' }}),
+  timeDesc: ids({{ key: 'time', direction: 'desc' }}),
+  timeAsc: ids({{ key: 'time', direction: 'asc' }}),
+  conflictDesc: ids({{ key: 'conflict', direction: 'desc' }}),
+  conflictAsc: ids({{ key: 'conflict', direction: 'asc' }}),
+}}));
+"""
+        )
+        self.assertEqual(result["original"], [4, 2, 1, 3])
+        self.assertEqual(result["filename"], [1, 2, 4, 3])
+        self.assertEqual(result["worker"], [1, 3, 2, 4])
+        self.assertEqual(result["timeDesc"], [1, 3, 2, 4])
+        self.assertEqual(result["timeAsc"], [2, 3, 1, 4])
+        self.assertEqual(result["conflictDesc"], [1, 2, 4, 3])
+        self.assertEqual(result["conflictAsc"], [4, 3, 1, 2])
+
+    def test_detail_sort_headers_and_conflict_column_are_rendered(self):
+        for key in ("filename", "conflict", "worker", "time"):
+            self.assertIn(f'data-detail-sort-key="{key}"', self.html)
+        self.assertIn("function setDetailSort(", self.html)
+        renderer = self.function_source("renderDetailTable")
+        self.assertIn("row.has_conflict", renderer)
+        self.assertIn('"detail-conflict-present"', renderer)
+        self.assertIn('"存在冲突"', renderer)
+        self.assertIn('"无"', renderer)
+        self.assertIn('createEmptyState("无匹配数据", "td", 8)', renderer)
+        self.assertIn("row.conflict_dimensions", renderer)
+
+    def test_detail_sort_clicks_use_column_defaults_then_toggle_and_reset_page(self):
+        for marker in (
+            'filename: "asc"',
+            'conflict: "desc"',
+            'worker: "asc"',
+            'time: "desc"',
+        ):
+            self.assertIn(marker, self.html)
+        source = self.function_source("setDetailSort")
+        result = self.run_node(
+            f"""
+const DETAIL_SORT_DEFAULTS = Object.freeze({{
+  filename: "asc", conflict: "desc", worker: "asc", time: "desc"
+}});
+const state = {{ detailSort: {{ key: null, direction: null }}, detailPage: 9 }};
+let renders = 0;
+const renderDetailTable = () => {{ renders += 1; }};
+{source}
+setDetailSort("filename");
+const filenameFirst = {{ ...state.detailSort, page: state.detailPage }};
+setDetailSort("filename");
+const filenameSecond = {{ ...state.detailSort, page: state.detailPage }};
+setDetailSort("time");
+const timeFirst = {{ ...state.detailSort, page: state.detailPage }};
+console.log(JSON.stringify({{ filenameFirst, filenameSecond, timeFirst, renders }}));
+"""
+        )
+        self.assertEqual(
+            result,
+            {
+                "filenameFirst": {"key": "filename", "direction": "asc", "page": 1},
+                "filenameSecond": {"key": "filename", "direction": "desc", "page": 1},
+                "timeFirst": {"key": "time", "direction": "desc", "page": 1},
+                "renders": 3,
+            },
+        )
 
     def test_detail_list_loads_thumbnails_but_click_preview_keeps_originals(self):
         renderer = self.function_source("renderDetailTable")
@@ -204,14 +289,19 @@ const elements = {{
     "detail-page-prev": makeNode(),
     "detail-page-next": makeNode()
 }};
-const document = {{ getElementById: id => elements[id] }};
+const document = {{
+    getElementById: id => elements[id],
+    querySelectorAll: () => []
+}};
 let clearedTimer = null;
 const clearTimeout = timer => {{ clearedTimer = timer; }};
 const state = {{
     detailRows: [1, 2], selectedDetailWorkers: new Set(["alice"]),
     currentDetail: {{ scene: "old" }}, detailPage: 4,
-    detailRenderTimer: 19, detailRequestId: 7
+    detailRenderTimer: 19, detailRequestId: 7,
+    detailSort: {{ key: "time", direction: "desc" }}
 }};
+const updateDetailSortHeaders = () => {{}};
 {source}
 cleanupDetailModal();
 console.log(JSON.stringify({{
@@ -219,6 +309,7 @@ console.log(JSON.stringify({{
     workers: state.selectedDetailWorkers.size,
     currentDetail: state.currentDetail,
     page: state.detailPage,
+    sort: state.detailSort,
     requestId: state.detailRequestId,
     clearedTimer,
     bodyChildren: elements["detail-body"].children.length,
@@ -235,6 +326,7 @@ console.log(JSON.stringify({{
                 "workers": 0,
                 "currentDetail": None,
                 "page": 1,
+                "sort": {"key": None, "direction": None},
                 "requestId": 8,
                 "clearedTimer": 19,
                 "bodyChildren": 0,
@@ -268,13 +360,19 @@ const elements = {{
     "detail-page-status": makeNode(), "detail-page-prev": makeNode(),
     "detail-page-next": makeNode()
 }};
-const document = {{ getElementById: id => elements[id] }};
+const document = {{
+    getElementById: id => elements[id],
+    querySelectorAll: () => []
+}};
 const state = {{
     taskType: "T2I", detailRows: [], selectedDetailWorkers: new Set(),
     currentDetail: null, detailPage: 1, detailRenderTimer: null,
-    detailRequestId: 0
+    detailRequestId: 0, detailSort: {{ key: null, direction: null }},
+    workerRequestId: 0, workerRows: [], selectedWorkers: new Set(),
+    currentWorker: null
 }};
 const clearTimeout = () => {{}};
+const updateDetailSortHeaders = () => {{}};
 let resolveRequest;
 const api = () => new Promise(resolve => {{ resolveRequest = resolve; }});
 const renderDetailWorkers = () => {{ throw new Error("stale response rendered workers"); }};
