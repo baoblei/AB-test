@@ -394,7 +394,12 @@
             font: inherit;
             font-weight: 700;
         }
-        .detail-sort-button span { min-width: 0.8em; font-size: 0.7rem; }
+        .detail-sort-button span {
+            min-width: 0.8em;
+            color: var(--muted);
+            font-size: 0.7rem;
+        }
+        .detail-sort-button.is-active span { color: var(--primary); }
         .detail-conflict-present { color: #dc2626; font-weight: 700; }
         .detail-pagination {
             display: flex;
@@ -1065,20 +1070,20 @@
                     <thead>
                         <tr>
                             <th aria-sort="none">
-                                <button type="button" class="detail-sort-button" data-detail-sort-key="filename" onclick="setDetailSort('filename')">文件名 <span aria-hidden="true"></span></button>
+                                <button type="button" class="detail-sort-button" data-detail-sort-key="filename" onclick="setDetailSort('filename')">文件名 <span aria-hidden="true">△</span></button>
                             </th>
                             <th aria-sort="none">
-                                <button type="button" class="detail-sort-button" data-detail-sort-key="conflict" onclick="setDetailSort('conflict')">冲突提示 <span aria-hidden="true"></span></button>
+                                <button type="button" class="detail-sort-button" data-detail-sort-key="conflict" onclick="setDetailSort('conflict')">冲突提示 <span aria-hidden="true">▽</span></button>
                             </th>
                             <th>预览</th>
                             <th>Prompt</th>
                             <th>判定</th>
                             <th>坏例</th>
                             <th aria-sort="none">
-                                <button type="button" class="detail-sort-button" data-detail-sort-key="worker" onclick="setDetailSort('worker')">评测员 <span aria-hidden="true"></span></button>
+                                <button type="button" class="detail-sort-button" data-detail-sort-key="worker" onclick="setDetailSort('worker')">评测员 <span aria-hidden="true">△</span></button>
                             </th>
                             <th aria-sort="none">
-                                <button type="button" class="detail-sort-button" data-detail-sort-key="time" onclick="setDetailSort('time')">评测时间 <span aria-hidden="true"></span></button>
+                                <button type="button" class="detail-sort-button" data-detail-sort-key="time" onclick="setDetailSort('time')">评测时间 <span aria-hidden="true">▽</span></button>
                             </th>
                         </tr>
                     </thead>
@@ -2606,11 +2611,15 @@
             document.querySelectorAll("[data-detail-sort-key]").forEach(button => {
                 const active = button.dataset.detailSortKey === state.detailSort.key;
                 const direction = active ? state.detailSort.direction : null;
+                const defaultDirection = DETAIL_SORT_DEFAULTS[button.dataset.detailSortKey] || "asc";
                 button.closest("th").setAttribute(
                     "aria-sort",
                     direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"
                 );
-                button.querySelector("span").textContent = direction === "asc" ? "▲" : direction === "desc" ? "▼" : "";
+                button.classList.toggle("is-active", active);
+                button.querySelector("span").textContent = active
+                    ? (direction === "asc" ? "▲" : "▼")
+                    : (defaultDirection === "desc" ? "▽" : "△");
             });
         }
 

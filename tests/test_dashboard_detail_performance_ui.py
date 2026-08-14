@@ -209,6 +209,64 @@ console.log(JSON.stringify({{ filenameFirst, filenameSecond, timeFirst, renders 
             },
         )
 
+    def test_detail_sort_triangles_are_gray_outlines_until_selected(self):
+        source = self.function_source("updateDetailSortHeaders")
+        result = self.run_node(
+            f"""
+const DETAIL_SORT_DEFAULTS = Object.freeze({{
+  filename: "asc", conflict: "desc", worker: "asc", time: "desc"
+}});
+const makeButton = key => {{
+  const span = {{ textContent: "" }};
+  const th = {{ sort: null, setAttribute(_name, value) {{ this.sort = value; }} }};
+  const classes = new Set();
+  return {{
+    dataset: {{ detailSortKey: key }}, span, th, classes,
+    closest: () => th,
+    querySelector: () => span,
+    classList: {{ toggle(name, enabled) {{
+      if (enabled) classes.add(name); else classes.delete(name);
+    }} }}
+  }};
+}};
+const buttons = ["filename", "conflict", "worker", "time"].map(makeButton);
+const document = {{ querySelectorAll: () => buttons }};
+const state = {{ detailSort: {{ key: null, direction: null }} }};
+{source}
+const snapshot = () => Object.fromEntries(buttons.map(button => [button.dataset.detailSortKey, {{
+  triangle: button.span.textContent,
+  active: button.classes.has("is-active"),
+  ariaSort: button.th.sort
+}}]));
+updateDetailSortHeaders();
+const inactive = snapshot();
+state.detailSort = {{ key: "filename", direction: "asc" }};
+updateDetailSortHeaders();
+const filenameActive = snapshot();
+state.detailSort = {{ key: "time", direction: "desc" }};
+updateDetailSortHeaders();
+const timeActive = snapshot();
+console.log(JSON.stringify({{ inactive, filenameActive, timeActive }}));
+"""
+        )
+
+        self.assertEqual(
+            {key: value["triangle"] for key, value in result["inactive"].items()},
+            {"filename": "△", "conflict": "▽", "worker": "△", "time": "▽"},
+        )
+        self.assertTrue(all(not item["active"] for item in result["inactive"].values()))
+        self.assertEqual(result["filenameActive"]["filename"], {
+            "triangle": "▲", "active": True, "ariaSort": "ascending"
+        })
+        self.assertEqual(result["filenameActive"]["time"]["triangle"], "▽")
+        self.assertEqual(result["timeActive"]["time"], {
+            "triangle": "▼", "active": True, "ariaSort": "descending"
+        })
+        self.assertEqual(result["timeActive"]["filename"]["triangle"], "△")
+
+        self.assertIn("color: var(--muted)", self.html)
+        self.assertIn(".detail-sort-button.is-active span", self.html)
+
     def test_detail_list_loads_thumbnails_but_click_preview_keeps_originals(self):
         renderer = self.function_source("renderDetailTable")
         ordered_thumbnail_sources = (
