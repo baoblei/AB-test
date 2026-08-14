@@ -48,6 +48,16 @@ class DashboardConflictUiTests(unittest.TestCase):
     def test_conflict_tolerance_control_explains_boundary_and_shares_a_row_with_filter(self):
         self.assertIn('class="conflict-controls-row"', self.html)
         self.assertIn('id="conflict-tolerance"', self.html)
+        self.assertIn('class="conflict-tolerance-label"', self.html)
+        self.assertIn(
+            ".input-group .conflict-tolerance-label {\n"
+            "            color: #dc2626;",
+            self.html,
+        )
+        self.assertIn('class="filter-checkbox conflict-exclude-checkbox"', self.html)
+        self.assertIn(
+            ".conflict-exclude-checkbox { align-self: flex-end; }", self.html
+        )
         tolerance_section = self.html.split('id="conflict-tolerance"', 1)[1].split(
             "</select>", 1
         )[0]
@@ -68,15 +78,19 @@ class DashboardConflictUiTests(unittest.TestCase):
             f"""
 {source}
 console.log(JSON.stringify([
-  formatConflictReliability({{ conflict_sample_count: 1, sample_count: 4 }}),
-  formatConflictReliability({{ conflict_sample_count: 0, sample_count: 0 }}),
+  formatConflictReliability({{ conflict_sample_count: 1, sample_count: 4, intersection_sample_count: 2 }}),
+  formatConflictReliability({{ conflict_sample_count: 0, sample_count: 0, intersection_sample_count: 0 }}),
   formatConflictReliability({{ total: 3 }}),
 ]));
 """
         )
         self.assertEqual(
             result,
-            ["冲突样例 1/4（25.0%）", "冲突样例 0/0（0.0%）", None],
+            [
+                "并集冲突比例 1/4（25.0%）\n交集冲突比例 1/2（50.0%）",
+                "并集冲突比例 0/0（0.0%）\n交集冲突比例 0/0（0.0%）",
+                None,
+            ],
         )
 
     def test_pair_scene_and_worker_scope_render_reliable_conflict_counts(self):

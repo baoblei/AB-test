@@ -31,6 +31,7 @@ class FourWayDashboardTests(unittest.TestCase):
                 "tie_count": 3,
                 "v_b_wins": 1,
                 "sample_count": 5,
+                "intersection_sample_count": 0,
                 "conflict_sample_count": 0,
             },
         )

@@ -270,7 +270,26 @@ class DashboardConflictIndexTests(unittest.TestCase):
 
         self.assertEqual(stats["total"], 3)
         self.assertEqual(stats["sample_count"], 2)
+        self.assertEqual(stats["intersection_sample_count"], 1)
         self.assertEqual(stats["conflict_sample_count"], 0)
+
+    def test_union_and_intersection_conflict_denominators_are_distinct(self):
+        rows = [
+            result_row(1, "alice", "conflict.png", "model-a", user_id=1),
+            result_row(2, "bob", "conflict.png", "model-b", user_id=2),
+            result_row(3, "alice", "agreed.png", "model-a", user_id=1),
+            result_row(4, "bob", "agreed.png", "model-a", user_id=2),
+            result_row(5, "alice", "alice-only.png", "tie_good", user_id=1),
+            result_row(6, "bob", "bob-only.png", "model-b", user_id=2),
+            result_row(7, "alice", "shared-tie.png", "tie_good", user_id=1),
+            result_row(8, "bob", "shared-tie.png", "tie_bad", user_id=2),
+        ]
+
+        stats = dimension_stats(rows, "overall", "model-a", "model-b")
+
+        self.assertEqual(stats["conflict_sample_count"], 1)
+        self.assertEqual(stats["sample_count"], 5)
+        self.assertEqual(stats["intersection_sample_count"], 3)
 
 
 class DashboardConflictServiceTests(unittest.TestCase):

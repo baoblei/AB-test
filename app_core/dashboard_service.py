@@ -227,7 +227,15 @@ def dimension_stats(
             scored_rows, [dim], conflict_tolerance=conflict_tolerance
         )
 
-    sample_keys = {sample_identity(row) for row in scored_rows}
+    sample_evaluators = {}
+    for row in scored_rows:
+        sample_evaluators.setdefault(sample_identity(row), set()).add(
+            evaluator_identity(row)
+        )
+    sample_keys = set(sample_evaluators)
+    intersection_sample_keys = {
+        key for key, evaluators in sample_evaluators.items() if len(evaluators) >= 2
+    }
     conflict_sample_keys = {
         key for key in sample_keys if dim in conflict_index.get(key, set())
     }
@@ -249,6 +257,7 @@ def dimension_stats(
         "tie_count": tie_bad_count + tie_good_count,
         "v_b_wins": sum(1 for row in aggregate_rows if row[dim] == v_b),
         "sample_count": len(sample_keys),
+        "intersection_sample_count": len(intersection_sample_keys),
         "conflict_sample_count": len(conflict_sample_keys),
     }
 

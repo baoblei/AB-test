@@ -208,6 +208,8 @@
             margin-top: 7px;
             color: var(--muted);
             font-size: 0.76rem;
+            line-height: 1.45;
+            white-space: pre-line;
         }
         .conflict-reliability.has-conflict {
             color: #dc2626;
@@ -348,6 +350,11 @@
             background: #f5f8fc;
         }
         .conflict-tolerance-group { width: min(210px, 100%); }
+        .input-group .conflict-tolerance-label {
+            color: #dc2626;
+            font-weight: 800;
+        }
+        .conflict-exclude-checkbox { align-self: flex-end; }
         .conflict-definition {
             flex: 1 1 520px;
             align-self: center;
@@ -1034,7 +1041,7 @@
                 </div>
                 <div class="conflict-controls-row">
                     <div class="input-group conflict-tolerance-group">
-                        <label for="conflict-tolerance">冲突宽容度</label>
+                        <label class="conflict-tolerance-label" for="conflict-tolerance">冲突宽容度</label>
                         <select id="conflict-tolerance" onchange="handleConflictFilterChange()">
                             <option value="0">0%</option>
                             <option value="0.05">5%</option>
@@ -1049,7 +1056,7 @@
                             <option value="0.5">50%</option>
                         </select>
                     </div>
-                    <label class="filter-checkbox" for="exclude-conflicts">
+                    <label class="filter-checkbox conflict-exclude-checkbox" for="exclude-conflicts">
                         <input id="exclude-conflicts" type="checkbox" onchange="handleConflictFilterChange()">
                         <span>统计时去除冲突项</span>
                     </label>
@@ -2465,13 +2472,22 @@
         }
 
         function formatConflictReliability(stat) {
-            if (stat?.sample_count === undefined || stat?.conflict_sample_count === undefined) {
+            if (
+                stat?.sample_count === undefined ||
+                stat?.intersection_sample_count === undefined ||
+                stat?.conflict_sample_count === undefined
+            ) {
                 return null;
             }
-            const total = Math.max(0, Number(stat.sample_count) || 0);
+            const unionTotal = Math.max(0, Number(stat.sample_count) || 0);
+            const intersectionTotal = Math.max(0, Number(stat.intersection_sample_count) || 0);
             const conflicts = Math.max(0, Number(stat.conflict_sample_count) || 0);
-            const ratio = total ? (conflicts / total) * 100 : 0;
-            return `冲突样例 ${conflicts}/${total}（${ratio.toFixed(1)}%）`;
+            const unionRatio = unionTotal ? (conflicts / unionTotal) * 100 : 0;
+            const intersectionRatio = intersectionTotal
+                ? (conflicts / intersectionTotal) * 100
+                : 0;
+            return `并集冲突比例 ${conflicts}/${unionTotal}（${unionRatio.toFixed(1)}%）\n` +
+                `交集冲突比例 ${conflicts}/${intersectionTotal}（${intersectionRatio.toFixed(1)}%）`;
         }
 
         function renderConflictReliability(stat) {

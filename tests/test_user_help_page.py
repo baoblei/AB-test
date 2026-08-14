@@ -34,7 +34,8 @@ class UserHelpPageTests(unittest.TestCase):
             "一样差 / 一样好",
             "A 压制 / B 压制",
             "冲突宽容度",
-            "冲突样例 X/Y",
+            "并集冲突比例",
+            "交集冲突比例",
             "统计时去除冲突项",
             "坏例占比",
             "高频坏例",
@@ -54,18 +55,22 @@ class UserHelpPageTests(unittest.TestCase):
             self.assertIn(formula, help_html)
 
         self.assertIn("50 + 50 - 9 = 91", help_html)
-        self.assertIn("不是多人共同评价数", help_html)
+        self.assertIn("交集冲突比例 = 冲突样例数 ÷ 多人共同评价样例数", help_html)
+        self.assertIn("1/91", help_html)
+        self.assertIn("1/9", help_html)
         self.assertNotIn("pip install", help_html)
         self.assertNotIn("uvicorn", help_html)
 
     def test_readme_links_help_page_and_matches_conflict_denominator_definition(self):
         for marker in (
             "`/help`：用户侧平台使用说明",
-            "冲突样例 X/Y",
+            "并集冲突比例",
+            "交集冲突比例",
             "评测记录数",
             "去重样例并集数",
-            "多人共同评价数",
+            "多人共同评价样例数",
             "50 + 50 - 9 = 91",
+            "交集冲突比例 = 冲突样例数 ÷ 多人共同评价样例数",
         ):
             self.assertIn(marker, self.readme)
 
