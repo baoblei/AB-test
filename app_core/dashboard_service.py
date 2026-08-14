@@ -1,12 +1,13 @@
 import csv
 import sqlite3
 from io import StringIO
+from math import ceil
 from typing import Dict, List, Optional
 
 from .bad_cases import build_bad_case_stats, safe_load_json_list
 from .config import DIM_LABELS, get_task_config, normalize_task_type
 from .database import connect
-from .errors import InvalidDimensionError
+from .errors import InvalidDimensionError, ValidationError
 from .storage import get_preview_prompt_text, get_ref_image_url
 
 
@@ -25,6 +26,116 @@ def fetch_result_rows(task_type: str, v_a: Optional[str] = None, v_b: Optional[s
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+
+def normalize_conflict_tolerance(value: float = 0.0) -> float:
+    try:
+        tolerance = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("冲突宽容度必须在 0% 到 50% 之间") from exc
+    if tolerance < 0 or tolerance > 0.5:
+        raise ValidationError("冲突宽容度必须在 0% 到 50% 之间")
+    return tolerance
+
+
+def _escaped_like(value: str) -> str:
+    return (
+        str(value or "")
+        .lower()
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
+def fetch_overview_page(
+    task_type: str,
+    *,
+    page: int = 1,
+    page_size: int = 10,
+    search_v1: str = "",
+    search_v2: str = "",
+    scene: str = "",
+    model_names: Optional[list[str]] = None,
+) -> dict:
+    task_type = normalize_task_type(task_type)
+    page_size = max(1, min(100, int(page_size or 10)))
+    requested_page = max(1, int(page or 1))
+    where = ["task_type=?", "skipped=0"]
+    params: List[object] = [task_type]
+
+    for search in (search_v1, search_v2):
+        if search:
+            pattern = f"%{_escaped_like(search)}%"
+            where.append(
+                "(LOWER(v_a) LIKE ? ESCAPE '\\' OR LOWER(v_b) LIKE ? ESCAPE '\\')"
+            )
+            params.extend([pattern, pattern])
+    if scene:
+        where.append("LOWER(scene) LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escaped_like(scene)}%")
+    if model_names is not None:
+        names = list(dict.fromkeys(str(name) for name in model_names if str(name)))
+        if names:
+            placeholders = ",".join("?" for _ in names)
+            where.append(f"(v_a IN ({placeholders}) OR v_b IN ({placeholders}))")
+            params.extend(names)
+            params.extend(names)
+        else:
+            where.append("0")
+
+    pair_query = f"""
+        SELECT v_a, v_b
+        FROM results_log
+        WHERE {' AND '.join(where)}
+        GROUP BY v_a, v_b
+    """
+    conn = connect(row_factory=True)
+    cursor = conn.cursor()
+    total_pairs = cursor.execute(
+        f"SELECT COUNT(*) FROM ({pair_query}) AS filtered_pairs", params
+    ).fetchone()[0]
+    total_pages = max(1, ceil(total_pairs / page_size))
+    current_page = min(requested_page, total_pages)
+    pair_rows = cursor.execute(
+        f"{pair_query} ORDER BY v_a, v_b LIMIT ? OFFSET ?",
+        [*params, page_size, (current_page - 1) * page_size],
+    ).fetchall()
+
+    rows = []
+    if pair_rows:
+        pair_conditions = " OR ".join("(v_a=? AND v_b=?)" for _ in pair_rows)
+        pair_params: List[object] = [task_type]
+        for pair_row in pair_rows:
+            pair_params.extend([pair_row["v_a"], pair_row["v_b"]])
+        rows = cursor.execute(
+            f"""
+            SELECT * FROM results_log
+            WHERE task_type=? AND skipped=0 AND ({pair_conditions})
+            ORDER BY v_a, v_b, scene, filename, timestamp
+            """,
+            pair_params,
+        ).fetchall()
+    scenes = [
+        row[0]
+        for row in cursor.execute(
+            """
+            SELECT DISTINCT scene FROM results_log
+            WHERE task_type=? AND skipped=0
+            ORDER BY scene
+            """,
+            (task_type,),
+        ).fetchall()
+    ]
+    conn.close()
+    return {
+        "rows": rows,
+        "page": current_page,
+        "page_size": page_size,
+        "total_pairs": total_pairs,
+        "total_pages": total_pages,
+        "scenes": scenes,
+    }
 
 
 def row_eval_mode(row) -> str:
@@ -68,7 +179,8 @@ def sample_identity(row):
     )
 
 
-def build_conflict_index(rows, dimensions):
+def build_conflict_index(rows, dimensions, conflict_tolerance: float = 0.0):
+    conflict_tolerance = normalize_conflict_tolerance(conflict_tolerance)
     vote_sides = {}
     for row in rows:
         sample_key = sample_identity(row)
@@ -92,7 +204,10 @@ def build_conflict_index(rows, dimensions):
     for (sample_key, dimension), sides in vote_sides.items():
         evaluators = sides["a"] | sides["b"]
         if sides["a"] and sides["b"] and len(evaluators) > 1:
-            conflicts.setdefault(sample_key, set()).add(dimension)
+            opposing_votes = len(sides["a"]) + len(sides["b"])
+            minority_share = min(len(sides["a"]), len(sides["b"])) / opposing_votes
+            if minority_share > conflict_tolerance:
+                conflicts.setdefault(sample_key, set()).add(dimension)
     return conflicts
 
 
@@ -104,10 +219,13 @@ def dimension_stats(
     *,
     conflict_index=None,
     exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
 ) -> dict:
     scored_rows = rows_for_dimension(rows, dim)
     if conflict_index is None:
-        conflict_index = build_conflict_index(scored_rows, [dim])
+        conflict_index = build_conflict_index(
+            scored_rows, [dim], conflict_tolerance=conflict_tolerance
+        )
 
     sample_keys = {sample_identity(row) for row in scored_rows}
     conflict_sample_keys = {
@@ -141,13 +259,16 @@ def aggregate_pair_rows(
     *,
     exclude_conflicts: bool = False,
     conflict_index=None,
+    conflict_tolerance: float = 0.0,
 ) -> List[dict]:
     task_type = normalize_task_type(task_type)
     config = get_task_config(task_type)
     dashboard_dims = config["dashboard_dims"]
     rows = fetch_result_rows(task_type) if rows is None else list(rows)
     if conflict_index is None:
-        conflict_index = build_conflict_index(rows, dashboard_dims)
+        conflict_index = build_conflict_index(
+            rows, dashboard_dims, conflict_tolerance=conflict_tolerance
+        )
     grouped: Dict[tuple, List[sqlite3.Row]] = {}
     for row in rows:
         grouped.setdefault((row["v_a"], row["v_b"]), []).append(row)
@@ -174,6 +295,7 @@ def aggregate_pair_rows(
                 v_b,
                 conflict_index=conflict_index,
                 exclude_conflicts=exclude_conflicts,
+                conflict_tolerance=conflict_tolerance,
             )
 
         scene_grouped: Dict[str, List[sqlite3.Row]] = {}
@@ -196,26 +318,57 @@ def aggregate_pair_rows(
                     v_b,
                     conflict_index=conflict_index,
                     exclude_conflicts=exclude_conflicts,
+                    conflict_tolerance=conflict_tolerance,
                 )
             pair_data["scenes"].append(scene_data)
         result.append(pair_data)
     return result
 
 
-def dashboard_overview(task_type: str, exclude_conflicts: bool = False) -> dict:
+def dashboard_overview(
+    task_type: str,
+    exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
+    page: int = 1,
+    page_size: int = 10,
+    search_v1: str = "",
+    search_v2: str = "",
+    scene: str = "",
+    model_names: Optional[list[str]] = None,
+) -> dict:
     task_type = normalize_task_type(task_type)
     config = get_task_config(task_type)
-    rows = fetch_result_rows(task_type)
+    conflict_tolerance = normalize_conflict_tolerance(conflict_tolerance)
+    page_data = fetch_overview_page(
+        task_type,
+        page=page,
+        page_size=page_size,
+        search_v1=search_v1,
+        search_v2=search_v2,
+        scene=scene,
+        model_names=model_names,
+    )
+    rows = page_data["rows"]
     dimensions = active_dimensions(rows, config["dashboard_dims"])
-    conflict_index = build_conflict_index(rows, config["dashboard_dims"])
+    conflict_index = build_conflict_index(
+        rows,
+        config["dashboard_dims"],
+        conflict_tolerance=conflict_tolerance,
+    )
     return {
         "task_type": task_type,
         "dims": [{"key": dim, "label": DIM_LABELS[dim]} for dim in dimensions],
+        "page": page_data["page"],
+        "page_size": page_data["page_size"],
+        "total_pairs": page_data["total_pairs"],
+        "total_pages": page_data["total_pages"],
+        "scenes": page_data["scenes"],
         "pairs": aggregate_pair_rows(
             task_type,
             rows,
             exclude_conflicts=exclude_conflicts,
             conflict_index=conflict_index,
+            conflict_tolerance=conflict_tolerance,
         ),
     }
 
@@ -226,12 +379,17 @@ def worker_stats(
     v2: str,
     scene: Optional[str] = None,
     exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
 ) -> list[dict]:
     task_type = normalize_task_type(task_type)
     config = get_task_config(task_type)
     v_a, v_b = sorted([v1, v2])
     rows = fetch_result_rows(task_type, v_a, v_b, scene)
-    conflict_index = build_conflict_index(rows, config["dashboard_dims"])
+    conflict_index = build_conflict_index(
+        rows,
+        config["dashboard_dims"],
+        conflict_tolerance=conflict_tolerance,
+    )
     grouped: Dict[str, List[sqlite3.Row]] = {}
     for row in rows:
         grouped.setdefault(row["worker"], []).append(row)
@@ -252,19 +410,98 @@ def worker_stats(
                 v_b,
                 conflict_index=conflict_index,
                 exclude_conflicts=exclude_conflicts,
+                conflict_tolerance=conflict_tolerance,
             )
         result.append(entry)
     return result
 
 
-def detail_results(task_type: str, v1: str, v2: str, scene: str) -> list[dict]:
+def worker_scope_stats(
+    task_type: str,
+    v1: str,
+    v2: str,
+    scene: Optional[str] = None,
+    *,
+    workers: Optional[list[str]] = None,
+    exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
+) -> dict:
+    task_type = normalize_task_type(task_type)
+    config = get_task_config(task_type)
+    v_a, v_b = sorted([v1, v2])
+    all_rows = fetch_result_rows(task_type, v_a, v_b, scene)
+    available_workers = sorted({row["worker"] for row in all_rows})
+    selected_rows = all_rows
+    if workers is not None:
+        selected_workers = {worker for worker in workers if worker}
+        selected_rows = [
+            row for row in all_rows if row["worker"] in selected_workers
+        ]
+    conflict_tolerance = normalize_conflict_tolerance(conflict_tolerance)
+    conflict_index = build_conflict_index(
+        selected_rows,
+        config["dashboard_dims"],
+        conflict_tolerance=conflict_tolerance,
+    )
+
+    grouped: Dict[str, List[sqlite3.Row]] = {}
+    for row in selected_rows:
+        grouped.setdefault(row["worker"], []).append(row)
+    worker_rows = []
+    for worker, rows in sorted(grouped.items()):
+        dimensions = active_dimensions(rows, config["dashboard_dims"])
+        entry = {"worker": worker, "total": len(rows), "active_dims": dimensions}
+        for dimension in dimensions:
+            entry[dimension] = dimension_stats(
+                rows,
+                dimension,
+                v_a,
+                v_b,
+                conflict_index=conflict_index,
+                exclude_conflicts=exclude_conflicts,
+                conflict_tolerance=conflict_tolerance,
+            )
+        worker_rows.append(entry)
+
+    scope_dimensions = active_dimensions(selected_rows, config["dashboard_dims"])
+    scope = {
+        "total": len(selected_rows),
+        "active_dims": scope_dimensions,
+        "dims": {},
+    }
+    for dimension in scope_dimensions:
+        scope["dims"][dimension] = dimension_stats(
+            selected_rows,
+            dimension,
+            v_a,
+            v_b,
+            conflict_index=conflict_index,
+            exclude_conflicts=exclude_conflicts,
+            conflict_tolerance=conflict_tolerance,
+        )
+    return {
+        "available_workers": available_workers,
+        "workers": worker_rows,
+        "scope": scope,
+    }
+
+
+def detail_results(
+    task_type: str,
+    v1: str,
+    v2: str,
+    scene: str,
+    conflict_tolerance: float = 0.0,
+) -> list[dict]:
     task_type = normalize_task_type(task_type)
     config = get_task_config(task_type)
     dimensions = config["dashboard_dims"]
     v_a, v_b = sorted([v1, v2])
     rows = fetch_result_rows(task_type, v_a, v_b, scene)
     rows = sorted(rows, key=lambda row: (row["worker"], row["filename"], row["timestamp"]), reverse=True)
-    conflict_index = build_conflict_index(rows, dimensions)
+    conflict_index = build_conflict_index(
+        rows, dimensions, conflict_tolerance=conflict_tolerance
+    )
     results = []
     for row in rows:
         conflicted = conflict_index.get(sample_identity(row), set())
@@ -303,6 +540,7 @@ def detail_results(task_type: str, v1: str, v2: str, scene: str) -> list[dict]:
                     for dimension in config["dashboard_dims"]
                 },
                 "worker": row["worker"],
+                "evaluator_key": ":".join(str(value) for value in evaluator_identity(row)),
                 "time": row["timestamp"],
                 "duration": row["duration_seconds"],
                 "prompt": get_preview_prompt_text(
@@ -400,6 +638,7 @@ def ranking(
     scene: Optional[str] = None,
     dimension: str = "overall",
     exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
 ) -> list[dict]:
     task_type = normalize_task_type(task_type)
     config = get_task_config(task_type)
@@ -407,7 +646,9 @@ def ranking(
         raise InvalidDimensionError("无效维度")
 
     rows = rows_for_dimension(fetch_result_rows(task_type, scene=scene), dimension)
-    conflict_index = build_conflict_index(rows, [dimension])
+    conflict_index = build_conflict_index(
+        rows, [dimension], conflict_tolerance=conflict_tolerance
+    )
     if exclude_conflicts:
         rows = [
             row

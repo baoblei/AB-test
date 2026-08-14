@@ -148,6 +148,7 @@ class DashboardExportUiTests(unittest.TestCase):
                     if (id === "ranking-scene") return select;
                     if (id === "filter-class") return classFilter;
                     if (id === "filter-model") return modelFilter;
+                    if (["search-v1", "search-v2", "search-scene"].includes(id)) return {{ value: "" }};
                     return status;
                 }},
                 createElement(tag) {{ return {{ tag, value: "", textContent: "" }}; }}
@@ -156,9 +157,17 @@ class DashboardExportUiTests(unittest.TestCase):
                 taskType: "T2I",
                 overview: null,
                 pairs: [],
+                excludeConflicts: false,
+                conflictTolerance: 0,
+                overviewPage: 1,
+                overviewTotalPages: 1,
+                overviewTotalPairs: 0,
                 modelCatalogs: {{ T2I: [] }}
             }};
+            const OVERVIEW_PAGE_SIZE = 10;
             const api = async () => ({{ json: async () => ({{
+                page: 1, total_pages: 1, total_pairs: 1,
+                scenes: [{json.dumps(malicious_scene)}],
                 pairs: [{{
                     v_a: "legacy-a",
                     v_b: "legacy-b",
@@ -166,11 +175,13 @@ class DashboardExportUiTests(unittest.TestCase):
                 }}]
             }}) }});
             const applyFilters = () => {{}};
+            const renderOverviewPagination = () => {{}};
             const formatBeijingNow = () => "now";
             {self.function_source("replaceSelectOptions")}
             {self.function_source("uniqueSorted")}
             {self.function_source("catalogEntryFor")}
             {self.function_source("syncOverviewModelFilters")}
+            {self.function_source("selectedOverviewModelNames")}
             async {self.function_source("loadDashboard")}
             loadDashboard().then(() => console.log(JSON.stringify(select.children)));
         """

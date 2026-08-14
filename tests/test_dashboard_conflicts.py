@@ -8,6 +8,7 @@ from app_core.dashboard_service import (
     dimension_stats,
     ranking,
     sample_identity,
+    worker_scope_stats,
     worker_stats,
 )
 
@@ -70,6 +71,30 @@ class DashboardConflictIndexTests(unittest.TestCase):
         )
 
         self.assertEqual(self.conflict_dimensions(*rows), {"overall"})
+
+    def test_conflict_tolerance_uses_opposing_vote_minority_share(self):
+        rows = [
+            result_row(index, f"majority-{index}", "one.png", "model-a", user_id=index)
+            for index in range(1, 5)
+        ]
+        rows.append(result_row(5, "minority", "one.png", "model-b", user_id=5))
+
+        strict = build_conflict_index(rows, ["overall"], conflict_tolerance=0)
+        below_boundary = build_conflict_index(
+            rows, ["overall"], conflict_tolerance=0.19
+        )
+        at_boundary = build_conflict_index(
+            rows, ["overall"], conflict_tolerance=0.20
+        )
+        fully_tolerant = build_conflict_index(
+            rows, ["overall"], conflict_tolerance=0.50
+        )
+
+        sample = sample_identity(rows[0])
+        self.assertEqual(strict[sample], {"overall"})
+        self.assertEqual(below_boundary[sample], {"overall"})
+        self.assertNotIn(sample, at_boundary)
+        self.assertNotIn(sample, fully_tolerant)
 
     def test_ties_bad_cases_and_one_identity_do_not_conflict(self):
         ties = (
@@ -249,8 +274,22 @@ class DashboardConflictIndexTests(unittest.TestCase):
 
 
 class DashboardConflictServiceTests(unittest.TestCase):
+    @staticmethod
+    def overview_page(rows):
+        return {
+            "rows": rows,
+            "page": 1,
+            "page_size": 10,
+            "total_pairs": 1,
+            "total_pages": 1,
+            "scenes": sorted({row["scene"] for row in rows}),
+        }
+
+    @patch("app_core.dashboard_service.fetch_overview_page")
     @patch("app_core.dashboard_service.fetch_result_rows")
-    def test_overview_and_detail_report_raw_conflict_metadata(self, fetch_rows):
+    def test_overview_and_detail_report_raw_conflict_metadata(
+        self, fetch_rows, fetch_page
+    ):
         rows = [
             result_row(
                 1,
@@ -270,6 +309,7 @@ class DashboardConflictServiceTests(unittest.TestCase):
             ),
         ]
         fetch_rows.return_value = rows
+        fetch_page.return_value = self.overview_page(rows)
 
         overview = dashboard_overview("T2I")
         pair = overview["pairs"][0]
@@ -291,13 +331,14 @@ class DashboardConflictServiceTests(unittest.TestCase):
             all(row["conflict_dimensions"] == ["overall"] for row in details)
         )
 
-    @patch("app_core.dashboard_service.fetch_result_rows")
-    def test_overview_excludes_conflicts_but_preserves_raw_metadata(self, fetch_rows):
-        fetch_rows.return_value = [
+    @patch("app_core.dashboard_service.fetch_overview_page")
+    def test_overview_excludes_conflicts_but_preserves_raw_metadata(self, fetch_page):
+        rows = [
             result_row(1, "alice", "conflict.png", "model-a", user_id=1),
             result_row(2, "bob", "conflict.png", "model-b", user_id=2),
             result_row(3, "alice", "clean.png", "model-a", user_id=1),
         ]
+        fetch_page.return_value = self.overview_page(rows)
 
         overview = dashboard_overview("T2I", exclude_conflicts=True)
         stats = overview["pairs"][0]["dims"]["overall"]
@@ -325,6 +366,34 @@ class DashboardConflictServiceTests(unittest.TestCase):
 
         self.assertEqual(sum(item["overall"]["total"] for item in raw), 3)
         self.assertEqual(sum(item["overall"]["total"] for item in filtered), 1)
+
+    @patch("app_core.dashboard_service.fetch_result_rows")
+    def test_worker_scope_recomputes_conflicts_for_selected_evaluators(self, fetch_rows):
+        fetch_rows.return_value = [
+            result_row(1, "alice", "shared.png", "model-a", user_id=1),
+            result_row(2, "bob", "shared.png", "model-a", user_id=2),
+            result_row(3, "carol", "shared.png", "model-b", user_id=3),
+        ]
+
+        same_side = worker_scope_stats(
+            "T2I", "model-a", "model-b", workers=["alice", "bob"]
+        )
+        opposite = worker_scope_stats(
+            "T2I", "model-a", "model-b", workers=["alice", "carol"]
+        )
+        tolerated = worker_scope_stats(
+            "T2I",
+            "model-a",
+            "model-b",
+            workers=["alice", "carol"],
+            conflict_tolerance=0.5,
+        )
+
+        self.assertEqual(same_side["available_workers"], ["alice", "bob", "carol"])
+        self.assertEqual(same_side["scope"]["dims"]["overall"]["conflict_sample_count"], 0)
+        self.assertEqual(opposite["scope"]["dims"]["overall"]["conflict_sample_count"], 1)
+        self.assertEqual(tolerated["scope"]["dims"]["overall"]["conflict_sample_count"], 0)
+        self.assertEqual([row["worker"] for row in opposite["workers"]], ["alice", "carol"])
 
     @patch("app_core.dashboard_service.fetch_result_rows")
     def test_ranking_excludes_conflicts_for_the_selected_dimension(self, fetch_rows):

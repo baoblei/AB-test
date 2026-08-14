@@ -215,6 +215,12 @@ def init_db():
         ON results_log(task_id) WHERE task_id IS NOT NULL
         """
     )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_results_log_dashboard_page
+        ON results_log(task_type, skipped, v_a, v_b, scene)
+        """
+    )
 
     cursor.execute("SELECT id FROM users WHERE username='admin'")
     if not cursor.fetchone():

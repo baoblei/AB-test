@@ -45,6 +45,23 @@ class DashboardConflictUiTests(unittest.TestCase):
         self.assertIn("loadWorkerStats({ preserveSelection: true })", source)
         self.assertIn("Promise.all(refreshes)", source)
 
+    def test_conflict_tolerance_control_explains_boundary_and_shares_a_row_with_filter(self):
+        self.assertIn('class="conflict-controls-row"', self.html)
+        self.assertIn('id="conflict-tolerance"', self.html)
+        tolerance_section = self.html.split('id="conflict-tolerance"', 1)[1].split(
+            "</select>", 1
+        )[0]
+        for percent in range(0, 51, 5):
+            self.assertIn(f">{percent}%</option>", tolerance_section)
+        for text in (
+            "少数方",
+            "严格大于宽容度",
+            "0% 最严格",
+            "50% 不判冲突",
+            "一样好/一样差不参与",
+        ):
+            self.assertIn(text, self.html)
+
     def test_conflict_reliability_formatter_handles_zero_and_missing_metadata(self):
         source = self.function_source("formatConflictReliability")
         result = self.run_node(
@@ -62,14 +79,14 @@ console.log(JSON.stringify([
             ["冲突样例 1/4（25.0%）", "冲突样例 0/0（0.0%）", None],
         )
 
-    def test_pair_and_scene_render_reliability_but_worker_summary_does_not_fabricate_it(self):
+    def test_pair_scene_and_worker_scope_render_reliable_conflict_counts(self):
         summary = self.function_source("renderSummaryBox")
         scene = self.function_source("renderSceneRow")
         worker = self.function_source("renderWorkerStats")
         self.assertIn("renderConflictReliability(stat)", summary)
         self.assertIn("renderConflictReliability(stat)", scene)
-        self.assertNotIn("sample_count:", worker)
-        self.assertNotIn("conflict_sample_count:", worker)
+        self.assertIn("state.workerScope", worker)
+        self.assertIn("scope.dims", worker)
 
     def test_aggregate_urls_include_filter_and_detail_url_does_not(self):
         for function_name, request_key in (
@@ -81,6 +98,7 @@ console.log(JSON.stringify([
             self.assertIn(f"const requestId = ++state.{request_key}", source)
             self.assertIn(f"requestId !== state.{request_key}", source)
             self.assertIn("exclude_conflicts", source)
+            self.assertIn("conflict_tolerance", source)
 
         detail_source = self.function_source("openDetailModal")
         self.assertNotIn("exclude_conflicts", detail_source)
@@ -91,13 +109,67 @@ console.log(JSON.stringify([
             "state.workerRequestId += 1", self.function_source("closeModal")
         )
 
+    def test_detail_conflicts_recompute_from_selected_worker_scope_and_tolerance(self):
+        source = self.function_source("recomputeDetailConflicts")
+        result = self.run_node(
+            f"""
+{source}
+const rows = [
+  ...[1, 2, 3, 4].map(id => ({{
+    filename: "one.png", worker: `majority-${{id}}`, evaluator_key: `user:${{id}}`,
+    scores: {{ overall: "A" }}
+  }})),
+  {{ filename: "one.png", worker: "minority", evaluator_key: "user:5", scores: {{ overall: "B" }} }}
+];
+const dimensions = [{{ key: "overall" }}];
+const workers = new Set(rows.map(row => row.worker));
+const below = recomputeDetailConflicts(rows, dimensions, "A", "B", workers, 0.19);
+const boundary = recomputeDetailConflicts(rows, dimensions, "A", "B", workers, 0.20);
+const majorityOnly = recomputeDetailConflicts(
+  rows, dimensions, "A", "B", new Set(["majority-1", "majority-2"]), 0
+);
+console.log(JSON.stringify({{
+  below: below.every(row => row.has_conflict),
+  boundary: boundary.some(row => row.has_conflict),
+  majorityOnly: majorityOnly.some(row => row.has_conflict),
+}}));
+"""
+        )
+        self.assertEqual(
+            result,
+            {"below": True, "boundary": False, "majorityOnly": False},
+        )
+
+    def test_overview_uses_server_page_of_ten_and_exposes_navigation(self):
+        for marker in (
+            'id="overview-pagination"',
+            'id="overview-page-prev"',
+            'id="overview-page-status"',
+            'id="overview-page-next"',
+            "const OVERVIEW_PAGE_SIZE = 10",
+            "function changeOverviewPage(",
+        ):
+            self.assertIn(marker, self.html)
+        source = self.function_source("loadDashboard")
+        for marker in (
+            "page: String(state.overviewPage)",
+            "page_size: String(OVERVIEW_PAGE_SIZE)",
+            "search_v1",
+            "search_v2",
+            "scene",
+            "model_names",
+            "data.total_pages",
+        ):
+            self.assertIn(marker, source)
+
     def test_worker_refresh_preserves_the_available_selection(self):
         source = self.function_source("loadWorkerStats")
         for marker in (
             "const previous = new Set(state.selectedWorkers)",
-            "const available = new Set(rows.map(row => row.worker))",
+            "const available = new Set(data.available_workers || [])",
             "[...previous].filter(worker => available.has(worker))",
             "preserveSelection ? preserved : available",
+            'params.set("workers", JSON.stringify([...previous]))',
         ):
             self.assertIn(marker, source)
 
@@ -105,8 +177,9 @@ console.log(JSON.stringify([
             f"""
 const context = {{ v1: 'A', v2: 'B', scene: 'scene-1' }};
 const state = {{
-  taskType: 'T2I', excludeConflicts: true, workerRequestId: 0,
-  currentWorker: context, selectedWorkers: new Set(), workerRows: []
+  taskType: 'T2I', excludeConflicts: true, conflictTolerance: 0.2,
+  workerRequestId: 0, currentWorker: context,
+  selectedWorkers: new Set(), workerRows: [], workerOptions: [], workerScope: null
 }};
 const document = {{
   getElementById: id => id === 'worker-modal'
@@ -114,7 +187,10 @@ const document = {{
     : null
 }};
 const api = async () => ({{
-  json: async () => [{{ worker: 'alice' }}, {{ worker: 'bob' }}]
+  json: async () => ({{
+    available_workers: ['alice', 'bob'], workers: [],
+    scope: {{ total: 0, active_dims: [], dims: {{}} }}
+  }})
 }});
 const renderWorkerStats = () => {{}};
 {source}
@@ -123,11 +199,16 @@ const renderWorkerStats = () => {{}};
   console.log(JSON.stringify({{
     selected: [...state.selectedWorkers],
     rowCount: state.workerRows.length,
+    options: state.workerOptions,
+    scopeTotal: state.workerScope.total,
   }}));
 }})();
 """
         )
-        self.assertEqual(result, {"selected": [], "rowCount": 2})
+        self.assertEqual(
+            result,
+            {"selected": [], "rowCount": 0, "options": ["alice", "bob"], "scopeTotal": 0},
+        )
 
     def test_late_task_config_response_cannot_overwrite_new_task_type(self):
         source = self.function_source("handleTaskTypeChange")

@@ -330,6 +330,34 @@
             white-space: nowrap;
         }
         .filter-checkbox input { width: auto; margin: 0; }
+        .conflict-controls-row {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: #f5f8fc;
+        }
+        .conflict-tolerance-group { width: min(210px, 100%); }
+        .conflict-definition {
+            flex: 1 1 520px;
+            align-self: center;
+            color: var(--muted);
+            font-size: 0.78rem;
+            line-height: 1.5;
+        }
+        .overview-pagination {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+            color: var(--muted);
+            font-size: 0.84rem;
+        }
         .btn-export { background: #f6b73c; color: #26364c; }
         .status-success { color: var(--success) !important; }
         .status-error { color: var(--danger) !important; }
@@ -975,32 +1003,53 @@
                 </div>
                 <div class="input-group">
                     <label>Class</label>
-                    <select id="filter-class" onchange="syncOverviewModelFilters(); applyFilters()">
+                    <select id="filter-class" onchange="syncOverviewModelFilters(); handleOverviewFilterChange()">
                         <option value="">全部 class</option>
                     </select>
                 </div>
                 <div class="input-group">
                     <label>Model</label>
-                    <select id="filter-model" onchange="applyFilters()">
+                    <select id="filter-model" onchange="handleOverviewFilterChange()">
                         <option value="">全部 model</option>
                     </select>
                 </div>
                 <div class="input-group">
                     <label>模型 A</label>
-                    <input id="search-v1" placeholder="搜索..." oninput="applyFilters()">
+                    <input id="search-v1" placeholder="搜索..." oninput="scheduleOverviewReload()">
                 </div>
                 <div class="input-group">
                     <label>模型 B</label>
-                    <input id="search-v2" placeholder="搜索..." oninput="applyFilters()">
+                    <input id="search-v2" placeholder="搜索..." oninput="scheduleOverviewReload()">
                 </div>
                 <div class="input-group">
                     <label>场景</label>
-                    <input id="search-scene" placeholder="搜索..." oninput="applyFilters()">
+                    <input id="search-scene" placeholder="搜索..." oninput="scheduleOverviewReload()">
                 </div>
-                <label class="filter-checkbox" for="exclude-conflicts">
-                    <input id="exclude-conflicts" type="checkbox" onchange="handleConflictFilterChange()">
-                    <span>统计时去除冲突项</span>
-                </label>
+                <div class="conflict-controls-row">
+                    <div class="input-group conflict-tolerance-group">
+                        <label for="conflict-tolerance">冲突宽容度</label>
+                        <select id="conflict-tolerance" onchange="handleConflictFilterChange()">
+                            <option value="0">0%</option>
+                            <option value="0.05">5%</option>
+                            <option value="0.1">10%</option>
+                            <option value="0.15">15%</option>
+                            <option value="0.2">20%</option>
+                            <option value="0.25">25%</option>
+                            <option value="0.3">30%</option>
+                            <option value="0.35">35%</option>
+                            <option value="0.4">40%</option>
+                            <option value="0.45">45%</option>
+                            <option value="0.5">50%</option>
+                        </select>
+                    </div>
+                    <label class="filter-checkbox" for="exclude-conflicts">
+                        <input id="exclude-conflicts" type="checkbox" onchange="handleConflictFilterChange()">
+                        <span>统计时去除冲突项</span>
+                    </label>
+                    <div class="conflict-definition">
+                        定义：同一条样例、同一维度只统计“A 更好”和“B 更好”的相反票；少数方占相反票总数的比例严格大于宽容度时才算冲突。0% 最严格，50% 不判冲突；一样好/一样差不参与。
+                    </div>
+                </div>
                 <button class="btn btn-outline" onclick="loadDashboard()">刷新</button>
                 <button class="btn btn-primary" onclick="showRanking()">排行榜</button>
                 <button class="btn btn-outline" onclick="resetFilters()">重置</button>
@@ -1035,6 +1084,11 @@
                 </div>
             </div>
             <div id="pairs-container">加载中...</div>
+            <div class="overview-pagination" id="overview-pagination">
+                <button class="btn btn-sm btn-outline" id="overview-page-prev" type="button" onclick="changeOverviewPage(-1)">上一页</button>
+                <span id="overview-page-status">第 1 / 1 页</span>
+                <button class="btn btn-sm btn-outline" id="overview-page-next" type="button" onclick="changeOverviewPage(1)">下一页</button>
+            </div>
         </div>
     </div>
 
@@ -1707,6 +1761,7 @@
                 });
             });
         }
+        const OVERVIEW_PAGE_SIZE = 10;
         const DETAIL_PAGE_SIZE = 50;
         const DETAIL_SORT_DEFAULTS = Object.freeze({
             filename: "asc",
@@ -1729,11 +1784,18 @@
             detailRenderTimer: null,
             detailRequestId: 0,
             excludeConflicts: false,
+            conflictTolerance: 0,
+            overviewPage: 1,
+            overviewTotalPages: 1,
+            overviewTotalPairs: 0,
+            overviewFilterTimer: null,
             taskTypeRequestId: 0,
             dashboardRequestId: 0,
             rankingRequestId: 0,
             workerRequestId: 0,
             workerRows: [],
+            workerOptions: [],
+            workerScope: null,
             selectedWorkers: new Set(),
             currentWorker: null,
             badcaseRows: [],
@@ -1821,6 +1883,7 @@
             state.dashboardRequestId += 1;
             state.rankingRequestId += 1;
             state.workerRequestId += 1;
+            state.overviewPage = 1;
             document.getElementById("dataset-download-task-type").value = taskType;
             invalidateDatasetDownload();
             const config = await api(`/api/task_config?task_type=${encodeURIComponent(taskType)}`).then(r => r.json());
@@ -2196,16 +2259,40 @@
             if (models.includes(selectedModel)) modelSelect.value = selectedModel;
         }
 
+        function selectedOverviewModelNames() {
+            const className = document.getElementById("filter-class").value;
+            const modelName = document.getElementById("filter-model").value;
+            if (!className && !modelName) return null;
+            return (state.modelCatalogs[state.taskType] || [])
+                .filter(item => {
+                    if (className && item.class_name !== className) return false;
+                    if (modelName && item.model_name !== modelName) return false;
+                    return true;
+                })
+                .map(item => item.full_name);
+        }
+
         async function loadDashboard() {
             if (!Number.isFinite(state.dashboardRequestId)) state.dashboardRequestId = 0;
             const requestId = ++state.dashboardRequestId;
             const params = new URLSearchParams({
                 task_type: state.taskType,
-                exclude_conflicts: String(Boolean(state.excludeConflicts))
+                exclude_conflicts: String(Boolean(state.excludeConflicts)),
+                conflict_tolerance: String(state.conflictTolerance),
+                page: String(state.overviewPage),
+                page_size: String(OVERVIEW_PAGE_SIZE),
+                search_v1: document.getElementById("search-v1").value.trim(),
+                search_v2: document.getElementById("search-v2").value.trim(),
+                scene: document.getElementById("search-scene").value.trim()
             });
+            const modelNames = selectedOverviewModelNames();
+            if (modelNames !== null) params.set("model_names", JSON.stringify(modelNames));
             const data = await api(`/api/dashboard_overview?${params}`).then(response => response.json());
             if (requestId !== state.dashboardRequestId) return;
             state.overview = data;
+            state.overviewPage = Number(data.page) || 1;
+            state.overviewTotalPages = Number(data.total_pages) || 1;
+            state.overviewTotalPairs = Number(data.total_pairs) || 0;
             state.pairs = data.pairs.map(pair => ({
                 ...pair,
                 v_a_meta: catalogEntryFor(pair.v_a),
@@ -2214,32 +2301,52 @@
             syncOverviewModelFilters();
             const rankingSceneSelect = document.getElementById("ranking-scene");
             const selectedRankingScene = rankingSceneSelect.value;
-            const scenes = [...new Set(data.pairs.flatMap(pair => pair.scenes.map(scene => scene.scene)))];
+            const scenes = data.scenes || [];
             replaceSelectOptions(
                 rankingSceneSelect,
                 [["", "全部场景"], ...scenes.map(scene => [scene, scene])]
             );
             if (scenes.includes(selectedRankingScene)) rankingSceneSelect.value = selectedRankingScene;
             applyFilters();
+            renderOverviewPagination();
             document.getElementById("status-tag").textContent = `最后更新: ${formatBeijingNow()}`;
         }
 
         function applyFilters() {
-            const v1 = document.getElementById("search-v1").value.trim().toLowerCase();
-            const v2 = document.getElementById("search-v2").value.trim().toLowerCase();
-            const scene = document.getElementById("search-scene").value.trim().toLowerCase();
-            const className = document.getElementById("filter-class").value;
-            const modelName = document.getElementById("filter-model").value;
-            const filtered = state.pairs.filter(pair => {
-                const a = pair.v_a.toLowerCase();
-                const b = pair.v_b.toLowerCase();
-                if (!pairMatchesHierarchy(pair, className, modelName)) return false;
-                if (v1 && !a.includes(v1) && !b.includes(v1)) return false;
-                if (v2 && !a.includes(v2) && !b.includes(v2)) return false;
-                if (scene && !pair.scenes.some(item => item.scene.toLowerCase().includes(scene))) return false;
-                return true;
-            });
-            renderPairs(filtered);
+            renderPairs(state.pairs);
+        }
+
+        function renderOverviewPagination() {
+            document.getElementById("overview-page-status").textContent =
+                `第 ${state.overviewPage} / ${state.overviewTotalPages} 页 · 共 ${state.overviewTotalPairs} 个模型对`;
+            document.getElementById("overview-page-prev").disabled = state.overviewPage <= 1;
+            document.getElementById("overview-page-next").disabled =
+                state.overviewPage >= state.overviewTotalPages;
+        }
+
+        async function changeOverviewPage(delta) {
+            const nextPage = Math.max(
+                1,
+                Math.min(state.overviewTotalPages, state.overviewPage + (Number(delta) || 0))
+            );
+            if (nextPage === state.overviewPage) return;
+            state.overviewPage = nextPage;
+            await loadDashboard();
+        }
+
+        function handleOverviewFilterChange() {
+            if (state.overviewFilterTimer) clearTimeout(state.overviewFilterTimer);
+            state.overviewFilterTimer = null;
+            state.overviewPage = 1;
+            loadDashboard();
+        }
+
+        function scheduleOverviewReload() {
+            if (state.overviewFilterTimer) clearTimeout(state.overviewFilterTimer);
+            state.overviewFilterTimer = setTimeout(() => {
+                state.overviewFilterTimer = null;
+                handleOverviewFilterChange();
+            }, 200);
         }
 
         function renderPairs(pairs) {
@@ -2492,7 +2599,7 @@
             document.getElementById("search-v1").value = "";
             document.getElementById("search-v2").value = "";
             document.getElementById("search-scene").value = "";
-            applyFilters();
+            handleOverviewFilterChange();
         }
 
         function showRanking() {
@@ -2511,7 +2618,8 @@
             const params = new URLSearchParams({
                 task_type: state.taskType,
                 dimension: document.getElementById("ranking-dimension").value,
-                exclude_conflicts: String(Boolean(state.excludeConflicts))
+                exclude_conflicts: String(Boolean(state.excludeConflicts)),
+                conflict_tolerance: String(state.conflictTolerance)
             });
             const scene = document.getElementById("ranking-scene").value;
             if (scene) params.set("scene", scene);
@@ -2542,7 +2650,14 @@
             document.getElementById("detail-modal").style.display = "flex";
             document.getElementById("detail-filename-filter").value = "";
             document.getElementById("detail-result-filter").value = "";
-            const rows = await api(`/api/detail_results?task_type=${state.taskType}&v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}&scene=${encodeURIComponent(scene)}`).then(r => r.json());
+            const params = new URLSearchParams({
+                task_type: state.taskType,
+                v1,
+                v2,
+                scene,
+                conflict_tolerance: String(state.conflictTolerance)
+            });
+            const rows = await api(`/api/detail_results?${params}`).then(r => r.json());
             if (requestId !== state.detailRequestId || document.getElementById("detail-modal").style.display !== "flex") return;
             state.detailRows = rows;
             state.selectedDetailWorkers = new Set([...new Set(state.detailRows.map(row => row.worker))]);
@@ -2673,11 +2788,69 @@
             resetDetailPage();
         }
 
+        function recomputeDetailConflicts(
+            rows,
+            dimensions,
+            v1,
+            v2,
+            selectedWorkers,
+            conflictTolerance
+        ) {
+            const votes = new Map();
+            rows.forEach(row => {
+                if (!selectedWorkers.has(row.worker)) return;
+                const evaluator = row.evaluator_key || `worker:${row.worker}`;
+                dimensions.forEach(dimension => {
+                    const value = row.scores?.[dimension.key] ?? row[dimension.key];
+                    const side = value === v1 ? "a" : value === v2 ? "b" : null;
+                    if (!side) return;
+                    const key = `${row.filename}\u0000${dimension.key}`;
+                    if (!votes.has(key)) votes.set(key, { a: new Set(), b: new Set() });
+                    votes.get(key)[side].add(evaluator);
+                });
+            });
+            const conflicts = new Map();
+            votes.forEach((sides, key) => {
+                const evaluators = new Set([...sides.a, ...sides.b]);
+                const opposingVotes = sides.a.size + sides.b.size;
+                const minorityShare = opposingVotes
+                    ? Math.min(sides.a.size, sides.b.size) / opposingVotes
+                    : 0;
+                if (
+                    sides.a.size && sides.b.size && evaluators.size > 1 &&
+                    minorityShare > Number(conflictTolerance || 0)
+                ) {
+                    const [filename, dimension] = key.split("\u0000");
+                    if (!conflicts.has(filename)) conflicts.set(filename, new Set());
+                    conflicts.get(filename).add(dimension);
+                }
+            });
+            return rows.map(row => {
+                const conflicted = conflicts.get(row.filename) || new Set();
+                const conflictDimensions = dimensions
+                    .map(dimension => dimension.key)
+                    .filter(dimension => conflicted.has(dimension));
+                return {
+                    ...row,
+                    has_conflict: conflictDimensions.length > 0,
+                    conflict_dimensions: conflictDimensions
+                };
+            });
+        }
+
         function renderDetailTable() {
             const { v1, v2, scene } = state.currentDetail;
             const fileFilter = document.getElementById("detail-filename-filter").value.toLowerCase();
             const resultFilter = document.getElementById("detail-result-filter").value;
-            const filteredRows = state.detailRows.filter(row => {
+            const scopedRows = recomputeDetailConflicts(
+                state.detailRows,
+                state.config.dashboard_dims,
+                v1,
+                v2,
+                state.selectedDetailWorkers,
+                state.conflictTolerance
+            );
+            const filteredRows = scopedRows.filter(row => {
                 if (!state.selectedDetailWorkers.has(row.worker)) return false;
                 if (fileFilter && !String(row.filename || "").toLowerCase().includes(fileFilter)) return false;
                 if (resultFilter === "a_win" && row.overall !== v1) return false;
@@ -2804,27 +2977,31 @@
             const { preserveSelection = false } = options;
             const context = state.currentWorker;
             if (!context) return;
+            const previous = new Set(state.selectedWorkers);
             if (!Number.isFinite(state.workerRequestId)) state.workerRequestId = 0;
             const requestId = ++state.workerRequestId;
             const params = new URLSearchParams({
                 task_type: state.taskType,
                 v1: context.v1,
                 v2: context.v2,
-                exclude_conflicts: String(Boolean(state.excludeConflicts))
+                exclude_conflicts: String(Boolean(state.excludeConflicts)),
+                conflict_tolerance: String(state.conflictTolerance)
             });
             if (context.scene) params.set("scene", context.scene);
-            const rows = await api(`/api/worker_stats?${params}`).then(response => response.json());
+            if (preserveSelection) params.set("workers", JSON.stringify([...previous]));
+            const data = await api(`/api/worker_scope_stats?${params}`).then(response => response.json());
             if (
                 requestId !== state.workerRequestId ||
                 state.currentWorker !== context ||
                 document.getElementById("worker-modal").style.display !== "flex"
             ) return;
 
-            const previous = new Set(state.selectedWorkers);
-            state.workerRows = rows;
-            const available = new Set(rows.map(row => row.worker));
+            const available = new Set(data.available_workers || []);
             const preserved = new Set([...previous].filter(worker => available.has(worker)));
             state.selectedWorkers = preserveSelection ? preserved : available;
+            state.workerOptions = [...available];
+            state.workerRows = data.workers || [];
+            state.workerScope = data.scope || null;
             renderWorkerStats();
         }
 
@@ -2837,6 +3014,7 @@
 
         async function handleConflictFilterChange() {
             state.excludeConflicts = Boolean(document.getElementById("exclude-conflicts")?.checked);
+            state.conflictTolerance = Number(document.getElementById("conflict-tolerance")?.value || 0);
             const refreshes = [loadDashboard()];
             if (document.getElementById("ranking-card").style.display === "block") {
                 refreshes.push(loadRanking());
@@ -2847,34 +3025,38 @@
             ) {
                 refreshes.push(loadWorkerStats({ preserveSelection: true }));
             }
+            if (
+                document.getElementById("detail-modal").style.display === "flex" &&
+                state.currentDetail
+            ) {
+                renderDetailTable();
+            }
             await Promise.all(refreshes);
         }
 
         function renderWorkerStats() {
             const workerGroup = document.getElementById("worker-group");
-            workerGroup.replaceChildren(...state.workerRows.map(row => {
+            workerGroup.replaceChildren(...state.workerOptions.map(worker => {
                 const chip = createNode(
                     "span",
-                    `checkbox-chip${state.selectedWorkers.has(row.worker) ? " selected" : ""}`,
-                    row.worker
+                    `checkbox-chip${state.selectedWorkers.has(worker) ? " selected" : ""}`,
+                    worker
                 );
-                chip.addEventListener("click", () => toggleWorker(row.worker));
+                chip.addEventListener("click", () => toggleWorker(worker));
                 return chip;
             }));
             const rows = state.workerRows.filter(row => state.selectedWorkers.has(row.worker));
+            const scope = state.workerScope;
             const summaryContainer = document.getElementById("worker-summary");
             const tableContainer = document.getElementById("worker-table");
-            if (!rows.length) {
+            if (!rows.length || !scope) {
                 summaryContainer.replaceChildren();
                 tableContainer.replaceChildren(createEmptyState("请选择评测员"));
                 return;
             }
-            const hasActiveMetadata = rows.some(row => Array.isArray(row.active_dims));
-            const activeKeys = new Set(rows.flatMap(row => row.active_dims || []));
-            const dims = hasActiveMetadata
-                ? state.config.dashboard_dims.filter(dim => activeKeys.has(dim.key))
-                : state.config.dashboard_dims;
-            const total = rows.reduce((sum, row) => sum + row.total, 0);
+            const activeKeys = new Set(scope.active_dims || []);
+            const dims = state.config.dashboard_dims.filter(dim => activeKeys.has(dim.key));
+            const total = Number(scope.total) || 0;
             const summaryCard = createNode("div", "card");
             summaryCard.style.margin = "0 0 14px";
             const summaryTitle = createNode("div", "", `汇总 (${rows.length} 位评测员, ${total} 条样本)`);
@@ -2882,14 +3064,7 @@
             const summaryGrid = createNode("div", "summary-grid");
             if (state.config.media_type === "video") summaryGrid.classList.add("video-dimensions");
             dims.forEach(dim => {
-                const stat = {
-                    total: rows.reduce((sum, row) => sum + (row[dim.key].total || 0), 0),
-                    v_a_wins: rows.reduce((sum, row) => sum + row[dim.key].v_a_wins, 0),
-                    tie_bad_count: rows.reduce((sum, row) => sum + row[dim.key].tie_bad_count, 0),
-                    tie_good_count: rows.reduce((sum, row) => sum + row[dim.key].tie_good_count, 0),
-                    tie_count: rows.reduce((sum, row) => sum + row[dim.key].tie_count, 0),
-                    v_b_wins: rows.reduce((sum, row) => sum + row[dim.key].v_b_wins, 0)
-                };
+                const stat = scope.dims[dim.key];
                 summaryGrid.append(renderSummaryBox({ dims: { [dim.key]: stat } }, dim.key, dim.label));
             });
             summaryCard.append(summaryTitle, summaryGrid);
@@ -2905,19 +3080,24 @@
             rows.forEach(workerRow => {
                 const row = createNode("tr");
                 row.append(createCell(workerRow.worker), createCell(workerRow.total));
-                dims.forEach(dim => row.append(createCell(
-                    `A ${workerRow[dim.key].v_a_wins} / 一样差 ${workerRow[dim.key].tie_bad_count} / 一样好 ${workerRow[dim.key].tie_good_count} / B ${workerRow[dim.key].v_b_wins}`
-                )));
+                dims.forEach(dim => {
+                    const stat = workerRow[dim.key] || {
+                        v_a_wins: 0, tie_bad_count: 0, tie_good_count: 0, v_b_wins: 0
+                    };
+                    row.append(createCell(
+                        `A ${stat.v_a_wins} / 一样差 ${stat.tie_bad_count} / 一样好 ${stat.tie_good_count} / B ${stat.v_b_wins}`
+                    ));
+                });
                 tbody.append(row);
             });
             table.append(thead, tbody);
             tableContainer.replaceChildren(table);
         }
 
-        function toggleWorker(worker) {
+        async function toggleWorker(worker) {
             if (state.selectedWorkers.has(worker)) state.selectedWorkers.delete(worker);
             else state.selectedWorkers.add(worker);
-            renderWorkerStats();
+            await loadWorkerStats({ preserveSelection: true });
         }
 
         async function openBadcaseModal(v1, v2, scene) {
@@ -3783,6 +3963,8 @@
             if (id === "worker-modal") {
                 state.workerRequestId += 1;
                 state.workerRows = [];
+                state.workerOptions = [];
+                state.workerScope = null;
                 state.selectedWorkers = new Set();
                 state.currentWorker = null;
             }

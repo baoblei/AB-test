@@ -61,7 +61,15 @@ class VideoDashboardAggregationTests(unittest.TestCase):
         self.assertEqual(dimension_stats(self.rows, "dynamism", "A", "B")["total"], 2)
 
     def test_overview_and_pair_dimensions_are_active_and_config_ordered(self):
-        with patch("app_core.dashboard_service.fetch_result_rows", return_value=self.rows):
+        page = {
+            "rows": self.rows,
+            "page": 1,
+            "page_size": 10,
+            "total_pairs": 1,
+            "total_pages": 1,
+            "scenes": ["motion"],
+        }
+        with patch("app_core.dashboard_service.fetch_overview_page", return_value=page):
             overview = dashboard_overview("T2V")
 
         self.assertEqual([item["key"] for item in overview["dims"]], ["overall", "dynamism"])

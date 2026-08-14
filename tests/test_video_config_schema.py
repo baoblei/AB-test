@@ -88,6 +88,9 @@ class VideoSchemaTests(unittest.TestCase):
             indexes = {
                 row[1] for row in conn.execute("PRAGMA index_list(evaluation_scopes)")
             }
+            result_indexes = {
+                row[1] for row in conn.execute("PRAGMA index_list(results_log)")
+            }
             conn.close()
 
         self.assertTrue(
@@ -102,6 +105,7 @@ class VideoSchemaTests(unittest.TestCase):
                 "selected_dimensions",
             }.issubset(result_columns)
         )
+        self.assertIn("idx_results_log_dashboard_page", result_indexes)
         self.assertTrue(
             {
                 "user_id",

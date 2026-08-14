@@ -20,10 +20,11 @@ from app_core.dashboard_service import dashboard_overview as dashboard_overview_
 from app_core.dashboard_service import detail_results as detail_results_service
 from app_core.dashboard_service import export_results
 from app_core.dashboard_service import ranking as ranking_service
+from app_core.dashboard_service import worker_scope_stats as worker_scope_stats_service
 from app_core.dashboard_service import worker_stats as worker_stats_service
 from app_core.database import init_db, reset_working_tasks
 from app_core.dataset_download_service import create_dataset_artifact, list_datasets
-from app_core.errors import AppError
+from app_core.errors import AppError, ValidationError
 from app_core.export_service import create_export_artifact, get_export_options, preview_export
 from app_core.model_catalog import get_model_catalog
 from app_core.schemas import ExportRequest, PasswordChange, UserLogin, UserRegister, VoteSubmit
@@ -269,10 +270,40 @@ def get_my_stats(user: dict = Depends(require_login)):
     return get_my_stats_service(user["id"])
 
 
+def parse_json_string_list(value: Optional[str], label: str) -> Optional[list[str]]:
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValidationError(f"{label}格式无效") from exc
+    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
+        raise ValidationError(f"{label}格式无效")
+    return parsed
+
+
 @app.get("/api/dashboard_overview")
-def dashboard_overview(task_type: str, exclude_conflicts: bool = False):
+def dashboard_overview(
+    task_type: str,
+    exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
+    page: int = 1,
+    page_size: int = 10,
+    search_v1: str = "",
+    search_v2: str = "",
+    scene: str = "",
+    model_names: Optional[str] = None,
+):
     return dashboard_overview_service(
-        task_type, exclude_conflicts=exclude_conflicts
+        task_type,
+        exclude_conflicts=exclude_conflicts,
+        conflict_tolerance=conflict_tolerance,
+        page=page,
+        page_size=page_size,
+        search_v1=search_v1,
+        search_v2=search_v2,
+        scene=scene,
+        model_names=parse_json_string_list(model_names, "模型筛选"),
     )
 
 
@@ -283,6 +314,7 @@ def worker_stats(
     v2: str,
     scene: Optional[str] = None,
     exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
 ):
     return worker_stats_service(
         task_type,
@@ -290,12 +322,42 @@ def worker_stats(
         v2,
         scene,
         exclude_conflicts=exclude_conflicts,
+        conflict_tolerance=conflict_tolerance,
+    )
+
+
+@app.get("/api/worker_scope_stats")
+def worker_scope_stats(
+    task_type: str,
+    v1: str,
+    v2: str,
+    scene: Optional[str] = None,
+    exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
+    workers: Optional[str] = None,
+):
+    return worker_scope_stats_service(
+        task_type,
+        v1,
+        v2,
+        scene,
+        workers=parse_json_string_list(workers, "评测员筛选"),
+        exclude_conflicts=exclude_conflicts,
+        conflict_tolerance=conflict_tolerance,
     )
 
 
 @app.get("/api/detail_results")
-def detail_results(task_type: str, v1: str, v2: str, scene: str):
-    return detail_results_service(task_type, v1, v2, scene)
+def detail_results(
+    task_type: str,
+    v1: str,
+    v2: str,
+    scene: str,
+    conflict_tolerance: float = 0.0,
+):
+    return detail_results_service(
+        task_type, v1, v2, scene, conflict_tolerance=conflict_tolerance
+    )
 
 
 @app.get("/api/image-thumbnail")
@@ -359,12 +421,14 @@ def ranking(
     scene: Optional[str] = None,
     dimension: str = "overall",
     exclude_conflicts: bool = False,
+    conflict_tolerance: float = 0.0,
 ):
     return ranking_service(
         task_type,
         scene,
         dimension,
         exclude_conflicts=exclude_conflicts,
+        conflict_tolerance=conflict_tolerance,
     )
 
 
