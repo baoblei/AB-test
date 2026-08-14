@@ -46,6 +46,12 @@
         .navbar p { margin: 6px 0 0; color: var(--muted); }
         .nav-links { display: flex; align-items: center; gap: 16px; }
         .nav-links a { color: var(--primary); text-decoration: none; font-weight: 700; }
+        .nav-links .help-link {
+            padding: 8px 12px;
+            border-radius: 12px;
+            background: var(--primary);
+            color: white;
+        }
         .card {
             background: var(--card);
             border: 1px solid var(--line);
@@ -856,6 +862,7 @@
             </div>
             <div class="nav-links">
                 <span id="status-tag" style="color:var(--muted); font-size:0.85rem;">正在同步...</span>
+                <a class="help-link" href="/help">使用帮助</a>
                 <a href="/">评测终端</a>
                 <a href="/profile">个人中心</a>
                 <a href="/admin">管理后台</a>

@@ -515,6 +515,11 @@ async def dashboard():
     return render_template("dashboard.html")
 
 
+@app.get("/help", response_class=HTMLResponse)
+async def help_page():
+    return render_template("help.html")
+
+
 @app.get("/profile", response_class=HTMLResponse)
 async def profile():
     return render_template("profile.html")

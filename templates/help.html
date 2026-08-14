@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>平台使用说明</title>
+    <style>
+        :root {
+            --bg: #eef3f1;
+            --card: #ffffff;
+            --text: #1b2430;
+            --muted: #647487;
+            --line: rgba(28, 45, 66, 0.12);
+            --primary: #1664c0;
+            --primary-soft: rgba(22, 100, 192, 0.08);
+            --warning: #a45100;
+            --warning-soft: #fff5e6;
+            --danger: #b42318;
+            --danger-soft: #fff0ee;
+            --success: #26733a;
+            --shadow: 0 14px 36px rgba(18, 38, 63, 0.08);
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            margin: 0;
+            color: var(--text);
+            font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.65;
+            background:
+                radial-gradient(circle at top left, rgba(22, 100, 192, 0.09), transparent 26%),
+                linear-gradient(180deg, #f7faf9 0%, var(--bg) 100%);
+        }
+        a { color: var(--primary); }
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 14px max(20px, calc((100vw - 1280px) / 2));
+            border-bottom: 1px solid var(--line);
+            background: rgba(247, 250, 249, 0.94);
+            backdrop-filter: blur(14px);
+        }
+        .brand { font-weight: 900; color: var(--text); text-decoration: none; }
+        .top-links { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .top-links a {
+            padding: 7px 11px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 700;
+        }
+        .top-links .primary { color: white; background: var(--primary); }
+        .layout {
+            display: grid;
+            grid-template-columns: 230px minmax(0, 1fr);
+            gap: 24px;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 30px 20px 64px;
+        }
+        .toc {
+            position: sticky;
+            top: 82px;
+            align-self: start;
+            padding: 18px;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: rgba(255,255,255,0.92);
+            box-shadow: var(--shadow);
+        }
+        .toc strong { display: block; margin-bottom: 8px; }
+        .toc a {
+            display: block;
+            padding: 6px 0;
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .toc a:hover { color: var(--primary); }
+        main { min-width: 0; }
+        .hero, section {
+            margin-bottom: 20px;
+            padding: 24px;
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            background: var(--card);
+            box-shadow: var(--shadow);
+        }
+        .hero {
+            padding: 30px;
+            background: linear-gradient(135deg, #123e76, #2765b5);
+            color: white;
+        }
+        .hero h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.7rem); }
+        .hero p { max-width: 820px; margin: 12px 0 0; opacity: 0.9; }
+        h2 { margin: 0 0 14px; font-size: 1.35rem; }
+        h3 { margin: 22px 0 8px; font-size: 1.05rem; }
+        h4 { margin: 16px 0 6px; }
+        p { margin: 8px 0; }
+        ul, ol { margin: 8px 0; padding-left: 22px; }
+        li + li { margin-top: 5px; }
+        .muted { color: var(--muted); }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .mini-card {
+            padding: 16px;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: #fbfcfd;
+        }
+        .mini-card strong { display: block; margin-bottom: 5px; }
+        .formula {
+            margin: 10px 0;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: var(--primary-soft);
+            color: #164b87;
+            font-weight: 800;
+            overflow-wrap: anywhere;
+        }
+        .note, .warning {
+            margin: 12px 0;
+            padding: 13px 15px;
+            border-radius: 14px;
+        }
+        .note { color: #205d31; background: #edf8f0; }
+        .warning { color: var(--warning); background: var(--warning-soft); }
+        .danger { color: var(--danger); background: var(--danger-soft); }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 11px 12px;
+            border: 1px solid var(--line);
+            text-align: left;
+            vertical-align: top;
+        }
+        th { background: #eef5ff; color: #275190; }
+        code {
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: #edf1f5;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+        .term { color: var(--primary); font-weight: 800; }
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .toc { position: static; }
+            .toc nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 620px) {
+            .topbar { align-items: flex-start; flex-direction: column; }
+            .layout { padding: 18px 12px 44px; }
+            .hero, section { padding: 18px; border-radius: 18px; }
+            .grid { grid-template-columns: 1fr; }
+            .toc nav { grid-template-columns: 1fr; }
+            table { display: block; overflow-x: auto; white-space: nowrap; }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="/help">MLLM A/B 盲测平台 · 使用帮助</a>
+        <nav class="top-links" aria-label="页面导航">
+            <a href="/">评测终端</a>
+            <a href="/profile">个人中心</a>
+            <a class="primary" href="/dashboard">返回看板</a>
+        </nav>
+    </header>
+
+    <div class="layout">
+        <aside class="toc">
+            <strong>平台使用说明</strong>
+            <nav aria-label="帮助目录">
+                <a href="#quick-start">快速开始</a>
+                <a href="#evaluation">如何评测</a>
+                <a href="#dashboard">看板操作</a>
+                <a href="#definitions">统计基础定义</a>
+                <a href="#dimension-stats">维度统计</a>
+                <a href="#conflicts">冲突统计</a>
+                <a href="#bad-cases">坏例统计</a>
+                <a href="#ranking">排行榜与评测员</a>
+                <a href="#personal-admin">个人与管理统计</a>
+                <a href="#examples">完整示例</a>
+            </nav>
+        </aside>
+
+        <main>
+            <div class="hero">
+                <h1>平台使用说明</h1>
+                <p>本页面向评测员、管理员和结果查看者，说明如何完成评测、使用看板，以及每个统计指标的准确计算方法。它不包含开发、部署或代码说明。</p>
+            </div>
+
+            <section id="quick-start">
+                <h2>1. 快速开始</h2>
+                <div class="grid">
+                    <div class="mini-card">
+                        <strong>评测员</strong>
+                        登录后进入“评测终端”，依次选择任务类型、两个模型、场景和评测模式，再开始逐条盲测。
+                    </div>
+                    <div class="mini-card">
+                        <strong>结果查看者</strong>
+                        进入“评测看板”，先选择任务类型，再按 Class、Model、模型名或场景筛选模型对。
+                    </div>
+                    <div class="mini-card">
+                        <strong>管理员</strong>
+                        可在看板上传测评集和模型结果、查看统计并导出；用户和角色管理位于管理后台。
+                    </div>
+                    <div class="mini-card">
+                        <strong>个人记录</strong>
+                        在“个人中心”查看自己的历史记录、完成量、场景分布和平均耗时。
+                    </div>
+                </div>
+            </section>
+
+            <section id="evaluation">
+                <h2>2. 如何完成一条评测</h2>
+                <ol>
+                    <li>确认 Prompt；TI2I/TI2V 任务还需对照参考图。</li>
+                    <li>针对当前展示的每个维度，在“A 更好、一样差、一样好、B 更好”中选择一项。</li>
+                    <li>若候选结果存在严重缺陷，为对应模型侧添加坏例标签；一条记录可以选择多个标签。</li>
+                    <li>提交后进入下一条；无法判断或素材异常时可以跳过。</li>
+                </ol>
+                <table>
+                    <thead><tr><th>选项</th><th>含义</th><th>统计归类</th></tr></thead>
+                    <tbody>
+                        <tr><td>A 更好</td><td>当前维度模型 A 明显优于模型 B</td><td>A 胜</td></tr>
+                        <tr><td>B 更好</td><td>当前维度模型 B 明显优于模型 A</td><td>B 胜</td></tr>
+                        <tr><td>一样差</td><td>两侧都存在明显问题，难分高下</td><td>平局：一样差</td></tr>
+                        <tr><td>一样好</td><td>两侧都达到较好水平，难分高下</td><td>平局：一样好</td></tr>
+                    </tbody>
+                </table>
+                <div class="note">A/B 在评测终端中采用盲测展示。看板中的 A/B 是当前模型对的规范化统计方向，与评测时屏幕左右位置无关。</div>
+            </section>
+
+            <section id="dashboard">
+                <h2>3. 看板操作</h2>
+                <ul>
+                    <li><strong>任务控制与筛选：</strong>切换 T2I、TI2I、T2V、TI2V，并按模型层级、模型名称或场景搜索。</li>
+                    <li><strong>总览分页：</strong>每页显示 10 个模型对；筛选先作用于全部模型对，再分页。</li>
+                    <li><strong>展开模型对：</strong>查看各场景的维度统计、坏例占比、明细、评测员统计和坏例详情。</li>
+                    <li><strong>冲突设置：</strong>调整冲突宽容度，或勾选“统计时去除冲突项”后刷新相关统计。</li>
+                    <li><strong>明细：</strong>可按文件名、判定和评测员筛选；按评测员筛选后，冲突提示在当前人员范围内重新计算。</li>
+                    <li><strong>统计：</strong>选择具体评测员后，汇总、冲突样例数及去除冲突后的结果均按所选人员重新计算。</li>
+                </ul>
+            </section>
+
+            <section id="definitions">
+                <h2>4. 统计指标计算口径：先理解三种数量</h2>
+                <table>
+                    <thead><tr><th>名称</th><th>计算方法</th><th>用途</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="term">有效评测记录</span></td>
+                            <td>一次未跳过的提交记为 1 条记录。同一文件被 3 人评价，会产生 3 条记录。</td>
+                            <td>维度胜负、平局、坏例、排行榜和评测员工作量。</td>
+                        </tr>
+                        <tr>
+                            <td><span class="term">去重样例</span></td>
+                            <td>按“任务类型 + 规范化模型对 + 场景 + 文件名”去重。同一文件无论有多少评测记录，只计 1 个。</td>
+                            <td>冲突样例 X/Y 的分母。</td>
+                        </tr>
+                        <tr>
+                            <td><span class="term">多人共同评价</span></td>
+                            <td>同一去重样例至少被两位不同评测员评价。它是去重样例的子集。</td>
+                            <td>判断是否具备出现人员冲突的条件；当前看板未单独显示该覆盖数。</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="warning"><strong>重要：</strong>模型对标题和场景表中的“样本/条样本”当前表示有效评测记录数，不是去重文件数。冲突统计使用去重样例数，两处数字不能直接比较。</div>
+            </section>
+
+            <section id="dimension-stats">
+                <h2>5. A 胜 / B 胜、平局、百分比和压制比</h2>
+                <h3>A 胜 / B 胜</h3>
+                <p>对当前模型对、场景和维度，每条有效评测记录按最终选择进入 A 胜、B 胜、一样差或一样好四类之一。未评价该维度的记录不进入该维度统计。</p>
+
+                <h3>一样差 / 一样好</h3>
+                <p>两者都是平局，但保留不同语义。它们分别展示，同时在“平局总数”和压制比中合并使用。</p>
+
+                <h3>维度百分比</h3>
+                <div class="formula">某类百分比 = 该类评测记录数 ÷ 当前维度四类评测记录总数 × 100%</div>
+                <p>同一文件由多人评价时，每个人的选择都分别进入百分比。勾选“统计时去除冲突项”后，先移除该维度的冲突样例对应记录，再计算百分比。</p>
+
+                <h3>A 压制 / B 压制</h3>
+                <div class="formula">A 压制 =（A 胜 + 一样差 + 一样好）÷（B 胜 + 一样差 + 一样好）</div>
+                <div class="formula">B 压制 =（B 胜 + 一样差 + 一样好）÷（A 胜 + 一样差 + 一样好）</div>
+                <p>分母为 0 且分子大于 0 时显示“∞”；分子、分母都为 0 时显示“-”。压制比不是胜率，平局同时进入两个方向。</p>
+            </section>
+
+            <section id="conflicts">
+                <h2>6. 冲突宽容度与“冲突样例 X/Y”</h2>
+                <h3>冲突判定</h3>
+                <p>系统在同一去重样例、同一维度内，按评测员身份去重，只统计选择 A 更好或 B 更好的人员；一样差、一样好不参与冲突票数。</p>
+                <div class="formula">少数方占比 = min(A 票人数, B 票人数) ÷ (A 票人数 + B 票人数)</div>
+                <p>只有 A、B 两侧都有人选择，且少数方占比<strong>严格大于</strong>冲突宽容度时，才判定为冲突。等于宽容度时不算冲突。</p>
+                <table>
+                    <thead><tr><th>宽容度</th><th>示例</th><th>结果</th></tr></thead>
+                    <tbody>
+                        <tr><td>0%</td><td>4 人选 A、1 人选 B；少数方 20%</td><td>20% &gt; 0%，冲突</td></tr>
+                        <tr><td>20%</td><td>4 人选 A、1 人选 B；少数方 20%</td><td>20% 不大于 20%，不冲突</td></tr>
+                        <tr><td>50%</td><td>一半选 A、一半选 B；少数方 50%</td><td>50% 不大于 50%，不冲突</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>冲突样例 X/Y</h3>
+                <ul>
+                    <li><strong>分子 X：</strong>当前维度被判为冲突的去重样例数。</li>
+                    <li><strong>分母 Y：</strong>当前维度至少有一条有效评分的去重样例并集数。</li>
+                    <li>Y 不是评测记录总数、不是测评集文件总数，也不是多人共同评价数。</li>
+                    <li>平局评分可以使样例进入 Y，但平局票不参与该样例的冲突判定。</li>
+                </ul>
+                <div class="warning">
+                    <strong>两人各评 50 张的例子：</strong>如果只有 9 张是两人共同评价，则去重并集为 <strong>50 + 50 - 9 = 91</strong>，看板分母就是 91。只有一人评价的样例不可能产生人员冲突，因此“0/91”不代表 91 张都经过了多人一致性验证。
+                </div>
+
+                <h3>统计时去除冲突项</h3>
+                <p>勾选后，系统仅在发生冲突的那个维度中移除该样例的全部评测记录，再计算 A/B/平局、压制比和排行榜。原始“冲突样例 X/Y”仍保留，用于说明被移除的范围。一个样例在整体维度冲突，不会自动从其他无冲突维度中删除。</p>
+            </section>
+
+            <section id="bad-cases">
+                <h2>7. 坏例占比与高频坏例</h2>
+                <div class="formula">坏例占比 = 至少包含一个坏例标签的评测记录数 ÷ 该模型侧评测记录总数</div>
+                <ul>
+                    <li>坏例统计按模型侧分别计算；一条记录只要该侧至少有一个标签，坏例记录数加 1。</li>
+                    <li>同一条记录选择多个坏例标签，坏例记录数仍只加 1。</li>
+                    <li><strong>高频坏例：</strong>每个具体标签出现一次计 1；总览显示出现次数最高的标签。</li>
+                    <li>同一条记录在同一坏例类别中选择多个标签时，该类别的记录数只加 1，但各具体标签分别加 1。</li>
+                </ul>
+            </section>
+
+            <section id="ranking">
+                <h2>8. 排行榜与评测员统计</h2>
+                <h3>排行榜胜率</h3>
+                <div class="formula">排行榜胜率 = 胜场数 ÷ 对战数</div>
+                <ul>
+                    <li>某模型每出现在一条当前维度的有效评测记录中，对战数加 1。</li>
+                    <li>该记录选择该模型胜出时，胜场数加 1。</li>
+                    <li>一样差、一样好会增加双方对战数，但不会增加任何一方胜场数。</li>
+                    <li>排行榜按胜率从高到低排序；场景、冲突宽容度和“去除冲突项”会影响结果。</li>
+                </ul>
+
+                <h3>评测员统计</h3>
+                <p>每位评测员的“样本数”表示其有效评测记录数；各维度只统计该评测员实际填写的评分。选择多位评测员后，汇总在当前人员范围内重新计算，不能简单把每个人的冲突分子、分母相加。</p>
+            </section>
+
+            <section id="personal-admin">
+                <h2>9. 个人统计与管理后台统计</h2>
+                <h3>个人统计</h3>
+                <ul>
+                    <li><strong>总评测数：</strong>当前账号提交且未跳过的评测记录数。</li>
+                    <li><strong>场景分布：</strong>当前账号未跳过的评测记录按场景计数。</li>
+                    <li><strong>平均耗时：</strong>当前账号所有存在耗时值的结果记录的平均秒数；当前实现包含跳过记录。</li>
+                </ul>
+
+                <h3>管理后台统计</h3>
+                <ul>
+                    <li><strong>用户数：</strong>用户表中的账号总数，包含停用账号。</li>
+                    <li><strong>总评测数：</strong>全平台未跳过的评测记录数。</li>
+                    <li><strong>今日评测：</strong>按北京时间日期统计当天未跳过的评测记录数。</li>
+                    <li><strong>模型数：</strong>当前实现为 A 列去重模型数加 B 列去重模型数；同一模型若分别出现在两列，可能被重复计数。</li>
+                </ul>
+            </section>
+
+            <section id="examples">
+                <h2>10. 完整计算示例</h2>
+                <p>某维度共有 5 条有效评测记录：A 胜 2、B 胜 1、一样差 1、一样好 1。</p>
+                <ul>
+                    <li>A 胜占比：2 ÷ 5 = 40%</li>
+                    <li>B 胜占比：1 ÷ 5 = 20%</li>
+                    <li>一样差占比：1 ÷ 5 = 20%</li>
+                    <li>一样好占比：1 ÷ 5 = 20%</li>
+                    <li>A 压制：(2 + 1 + 1) ÷ (1 + 1 + 1) = 4 ÷ 3 = 1.33</li>
+                    <li>B 压制：(1 + 1 + 1) ÷ (2 + 1 + 1) = 3 ÷ 4 = 0.75</li>
+                </ul>
+                <p>若其中某张图有 4 人选 A、1 人选 B：</p>
+                <ul>
+                    <li>少数方占比：1 ÷ 5 = 20%</li>
+                    <li>宽容度 15%：20% &gt; 15%，判为冲突</li>
+                    <li>宽容度 20%：20% 不大于 20%，不判冲突</li>
+                </ul>
+                <div class="note">阅读看板时，先确认当前任务类型、维度、场景、评测员范围、冲突宽容度和是否去除冲突项，再比较统计值。</div>
+            </section>
+        </main>
+    </div>
+</body>
+</html>
